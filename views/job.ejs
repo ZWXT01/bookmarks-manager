@@ -1,0 +1,757 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>任务进度 - 书签管理器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/public/app.css" />
+  </head>
+  <body
+    class="bg-slate-50 text-slate-900"
+    data-job-id="<%= job.id %>"
+    data-processed="<%= job.processed %>"
+    data-total="<%= job.total %>"
+  >
+    <div class="mx-auto max-w-screen-2xl px-2 py-2">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-semibold">任务进度</h1>
+          <p class="text-sm text-slate-500">ID：<span class="font-mono"><%= job.id %></span></p>
+        </div>
+        <div class="flex items-center gap-3">
+          <a class="text-sm text-slate-700 hover:underline" href="/jobs">任务列表</a>
+          <a class="text-sm text-slate-700 hover:underline" href="/">首页</a>
+        </div>
+      </div>
+
+      <div class="mt-6 rounded-xl border bg-white p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="flex items-center gap-2">
+              <span class="text-lg"><%= job.type === 'ai_classify' ? '🤖' : job.type === 'ai_simplify' ? '✨' : '🔍' %></span>
+              <span class="text-sm font-semibold text-slate-700"><%= job.type === 'ai_classify' ? 'AI 批量分类任务' : job.type === 'ai_simplify' ? 'AI 类型精简任务' : '书签检查任务' %></span>
+              <span id="job-status" class="text-xs px-2 py-0.5 rounded <%= job.status === 'running' ? 'bg-blue-100 text-blue-700' : job.status === 'done' ? 'bg-green-100 text-green-700' : job.status === 'failed' ? 'bg-rose-100 text-rose-700' : job.status === 'canceled' ? 'bg-slate-100 text-slate-600' : 'bg-slate-100 text-slate-600' %>">
+                <%= job.status === 'running' ? '运行中' : job.status === 'done' ? '已完成' : job.status === 'failed' ? '失败' : job.status === 'canceled' ? '已取消' : job.status %>
+              </span>
+            </div>
+            <div class="mt-1 text-xs text-slate-500 whitespace-pre-wrap break-words max-w-2xl" id="job-message"><%= job.message || '' %></div>
+          </div>
+          <div class="text-right text-xs text-slate-500">
+            <div>创建：<%= new Date(job.created_at).toLocaleString('zh-CN') %></div>
+            <div>更新：<span id="job-updated"><%= new Date(job.updated_at).toLocaleString('zh-CN') %></span></div>
+          </div>
+        </div>
+
+        <div class="mt-4">
+          <div class="h-3 w-full overflow-hidden rounded-full bg-slate-100">
+            <div id="job-bar" class="h-3 <%= job.type === 'ai_classify' ? 'bg-gradient-to-r from-blue-500 to-blue-700' : job.type === 'ai_simplify' ? 'bg-gradient-to-r from-purple-500 to-purple-700' : 'bg-gradient-to-r from-slate-700 to-slate-900' %> transition-all duration-300" style="width: 0%"></div>
+          </div>
+          <div id="current-item" class="mt-2 text-xs text-slate-600 italic opacity-0 transition-opacity"></div>
+          <div class="mt-2 flex items-center justify-between">
+            <div class="text-xs text-slate-600">
+              <span id="job-progress"><%= job.processed %></span>/<span id="job-total"><%= job.total %></span>
+              <span class="ml-3"><%= job.type === 'ai_classify' ? '已分类' : '成功' %>：<span id="job-inserted"><%= job.inserted %></span></span>
+              <span class="ml-3">跳过：<span id="job-skipped"><%= job.skipped %></span></span>
+              <span class="ml-3">失败：<span id="job-failed"><%= job.failed %></span></span>
+            </div>
+            <% if (job.status === 'running' || job.status === 'pending') { %>
+            <button id="cancel-job-btn" class="rounded border border-rose-300 px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50">取消任务</button>
+            <% } %>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4 rounded-lg border bg-white p-3 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold text-slate-700">
+            失败项（共 <span id="failure-total"><%= typeof failureTotal === 'number' ? failureTotal : failures.length %></span> 条）
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-xs text-slate-500">每页</label>
+            <select
+              class="rounded border px-2 py-1 text-sm"
+              onchange="location.href='/jobs/<%= job.id %>?fail_page_size=' + this.value + '&fail_page=1'"
+            >
+              <option value="20" <%= failPageSize === 20 ? 'selected' : '' %>>20</option>
+              <option value="50" <%= failPageSize === 50 ? 'selected' : '' %>>50</option>
+              <option value="100" <%= failPageSize === 100 ? 'selected' : '' %>>100</option>
+            </select>
+          </div>
+        </div>
+        <div class="mt-3 overflow-hidden rounded-lg border">
+          <table class="w-full table-fixed">
+            <thead class="bg-slate-50">
+              <tr>
+                <th class="w-[55%] px-3 py-2 text-left text-xs font-semibold text-slate-600">输入</th>
+                <th class="w-[45%] px-3 py-2 text-left text-xs font-semibold text-slate-600">原因</th>
+              </tr>
+            </thead>
+            <tbody id="failures" class="divide-y">
+              <% if (!failures.length) { %>
+              <tr id="no-failures">
+                <td colspan="2" class="px-3 py-6 text-center text-sm text-slate-500">暂无</td>
+              </tr>
+              <% } %>
+              <% failures.forEach(function(f) { %>
+              <tr class="failure-row">
+                <td class="px-3 py-2 text-sm text-slate-700">
+                  <div class="truncate" title="<%= f.input %>"><%= f.input %></div>
+                </td>
+                <td class="px-3 py-2 text-sm text-rose-700">
+                  <div class="whitespace-pre-wrap break-words max-h-24 overflow-y-auto"><%= f.reason %></div>
+                </td>
+              </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+
+        <% if (typeof failPage === 'number' && typeof failTotalPages === 'number' && failTotalPages > 1) { %>
+          <div class="mt-3 flex items-center justify-between">
+            <div class="text-xs text-slate-500">第 <%= failPage %>/<%= failTotalPages %> 页</div>
+            <div class="flex items-center gap-2">
+              <% if (failPage > 1) { %>
+                <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50" href="<%= failPageUrlPrefix %><%= failPage - 1 %>">上一页</a>
+              <% } else { %>
+                <span class="rounded-lg border px-3 py-1 text-sm text-slate-400">上一页</span>
+              <% } %>
+              <% if (failPage < failTotalPages) { %>
+                <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50" href="<%= failPageUrlPrefix %><%= failPage + 1 %>">下一页</a>
+              <% } else { %>
+                <span class="rounded-lg border px-3 py-1 text-sm text-slate-400">下一页</span>
+              <% } %>
+            </div>
+          </div>
+        <% } %>
+
+        <div class="mt-3 text-xs text-slate-500">失败项会实时更新并以动画形式显示。任务结束后可刷新页面查看完整列表。</div>
+      </div>
+
+      <% if (job.type === 'ai_classify') { %>
+      <div class="mt-4 rounded-lg border bg-white p-3 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold text-slate-700">
+            分类建议（共 <span id="suggestion-total"><%= suggestionTotal %></span> 条）
+          </div>
+          <div class="flex items-center gap-2">
+            <label class="text-xs text-slate-600">每页
+              <select id="sug-page-size" class="ml-1 rounded border px-2 py-1 text-xs">
+                <option value="10" <%= suggestionPageSize === 10 ? 'selected' : '' %>>10</option>
+                <option value="20" <%= suggestionPageSize === 20 ? 'selected' : '' %>>20</option>
+                <option value="50" <%= suggestionPageSize === 50 ? 'selected' : '' %>>50</option>
+                <option value="100" <%= suggestionPageSize === 100 ? 'selected' : '' %>>100</option>
+              </select>
+            </label>
+            <% const allApplied = suggestions.length > 0 && suggestions.every(s => s.applied); %>
+            <% if (allApplied) { %>
+            <span id="apply-all-btn" class="rounded bg-green-100 px-3 py-1 text-xs font-medium text-green-700">✓ 已全部应用</span>
+            <% } else { %>
+            <button id="apply-all-btn" class="rounded bg-blue-600 px-3 py-1 text-xs font-medium text-white hover:bg-blue-700">一键应用全部</button>
+            <% } %>
+          </div>
+        </div>
+        <div class="mt-3 overflow-hidden rounded-lg border">
+          <table class="w-full table-fixed">
+            <thead class="bg-slate-50">
+              <tr>
+                <th class="w-[40%] px-3 py-2 text-left text-xs font-semibold text-slate-600">书签</th>
+                <th class="w-[40%] px-3 py-2 text-left text-xs font-semibold text-slate-600">建议分类</th>
+                <th class="w-[20%] px-3 py-2 text-left text-xs font-semibold text-slate-600">操作</th>
+              </tr>
+            </thead>
+            <tbody id="suggestions" class="divide-y">
+              <% suggestions.forEach(function(s) { %>
+              <tr class="suggestion-row <%= s.applied ? 'bg-green-50' : '' %>" data-bookmark-id="<%= s.bookmark_id %>" data-category="<%- encodeURIComponent(s.suggested_category) %>" data-applied="<%= s.applied ? '1' : '0' %>">
+                <td class="px-3 py-2">
+                  <div class="text-sm text-slate-700 truncate"><%= s.title %></div>
+                  <div class="text-xs text-slate-400 truncate"><%= s.url %></div>
+                </td>
+                <td class="px-3 py-2">
+                  <span class="inline-block rounded <%= s.applied ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700' %> px-2 py-0.5 text-xs"><%= s.suggested_category %></span>
+                </td>
+                <td class="px-3 py-2">
+                  <% if (s.applied) { %>
+                  <span class="text-xs text-green-600">✓ 已应用</span>
+                  <% } else { %>
+                  <button class="apply-btn rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-700">应用</button>
+                  <% } %>
+                </td>
+              </tr>
+              <% }); %>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="mt-3 flex items-center justify-between">
+          <div class="text-xs text-slate-500">第 <span id="sug-current-page"><%= suggestionPage %></span>/<span id="sug-total-pages"><%= suggestionTotalPages %></span> 页</div>
+          <div class="flex items-center gap-2">
+            <button id="sug-prev-btn" class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50 disabled:text-slate-400 disabled:pointer-events-none" <%= suggestionPage <= 1 ? 'disabled' : '' %>>上一页</button>
+            <button id="sug-next-btn" class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50 disabled:text-slate-400 disabled:pointer-events-none" <%= suggestionPage >= suggestionTotalPages ? 'disabled' : '' %>>下一页</button>
+          </div>
+        </div>
+      </div>
+      <% } %>
+
+      <% if (job.type === 'ai_simplify' && simplifySuggestions && simplifySuggestions.length > 0) { %>
+      <div class="mt-4 rounded-lg border bg-white p-3 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold text-slate-700">
+            精简建议（共 <span id="simplify-total"><%= simplifySuggestions.length %></span> 个新分类）
+          </div>
+          <div class="flex items-center gap-2">
+            <% const allSimplifyApplied = simplifySuggestions.every(s => s.allApplied); %>
+            <% if (allSimplifyApplied) { %>
+            <span class="rounded bg-green-100 px-3 py-1 text-xs font-medium text-green-700">✓ 已全部应用</span>
+            <% } else { %>
+            <button id="apply-all-simplify-btn" class="rounded bg-purple-600 px-3 py-1 text-xs font-medium text-white hover:bg-purple-700">一键应用全部</button>
+            <% } %>
+          </div>
+        </div>
+        <div class="mt-3 space-y-3" id="simplify-suggestions">
+          <% simplifySuggestions.forEach(function(s) { %>
+          <div class="rounded-lg border p-3 <%= s.allApplied ? 'bg-green-50' : '' %>">
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="inline-block rounded bg-purple-100 text-purple-700 px-2 py-0.5 text-sm font-medium"><%= s.newCategory %></span>
+                <span class="text-xs text-slate-500">(<%= s.totalBookmarks %> 个书签)</span>
+              </div>
+              <% if (s.allApplied) { %>
+              <span class="text-xs text-green-600">✓ 已应用</span>
+              <% } else { %>
+              <button class="apply-simplify-group-btn rounded bg-purple-600 px-2 py-1 text-xs text-white hover:bg-purple-700" data-new-category="<%= s.newCategory %>">应用此分类</button>
+              <% } %>
+            </div>
+            <div class="mt-2 text-xs text-slate-600">
+              <span class="font-medium">包含原分类：</span>
+              <% s.oldCategories.forEach(function(c, idx) { %>
+              <span class="inline-block rounded <%= c.applied ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600' %> px-1.5 py-0.5 mr-1 mb-1" data-old-category-id="<%= c.oldCategoryId %>" data-applied="<%= c.applied ? '1' : '0' %>"><%= c.oldCategoryName %> (<%= c.bookmarkCount %>)</span>
+              <% }); %>
+            </div>
+          </div>
+          <% }); %>
+        </div>
+      </div>
+      <% } %>
+    </div>
+
+    <script>
+      function updateBar(processed, total) {
+        var pct = 0;
+        if (total > 0) pct = Math.min(100, Math.floor((processed / total) * 100));
+        document.getElementById('job-bar').style.width = pct + '%';
+      }
+
+      function showCurrentItem(message) {
+        var el = document.getElementById('current-item');
+        if (message && message.includes('检查')) {
+          el.textContent = message;
+          el.style.opacity = '1';
+        } else {
+          el.style.opacity = '0';
+        }
+      }
+
+      var jobId = document.body.dataset.jobId;
+      var processed = Number(document.body.dataset.processed || '0');
+      var total = Number(document.body.dataset.total || '0');
+      var lastFailedCount = <%= job.failed %>;
+      var initialStatus = '<%= job.status %>';
+
+      updateBar(processed, total);
+
+      // 只有任务还在运行时才建立SSE连接
+      var es = null;
+      if (initialStatus === 'running' || initialStatus === 'pending' || initialStatus === 'queued') {
+        es = new EventSource('/jobs/' + jobId + '/events');
+        
+        es.onopen = function() {
+          console.log('SSE connected for job:', jobId);
+        };
+        
+        es.onerror = function(e) {
+          console.error('SSE error:', e);
+          // 连接错误时，回退到轮询
+          if (es) {
+            es.close();
+            es = null;
+          }
+          startPolling();
+        };
+        
+        es.onmessage = function (evt) {
+          try {
+            var job = JSON.parse(evt.data);
+            updateJobUI(job);
+          } catch (err) {
+            console.error('SSE parse error:', err);
+          }
+        };
+      }
+      
+      // 轮询作为备用方案
+      var pollTimer = null;
+      function startPolling() {
+        if (pollTimer) return;
+        pollTimer = setInterval(async function() {
+          try {
+            var res = await fetch('/api/jobs/current');
+            var data = await res.json();
+            if (data && data.job && data.job.id === jobId) {
+              updateJobUI(data.job);
+              if (data.job.status === 'done' || data.job.status === 'failed' || data.job.status === 'canceled') {
+                clearInterval(pollTimer);
+                pollTimer = null;
+              }
+            }
+          } catch (err) {
+            console.error('Poll error:', err);
+          }
+        }, 2000);
+      }
+      
+      var lastInsertedCount = <%= job.inserted %>;
+      var jobType = '<%= job.type %>';
+      
+      function updateJobUI(job) {
+        var statusEl = document.getElementById('job-status');
+        if (statusEl) statusEl.textContent = job.status === 'running' ? '运行中' : job.status === 'done' ? '已完成' : job.status === 'failed' ? '失败' : job.status === 'canceled' ? '已取消' : job.status;
+        
+        var msgEl = document.getElementById('job-message');
+        if (msgEl) msgEl.textContent = job.message || '';
+        
+        var totalEl = document.getElementById('job-total');
+        if (totalEl) totalEl.textContent = String(job.total);
+        
+        var progressEl = document.getElementById('job-progress');
+        if (progressEl) progressEl.textContent = String(job.processed);
+        
+        var insertedEl = document.getElementById('job-inserted');
+        if (insertedEl) insertedEl.textContent = String(job.inserted);
+        
+        var skippedEl = document.getElementById('job-skipped');
+        if (skippedEl) skippedEl.textContent = String(job.skipped);
+        
+        var failedEl = document.getElementById('job-failed');
+        if (failedEl) failedEl.textContent = String(job.failed);
+        
+        var updatedEl = document.getElementById('job-updated');
+        if (updatedEl) updatedEl.textContent = new Date(job.updated_at).toLocaleString('zh-CN');
+        
+        updateBar(job.processed, job.total);
+        showCurrentItem(job.message);
+
+        // 检测到新的失败项时，刷新失败列表
+        if (job.failed > lastFailedCount) {
+          lastFailedCount = job.failed;
+          loadFailures();
+        }
+        
+        // AI分类任务：检测到新的分类建议时，刷新建议列表
+        if (jobType === 'ai_classify' && job.inserted > lastInsertedCount) {
+          lastInsertedCount = job.inserted;
+          loadSuggestions();
+        }
+
+        if (job.status === 'done' || job.status === 'failed' || job.status === 'canceled') {
+          if (es) {
+            es.close();
+            es = null;
+          }
+          document.getElementById('current-item').style.opacity = '0';
+          // 任务完成后刷新页面以显示完整数据
+          if (job.status === 'done') {
+            setTimeout(function() { location.reload(); }, 1000);
+          }
+        }
+      }
+      
+      // 动态加载失败项
+      function loadFailures() {
+        fetch('/api/jobs/' + jobId + '/failures?limit=20')
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            if (!data || !data.failures) return;
+            var tbody = document.getElementById('failures');
+            if (!tbody) return;
+            
+            var html = '';
+            if (data.failures.length === 0) {
+              html = '<tr><td colspan="2" class="px-3 py-4 text-center text-sm text-slate-500">暂无</td></tr>';
+            } else {
+              data.failures.forEach(function(f) {
+                html += '<tr class="failure-row">';
+                html += '<td class="px-3 py-2 text-sm text-slate-700"><div class="truncate" title="' + escapeHtml(f.input) + '">' + escapeHtml(f.input) + '</div></td>';
+                html += '<td class="px-3 py-2 text-sm text-rose-700"><div class="whitespace-pre-wrap break-words max-h-24 overflow-y-auto">' + escapeHtml(f.reason) + '</div></td>';
+                html += '</tr>';
+              });
+            }
+            tbody.innerHTML = html;
+            
+            // 更新失败项计数
+            var failureTotalEl = document.getElementById('failure-total');
+            if (failureTotalEl) failureTotalEl.textContent = data.total;
+          })
+          .catch(function() {});
+      }
+      
+      // 动态加载分类建议 - 支持分页
+      var sugPageSize = <%= suggestionPageSize %>;
+      var sugCurrentPage = <%= suggestionPage %>;
+      var sugTotalPages = <%= suggestionTotalPages %>;
+      
+      function loadSuggestions(page) {
+        if (typeof page === 'undefined') page = sugCurrentPage;
+        var limit = sugPageSize;
+        var offset = (page - 1) * limit;
+        
+        fetch('/api/ai/suggestions?limit=' + limit + '&offset=' + offset)
+          .then(function(res) { return res.json(); })
+          .then(function(data) {
+            if (!data || !data.suggestions) return;
+            var tbody = document.getElementById('suggestions');
+            if (!tbody) return;
+            
+            var html = '';
+            if (data.suggestions.length === 0) {
+              html = '<tr><td colspan="3" class="px-3 py-6 text-center text-sm text-slate-500">暂无分类建议</td></tr>';
+            } else {
+              data.suggestions.forEach(function(s) {
+                html += '<tr class="suggestion-row ' + (s.applied ? 'bg-green-50' : '') + '" data-bookmark-id="' + s.bookmark_id + '" data-category="' + encodeURIComponent(s.suggested_category) + '" data-applied="' + (s.applied ? '1' : '0') + '">';
+                html += '<td class="px-3 py-2"><div class="text-sm text-slate-700 truncate">' + escapeHtml(s.title || '') + '</div><div class="text-xs text-slate-400 truncate">' + escapeHtml(s.url || '') + '</div></td>';
+                html += '<td class="px-3 py-2"><span class="inline-block rounded ' + (s.applied ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700') + ' px-2 py-0.5 text-xs">' + escapeHtml(s.suggested_category) + '</span></td>';
+                html += '<td class="px-3 py-2">';
+                if (s.applied) {
+                  html += '<span class="text-xs text-green-600">✓ 已应用</span>';
+                } else {
+                  html += '<button class="apply-btn rounded bg-emerald-600 px-2 py-1 text-xs text-white hover:bg-emerald-700">应用</button>';
+                }
+                html += '</td></tr>';
+              });
+            }
+            tbody.innerHTML = html;
+            
+            // 更新建议计数和分页
+            var totalEl = document.getElementById('suggestion-total');
+            if (totalEl) totalEl.textContent = data.total;
+            
+            var totalPages = Math.max(1, Math.ceil(data.total / sugPageSize));
+            sugCurrentPage = page;
+            
+            var currentPageEl = document.getElementById('sug-current-page');
+            var totalPagesEl = document.getElementById('sug-total-pages');
+            if (currentPageEl) currentPageEl.textContent = page;
+            if (totalPagesEl) totalPagesEl.textContent = totalPages;
+            
+            // 更新分页按钮状态
+            var prevBtn = document.getElementById('sug-prev-btn');
+            var nextBtn = document.getElementById('sug-next-btn');
+            if (prevBtn) {
+              prevBtn.disabled = page <= 1;
+            }
+            if (nextBtn) {
+              nextBtn.disabled = page >= totalPages;
+            }
+            sugTotalPages = totalPages;
+            
+            // 重新绑定应用按钮事件
+            bindApplyButtons();
+          })
+          .catch(function() {});
+      }
+      
+      function escapeHtml(str) {
+        if (!str) return '';
+        return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      // 应用单个分类建议 - 提取为函数以便动态绑定
+      function bindApplyButtons() {
+        document.querySelectorAll('.apply-btn').forEach(function(btn) {
+          // 移除旧的事件监听器（通过克隆节点）
+          var newBtn = btn.cloneNode(true);
+          btn.parentNode.replaceChild(newBtn, btn);
+          
+          newBtn.addEventListener('click', function() {
+            var row = newBtn.closest('.suggestion-row');
+            if (row.dataset.applied === '1') return;
+            
+            var bookmarkId = row.dataset.bookmarkId;
+            var category = decodeURIComponent(row.dataset.category);
+            
+            newBtn.disabled = true;
+            newBtn.textContent = '应用中...';
+            
+            fetch('/api/ai/apply-suggestion', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify({ bookmark_id: bookmarkId, category: category })
+            }).then(function(res) {
+              return res.json();
+            }).then(function(data) {
+              if (data && data.success) {
+                // 标记为已应用，更新UI
+                row.classList.add('bg-green-50');
+                row.dataset.applied = '1';
+                var categorySpan = row.querySelector('td:nth-child(2) span');
+                if (categorySpan) {
+                  categorySpan.classList.remove('bg-blue-100', 'text-blue-700');
+                  categorySpan.classList.add('bg-green-100', 'text-green-700');
+                }
+                var actionCell = row.querySelector('td:nth-child(3)');
+                if (actionCell) {
+                  actionCell.innerHTML = '<span class="text-xs text-green-600">✓ 已应用</span>';
+                }
+              } else {
+                newBtn.disabled = false;
+                newBtn.textContent = '应用';
+                alert('应用失败：' + (data.error || '未知错误'));
+              }
+            }).catch(function() {
+              newBtn.disabled = false;
+              newBtn.textContent = '应用';
+              alert('应用失败');
+            });
+          });
+        });
+      }
+      
+      // 初始绑定
+      bindApplyButtons();
+
+      // 一键应用全部
+      var applyAllBtn = document.getElementById('apply-all-btn');
+      if (applyAllBtn) {
+        applyAllBtn.addEventListener('click', function() {
+          applyAllBtn.disabled = true;
+          applyAllBtn.textContent = '应用中...';
+          
+          fetch('/api/ai/apply-all-suggestions', {
+            method: 'POST',
+            headers: { 'Accept': 'application/json' }
+          }).then(function(res) {
+            return res.json();
+          }).then(function(data) {
+            if (data && data.success) {
+              // 更新所有行的UI
+              document.querySelectorAll('.suggestion-row').forEach(function(row) {
+                if (row.dataset.applied !== '1') {
+                  row.classList.add('bg-green-50');
+                  row.dataset.applied = '1';
+                  var categorySpan = row.querySelector('td:nth-child(2) span');
+                  if (categorySpan) {
+                    categorySpan.classList.remove('bg-blue-100', 'text-blue-700');
+                    categorySpan.classList.add('bg-green-100', 'text-green-700');
+                  }
+                  var actionCell = row.querySelector('td:nth-child(3)');
+                  if (actionCell) {
+                    actionCell.innerHTML = '<span class="text-xs text-green-600">✓ 已应用</span>';
+                  }
+                }
+              });
+              applyAllBtn.textContent = '已全部应用';
+              alert('成功应用 ' + data.applied + ' 个分类' + (data.failed > 0 ? '，失败 ' + data.failed + ' 个' : ''));
+            } else {
+              applyAllBtn.disabled = false;
+              applyAllBtn.textContent = '一键应用全部';
+              alert('批量应用失败：' + (data.error || '未知错误'));
+            }
+          }).catch(function() {
+            applyAllBtn.disabled = false;
+            applyAllBtn.textContent = '一键应用全部';
+            alert('批量应用失败');
+          });
+        });
+      }
+
+      // 取消任务
+      var cancelBtn = document.getElementById('cancel-job-btn');
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', function() {
+          cancelBtn.disabled = true;
+          cancelBtn.textContent = '取消中...';
+          
+          var jobType = '<%= job.type %>';
+          var cancelUrl = (jobType === 'ai_classify' || jobType === 'ai_simplify') ? '/api/ai/cancel' : '/api/check/cancel';
+          
+          fetch(cancelUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({ jobId: jobId })
+          }).then(function(res) {
+            return res.json();
+          }).then(function(data) {
+            if (data && data.success) {
+              location.reload();
+            } else {
+              cancelBtn.disabled = false;
+              cancelBtn.textContent = '取消任务';
+              alert('取消失败：' + (data.error || '未知错误'));
+            }
+          }).catch(function() {
+            cancelBtn.disabled = false;
+            cancelBtn.textContent = '取消任务';
+            alert('取消失败');
+          });
+        });
+      }
+
+      // 每页大小选择器
+      var sugPageSizeSelect = document.getElementById('sug-page-size');
+      if (sugPageSizeSelect) {
+        sugPageSizeSelect.addEventListener('change', function() {
+          sugPageSize = parseInt(this.value, 10) || 20;
+          sugCurrentPage = 1;
+          loadSuggestions(1);
+        });
+      }
+      
+      // 分页按钮点击事件
+      var sugPrevBtn = document.getElementById('sug-prev-btn');
+      var sugNextBtn = document.getElementById('sug-next-btn');
+      if (sugPrevBtn) {
+        sugPrevBtn.addEventListener('click', function() {
+          if (sugCurrentPage > 1) {
+            loadSuggestions(sugCurrentPage - 1);
+          }
+        });
+      }
+      if (sugNextBtn) {
+        sugNextBtn.addEventListener('click', function() {
+          if (sugCurrentPage < sugTotalPages) {
+            loadSuggestions(sugCurrentPage + 1);
+          }
+        });
+      }
+      
+      // 定时刷新分类建议（任务运行中时）
+      if (jobType === 'ai_classify' && '<%= job.status %>' === 'running') {
+        setInterval(function() {
+          loadSuggestions();
+        }, 3000);
+      }
+
+      // AI 类型精简 - 更新UI显示已应用状态
+      function markSimplifyGroupApplied(container) {
+        // 更新所有原分类span的样式
+        container.querySelectorAll('[data-old-category-id]').forEach(function(span) {
+          span.classList.remove('bg-slate-100', 'text-slate-600');
+          span.classList.add('bg-green-100', 'text-green-700');
+          span.setAttribute('data-applied', '1');
+        });
+        // 更新按钮为已应用状态
+        var btn = container.querySelector('.apply-simplify-group-btn');
+        if (btn) {
+          var parent = btn.parentElement;
+          btn.remove();
+          var appliedSpan = document.createElement('span');
+          appliedSpan.className = 'text-xs text-green-600';
+          appliedSpan.textContent = '✓ 已应用';
+          parent.appendChild(appliedSpan);
+        }
+        // 更新容器背景
+        container.classList.add('bg-green-50');
+      }
+
+      // 检查是否所有精简建议都已应用
+      function checkAllSimplifyApplied() {
+        var allApplied = true;
+        document.querySelectorAll('#simplify-suggestions > div').forEach(function(container) {
+          var unapplied = container.querySelectorAll('[data-old-category-id][data-applied="0"]');
+          if (unapplied.length > 0) allApplied = false;
+        });
+        if (allApplied) {
+          var applyAllBtn = document.getElementById('apply-all-simplify-btn');
+          if (applyAllBtn) {
+            var parent = applyAllBtn.parentElement;
+            applyAllBtn.remove();
+            var appliedSpan = document.createElement('span');
+            appliedSpan.className = 'rounded bg-green-100 px-3 py-1 text-xs font-medium text-green-700';
+            appliedSpan.textContent = '✓ 已全部应用';
+            parent.appendChild(appliedSpan);
+          }
+        }
+      }
+
+      // AI 类型精简 - 一键应用全部
+      var applyAllSimplifyBtn = document.getElementById('apply-all-simplify-btn');
+      if (applyAllSimplifyBtn) {
+        applyAllSimplifyBtn.addEventListener('click', function() {
+          if (!confirm('确定要应用所有精简建议吗？这将合并分类并移动书签。')) return;
+          applyAllSimplifyBtn.disabled = true;
+          applyAllSimplifyBtn.textContent = '应用中...';
+          fetch('/api/ai/apply-all-simplify', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({})
+          }).then(function(res) { return res.json(); }).then(function(data) {
+            if (data.success) {
+              // 更新所有分类组的UI
+              document.querySelectorAll('#simplify-suggestions > div').forEach(function(container) {
+                markSimplifyGroupApplied(container);
+              });
+              checkAllSimplifyApplied();
+            } else {
+              alert('应用失败：' + (data.error || '未知错误'));
+              applyAllSimplifyBtn.disabled = false;
+              applyAllSimplifyBtn.textContent = '一键应用全部';
+            }
+          }).catch(function() {
+            alert('应用失败');
+            applyAllSimplifyBtn.disabled = false;
+            applyAllSimplifyBtn.textContent = '一键应用全部';
+          });
+        });
+      }
+
+      // AI 类型精简 - 应用单个分类组
+      document.querySelectorAll('.apply-simplify-group-btn').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+          var container = btn.closest('.rounded-lg');
+          var oldCategorySpans = container.querySelectorAll('[data-old-category-id][data-applied="0"]');
+          
+          if (oldCategorySpans.length === 0) {
+            markSimplifyGroupApplied(container);
+            checkAllSimplifyApplied();
+            return;
+          }
+          
+          btn.disabled = true;
+          btn.textContent = '应用中...';
+          
+          // 获取该组所有未应用的原分类ID并逐个应用
+          var jobId = document.body.getAttribute('data-job-id');
+          var promises = [];
+          oldCategorySpans.forEach(function(span) {
+            var oldCategoryId = span.getAttribute('data-old-category-id');
+            if (oldCategoryId) {
+              promises.push(
+                fetch('/api/ai/apply-simplify', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+                  body: JSON.stringify({ old_category_id: parseInt(oldCategoryId, 10), job_id: jobId })
+                }).then(function(res) { return res.json(); })
+              );
+            }
+          });
+          
+          Promise.all(promises).then(function(results) {
+            var allSuccess = results.every(function(r) { return r && r.success; });
+            if (allSuccess) {
+              markSimplifyGroupApplied(container);
+              checkAllSimplifyApplied();
+            } else {
+              alert('部分应用失败');
+              btn.disabled = false;
+              btn.textContent = '应用此分类';
+            }
+          }).catch(function() {
+            alert('应用失败');
+            btn.disabled = false;
+            btn.textContent = '应用此分类';
+          });
+        });
+      });
+    </script>
+  </body>
+</html>

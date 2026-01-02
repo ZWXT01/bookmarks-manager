@@ -1,0 +1,10 @@
+node_modules
+npm-debug.log
+data
+*.db
+*.sqlite
+*.sqlite3
+.git
+.vscode
+.DS_Store
+dist

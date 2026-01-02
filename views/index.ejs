@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>书签管理器</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/public/app.css" />
+    <script src="/public/app.js" defer></script>
+    <script>
+      function statusText(status) {
+        return status === 'ok' ? '正常' : status === 'fail' ? '访问失败' : '未检查';
+      }
+    </script>
+  </head>
+  <body class="bg-slate-50 text-slate-900">
+    <div class="mx-auto max-w-7xl px-4 py-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h1 class="text-xl font-semibold">书签管理器</h1>
+          <p class="text-sm text-slate-500">轻量 · SQLite · 支持导入/导出与有效性检查</p>
+        </div>
+      </div>
+
+      <div class="mt-3 grid grid-cols-12 gap-3">
+        <div class="col-span-12 lg:col-span-8">
+          <div class="rounded-lg border bg-white p-3 shadow-sm">
+            <div class="text-sm font-semibold text-slate-700">导入书签</div>
+            <div class="mt-2 text-xs text-slate-500">支持：浏览器书签HTML（Netscape）、JSON（部分结构）、纯文本URL列表。默认按规范化URL去重并跳过重复。</div>
+            <form id="import-form" class="mt-3 flex flex-col gap-2 md:flex-row md:items-center" method="post" action="/import" enctype="multipart/form-data">
+              <input
+                class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
+                type="file"
+                name="file"
+                accept=".html,.htm,.json,.txt"
+                required
+              />
+              <label class="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" name="checkAfterImport" value="1" />
+                导入后检查
+              </label>
+              <button
+                type="submit"
+                class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+              >
+                开始导入
+              </button>
+            </form>
+          </div>
+        </div>
+        <div class="col-span-12 lg:col-span-4">
+          <div class="rounded-lg border bg-white p-3 shadow-sm">
+            <div class="text-sm font-semibold text-slate-700">工具</div>
+            <div class="mt-3 flex flex-col gap-2">
+              <a
+                class="rounded-lg border px-4 py-2 text-center text-sm font-medium text-slate-800 hover:bg-slate-50"
+                href="/export"
+              >
+                导出为浏览器书签HTML
+              </a>
+              <a
+                class="rounded-lg border px-4 py-2 text-center text-sm font-medium text-slate-800 hover:bg-slate-50"
+                href="/jobs"
+              >
+                任务列表
+              </a>
+              <form method="post" action="/check/all" class="rounded-lg border bg-slate-50 p-3">
+                <input type="hidden" name="redirect" value="<%= listUrl %>" />
+                <div class="grid grid-cols-12 gap-2">
+                  <div class="col-span-12">
+                    <label class="block text-xs font-semibold text-slate-600">检查范围</label>
+                    <select id="check-scope" name="scope" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400">
+                      <option value="all">全部</option>
+                      <option value="not_checked">仅未检查</option>
+                      <option value="failed">仅访问失败（重试）</option>
+                    </select>
+                  </div>
+                  <div class="col-span-6">
+                    <label class="block text-xs font-semibold text-slate-600">重试次数</label>
+                    <select id="check-retries" name="retries" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400">
+                      <option value="0">0</option>
+                      <option value="1">1</option>
+                      <option value="2">2</option>
+                      <option value="3">3</option>
+                      <option value="4">4</option>
+                      <option value="5">5</option>
+                    </select>
+                  </div>
+                  <div class="col-span-6">
+                    <label class="block text-xs font-semibold text-slate-600">重试间隔(ms)</label>
+                    <input
+                      id="check-retry-delay"
+                      name="retry_delay_ms"
+                      value="0"
+                      class="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div class="col-span-12">
+                    <button
+                      type="submit"
+                      class="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                    >
+                      开始检查
+                    </button>
+                  </div>
+                </div>
+              </form>
+              <div class="text-xs text-slate-500">导入/检查均为后台任务，会跳转到进度页。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <% if (msg) { %>
+      <div class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
+        <%= msg %>
+      </div>
+      <% } %>
+      <% if (err) { %>
+      <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+        <%= err %>
+      </div>
+      <% } %>
+
+      <div class="mt-4 grid grid-cols-12 gap-3">
+        <aside class="col-span-12 lg:col-span-3">
+          <div class="rounded-lg border bg-white p-3 shadow-sm">
+            <div class="flex items-center justify-between">
+              <h2 class="text-sm font-semibold text-slate-700">分类</h2>
+            </div>
+
+            <div class="mt-3 space-y-1">
+              <a
+                class="block rounded-lg px-3 py-2 text-sm hover:bg-slate-50 <%= activeCategoryId === null ? 'bg-slate-100 font-medium' : '' %>"
+                href="/<%= keyword ? '?q=' + encodeURIComponent(keyword) : '' %>"
+              >
+                全部
+                <span class="float-right text-slate-500"><%= totalCount %></span>
+              </a>
+
+              <a
+                class="block rounded-lg px-3 py-2 text-sm hover:bg-slate-50 <%= activeCategoryId === 'uncategorized' ? 'bg-slate-100 font-medium' : '' %>"
+                href="/?category=uncategorized<%= keyword ? '&q=' + encodeURIComponent(keyword) : '' %>"
+              >
+                未分类
+                <span class="float-right text-slate-500"><%= uncategorizedCount %></span>
+              </a>
+
+              <% categories.forEach(function(c) { %>
+                <div class="flex items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-slate-50 <%= activeCategoryId === c.id ? 'bg-slate-100 font-medium' : '' %>">
+                  <a class="min-w-0 flex-1 truncate" href="/?category=<%= c.id %><%= keyword ? '&q=' + encodeURIComponent(keyword) : '' %>">
+                    <%= c.name %>
+                  </a>
+                  <div class="ml-2 flex items-center gap-2">
+                    <span class="text-slate-500"><%= c.count %></span>
+                    <a class="text-xs text-slate-500 hover:text-slate-700" href="<%= editCategoryUrlPrefix %><%= c.id %>">编辑</a>
+                  </div>
+                </div>
+              <% }); %>
+            </div>
+
+            <div class="mt-3 border-t pt-3">
+              <form id="category-form" method="post" action="/categories" class="flex gap-2">
+                <input type="hidden" name="redirect" value="<%= listUrl %>" />
+                <input
+                  name="name"
+                  class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
+                  placeholder="新建分类"
+                />
+                <button
+                  type="submit"
+                  class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                >
+                  添加
+                </button>
+              </form>
+            </div>
+
+            <% if (editCategory) { %>
+              <div class="mt-4 rounded-lg border bg-slate-50 p-3">
+                <div class="text-xs font-semibold text-slate-600">编辑分类</div>
+                <form class="mt-2 flex gap-2" method="post" action="/categories/<%= editCategory.id %>/update">
+                  <input type="hidden" name="redirect" value="<%= listUrl %>" />
+                  <input
+                    name="name"
+                    value="<%= editCategory.name %>"
+                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
+                    placeholder="分类名称"
+                  />
+                  <button type="submit" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">保存</button>
+                  <a class="rounded-lg border px-3 py-2 text-sm hover:bg-white" href="<%= listUrl %>">取消</a>
+                </form>
+                <form class="mt-2" method="post" action="/categories/<%= editCategory.id %>/delete" onsubmit="return confirm('确认删除该分类？（分类下书签会变为未分类）');">
+                  <input type="hidden" name="redirect" value="<%= listUrl %>" />
+                  <button type="submit" class="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100">删除分类</button>
+                </form>
+              </div>
+            <% } %>
+          </div>
+        </aside>
+
+        <main class="col-span-12 lg:col-span-9">
+          <div class="rounded-lg border bg-white p-3 shadow-sm">
+            <div class="flex items-center justify-between">
+              <div>
+                <h2 class="text-sm font-semibold text-slate-700">书签列表</h2>
+                <p class="text-xs text-slate-500">当前：<%= selectedCategoryName %>（共 <%= totalMatches %> 条，第 <%= page %>/<%= totalPages %> 页，每页 <%= pageSize %> 条）</p>
+              </div>
+              <form method="get" action="/" class="flex items-center gap-2">
+                <% if (activeCategoryId === 'uncategorized') { %>
+                  <input type="hidden" name="category" value="uncategorized" />
+                <% } else if (typeof activeCategoryId === 'number') { %>
+                  <input type="hidden" name="category" value="<%= activeCategoryId %>" />
+                <% } %>
+                <input
+                  name="q"
+                  value="<%= keyword %>"
+                  class="w-56 rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
+                  placeholder="搜索标题/URL"
+                />
+                <button type="submit" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">搜索</button>
+                <% if (keyword) { %>
+                  <% if (activeCategoryId === null) { %>
+                    <a class="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" href="/">清除</a>
+                  <% } else if (activeCategoryId === 'uncategorized') { %>
+                    <a class="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" href="/?category=uncategorized">清除</a>
+                  <% } else { %>
+                    <a class="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" href="/?category=<%= activeCategoryId %>">清除</a>
+                  <% } %>
+                <% } %>
+              </form>
+            </div>
+
+            <div class="mt-4 rounded-lg bg-slate-50 p-3">
+              <% if (editBookmark) { %>
+              <form method="post" action="/bookmarks/<%= editBookmark.id %>/update" class="grid grid-cols-12 gap-2">
+                <input type="hidden" name="redirect" value="<%= listUrl %>" />
+                <div class="col-span-12 md:col-span-5">
+                  <input
+                    name="url"
+                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
+                    placeholder="URL（支持不带协议，默认https）"
+                    value="<%= editBookmark.url %>"
+                  />
+                </div>
+                <div class="col-span-12 md:col-span-4">
+                  <input
+                    name="title"
+                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
+                    placeholder="标题（可选）"
+                    value="<%= editBookmark.title %>"
+                  />
+                </div>
+                <div class="col-span-8 md:col-span-2">
+                  <select
+                    name="category_id"
+                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
+                  >
+                    <option value="">未分类</option>
+                    <% categories.forEach(function(c) { %>
+                      <option value="<%= c.id %>" <%= editBookmark.category_id === c.id ? 'selected' : '' %>><%= c.name %></option>
+                    <% }); %>
+                  </select>
+                </div>
+                <div class="col-span-4 md:col-span-1">
+                  <button
+                    type="submit"
+                    class="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                  >
+                    保存
+                  </button>
+                </div>
+              </form>
+              <div class="mt-2 flex items-center justify-end gap-2">
+                <a class="rounded-lg border px-3 py-2 text-sm hover:bg-white" href="<%= listUrl %>">取消编辑</a>
+                <form method="post" action="/bookmarks/<%= editBookmark.id %>/delete" onsubmit="return confirm('确认删除该书签？');">
+                  <input type="hidden" name="redirect" value="<%= listUrl %>" />
+                  <button type="submit" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100">删除</button>
+                </form>
+              </div>
+              <% } else { %>
+              <form id="bookmark-form" method="post" action="/bookmarks" class="grid grid-cols-12 gap-2">
+                <input type="hidden" name="redirect" value="<%= listUrl %>" />
+                <div class="col-span-12 md:col-span-5">
+                  <input
+                    name="url"
+                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
+                    placeholder="URL（支持不带协议，默认https）"
+                  />
+                </div>
+                <div class="col-span-12 md:col-span-4">
+                  <input
+                    name="title"
+                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
+                    placeholder="标题（可选）"
+                  />
+                </div>
+                <div class="col-span-8 md:col-span-2">
+                  <select
+                    name="category_id"
+                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
+                  >
+                    <option value="">未分类</option>
+                    <% categories.forEach(function(c) { %>
+                      <option value="<%= c.id %>"><%= c.name %></option>
+                    <% }); %>
+                  </select>
+                </div>
+                <div class="col-span-4 md:col-span-1">
+                  <button
+                    type="submit"
+                    class="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                  >
+                    添加
+                  </button>
+                </div>
+              </form>
+              <% } %>
+            </div>
+
+            <form id="check-form" method="post" action="/check">
+              <input type="hidden" name="redirect" value="<%= listUrl %>" />
+              <input id="check-form-retries" type="hidden" name="retries" value="0" />
+              <input id="check-form-retry-delay" type="hidden" name="retry_delay_ms" value="0" />
+            </form>
+
+            <div class="mt-4 flex items-center justify-between gap-2">
+                <label class="flex items-center gap-2 text-sm text-slate-700">
+                  <input id="select-all" type="checkbox" />
+                  全选当前列表
+                </label>
+                <button
+                  type="submit"
+                  form="check-form"
+                  class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                >
+                  检查选中
+                </button>
+            </div>
+
+            <div class="mt-3 overflow-hidden rounded-lg border">
+              <table class="w-full table-fixed">
+                <thead class="bg-slate-50">
+                  <tr>
+                    <th class="w-[6%] px-3 py-2 text-left text-xs font-semibold text-slate-600">选择</th>
+                    <th class="w-[40%] px-3 py-2 text-left text-xs font-semibold text-slate-600">标题 / URL</th>
+                    <th class="w-[16%] px-3 py-2 text-left text-xs font-semibold text-slate-600">分类</th>
+                    <th class="w-[18%] px-3 py-2 text-left text-xs font-semibold text-slate-600">检查状态</th>
+                    <th class="w-[14%] px-3 py-2 text-left text-xs font-semibold text-slate-600">创建时间</th>
+                    <th class="w-[6%] px-3 py-2 text-left text-xs font-semibold text-slate-600">操作</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y">
+                  <% if (!bookmarks.length) { %>
+                    <tr>
+                      <td colspan="6" class="px-3 py-8 text-center text-sm text-slate-500">暂无书签</td>
+                    </tr>
+                  <% } %>
+
+                  <% bookmarks.forEach(function(b) { %>
+                    <tr class="hover:bg-slate-50">
+                      <td class="px-3 py-3 align-top">
+                        <input class="bookmark-select" type="checkbox" form="check-form" name="bookmark_ids" value="<%= b.id %>" />
+                      </td>
+                      <td class="px-3 py-3 align-top">
+                        <div class="truncate text-sm font-medium text-slate-900">
+                          <a class="hover:underline" href="<%= b.url %>" target="_blank" rel="noreferrer"><%= b.title %></a>
+                        </div>
+                        <div class="truncate text-xs text-slate-500"><%= b.url %></div>
+                      </td>
+                      <td class="px-3 py-3 align-top text-sm text-slate-700">
+                        <%= b.category_name || '未分类' %>
+                      </td>
+                      <td class="px-3 py-3 align-top text-sm">
+                        <div class="text-slate-700"><script>document.write(statusText('<%= b.check_status %>'));</script></div>
+                        <% if (b.check_http_code) { %>
+                          <div class="text-xs text-slate-500">HTTP <%= b.check_http_code %></div>
+                        <% } %>
+                        <% if (b.check_error) { %>
+                          <div class="text-xs text-rose-600"><%= b.check_error %></div>
+                        <% } %>
+                      </td>
+                      <td class="px-3 py-3 align-top text-sm text-slate-700">
+                        <%= new Date(b.created_at).toLocaleString('zh-CN') %>
+                      </td>
+                      <td class="px-3 py-3 align-top text-sm">
+                        <div class="flex items-center gap-2">
+                          <a class="text-xs text-slate-500 hover:text-slate-700" href="<%= editBookmarkUrlPrefix %><%= b.id %>">编辑</a>
+                          <form method="post" action="/bookmarks/<%= b.id %>/delete" onsubmit="return confirm('确认删除该书签？');">
+                            <input type="hidden" name="redirect" value="<%= listUrl %>" />
+                            <button type="submit" class="text-xs text-rose-700 hover:underline">删除</button>
+                          </form>
+                        </div>
+                      </td>
+                    </tr>
+                  <% }); %>
+                </tbody>
+              </table>
+
+              <div class="border-t bg-white px-3 py-3">
+                <div class="flex items-center justify-between">
+                  <div class="text-xs text-slate-500">共 <%= totalMatches %> 条</div>
+                  <div class="flex items-center gap-2">
+                    <% if (page > 1) { %>
+                      <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50" href="<%= pageUrlPrefix %><%= page - 1 %>">上一页</a>
+                    <% } else { %>
+                      <span class="rounded-lg border px-3 py-1 text-sm text-slate-400">上一页</span>
+                    <% } %>
+
+                    <span class="text-sm text-slate-700">第 <%= page %>/<%= totalPages %> 页</span>
+
+                    <% if (page < totalPages) { %>
+                      <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50" href="<%= pageUrlPrefix %><%= page + 1 %>">下一页</a>
+                    <% } else { %>
+                      <span class="rounded-lg border px-3 py-1 text-sm text-slate-400">下一页</span>
+                    <% } %>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var selectAll = document.getElementById('select-all');
+        if (!selectAll) return;
+
+        function getBoxes() {
+          return Array.prototype.slice.call(document.querySelectorAll('.bookmark-select'));
+        }
+
+        selectAll.addEventListener('change', function () {
+          var boxes = getBoxes();
+          for (var i = 0; i < boxes.length; i++) {
+            boxes[i].checked = selectAll.checked;
+          }
+        });
+
+        var retriesEl = document.getElementById('check-retries');
+        var retryDelayEl = document.getElementById('check-retry-delay');
+        var formRetries = document.getElementById('check-form-retries');
+        var formRetryDelay = document.getElementById('check-form-retry-delay');
+
+        function syncRetryOptions() {
+          if (retriesEl && formRetries) formRetries.value = retriesEl.value;
+          if (retryDelayEl && formRetryDelay) formRetryDelay.value = retryDelayEl.value;
+        }
+
+        if (retriesEl) retriesEl.addEventListener('change', syncRetryOptions);
+        if (retryDelayEl) retryDelayEl.addEventListener('change', syncRetryOptions);
+        syncRetryOptions();
+      })();
+    </script>
+  </body>
+</html>

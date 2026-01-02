@@ -1,0 +1,19 @@
+services:
+  app:
+    build: .
+    container_name: bookmarks-manager
+    restart: unless-stopped
+    environment:
+      - PORT=8080
+      - DB_PATH=/data/app.db
+      - CHECK_CONCURRENCY=10
+      - CHECK_TIMEOUT_MS=8000
+      - CHECK_RETRIES=0
+      - CHECK_RETRY_DELAY_MS=0
+      - AUTH_USERNAME=admin
+      - AUTH_PASSWORD=admin
+      - SESSION_SECRET=change-this-secret-in-production
+    volumes:
+      - ./data:/data
+    ports:
+      - "127.0.0.1:8080:8080"
