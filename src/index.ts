@@ -340,24 +340,8 @@ async function main(): Promise<void> {
 
   setJobQueueLogger(app.log);
 
-  // CORS 支持（用于浏览器扩展）
-  app.addHook('onRequest', async (req, reply) => {
-    const origin = req.headers.origin;
-    if (origin) {
-      reply.header('Access-Control-Allow-Origin', origin);
-      reply.header('Access-Control-Allow-Credentials', 'true');
-      reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    }
-    if (req.method === 'OPTIONS') {
-      return reply.status(204).send();
-    }
-  });
-
-  // API Token 认证
-  const staticApiToken = process.env.API_TOKEN || '';
-  
   // 定期清理过期的 API Tokens（每小时）
+  const staticApiToken = process.env.API_TOKEN || '';
   setInterval(() => {
     try {
       const cleaned = cleanupExpiredTokens(db);
@@ -368,14 +352,27 @@ async function main(): Promise<void> {
       app.log.warn({ err: e }, 'failed to cleanup expired API tokens');
     }
   }, 60 * 60 * 1000);
-  
-  app.addHook('preHandler', async (req, reply) => {
+
+  // CORS 支持 + API Token 认证（合并到 onRequest）
+  app.addHook('onRequest', async (req, reply) => {
+    // CORS headers
+    const origin = req.headers.origin;
+    if (origin) {
+      reply.header('Access-Control-Allow-Origin', origin);
+      reply.header('Access-Control-Allow-Credentials', 'true');
+      reply.header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
+      reply.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    }
+    if (req.method === 'OPTIONS') {
+      return reply.status(204).send();
+    }
+
     // 跳过静态资源和登录页面
     if (req.url.startsWith('/public/') || req.url === '/login' || req.url === '/favicon.ico') {
       return;
     }
     
-    // 检查 Authorization header
+    // 检查 Authorization header 进行 API Token 认证
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.slice(7);
@@ -394,20 +391,22 @@ async function main(): Promise<void> {
         return;
       }
       
-      // Token 无效或已过期
-      if (tokenResult.expired) {
-        return reply.code(401).send({ error: 'API token has expired' });
+      // Token 无效或已过期 - 对于 API 请求直接返回错误
+      if (req.url.startsWith('/api/')) {
+        if (tokenResult.expired) {
+          return reply.code(401).send({ error: 'API token has expired' });
+        }
+        return reply.code(401).send({ error: 'Invalid API token' });
       }
     }
     
-    // 如果是 API 请求且没有 session，返回 401
+    // 对于 API 请求，如果没有有效 Token 且没有 session，返回 401
     if (req.url.startsWith('/api/') && !req.session?.authenticated) {
-      if (authHeader) {
-        return reply.code(401).send({ error: 'Invalid API token' });
-      }
-      // 没有 token 也没有 session，返回需要认证
       return reply.code(401).send({ error: 'Authentication required' });
     }
+
+    // 非 API 请求走正常的 session 认证
+    checkAuth(req, reply);
   });
 
   await app.register(cookie);
@@ -560,13 +559,6 @@ async function main(): Promise<void> {
       req.log.error({ err: e }, 'failed to delete API token');
       return reply.code(500).send({ error: '删除 Token 失败' });
     }
-  });
-
-  app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
-    if (req.url.startsWith('/login') || req.url.startsWith('/public/')) {
-      return;
-    }
-    checkAuth(req, reply);
   });
 
   app.get('/settings', async (req: FastifyRequest, reply: FastifyReply) => {
