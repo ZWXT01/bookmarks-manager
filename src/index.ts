@@ -353,9 +353,8 @@ async function main(): Promise<void> {
     }
   }, 60 * 60 * 1000);
 
-  // CORS 支持 + API Token 认证（合并到 onRequest）
+  // CORS 支持（在所有请求之前）
   app.addHook('onRequest', async (req, reply) => {
-    // CORS headers
     const origin = req.headers.origin;
     if (origin) {
       reply.header('Access-Control-Allow-Origin', origin);
@@ -366,7 +365,32 @@ async function main(): Promise<void> {
     if (req.method === 'OPTIONS') {
       return reply.status(204).send();
     }
+  });
 
+  await app.register(cookie);
+  await app.register(session, {
+    secret: process.env.SESSION_SECRET || 'a-very-secret-key-change-in-production',
+    cookie: {
+      secure: false,
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+    },
+  });
+
+  await app.register(formbody);
+  await app.register(multipart);
+
+  await app.register(view, {
+    engine: { ejs },
+    root: path.join(__dirname, '..', 'views'),
+  });
+
+  await app.register(fastifyStatic, {
+    root: path.join(__dirname, '..', 'public'),
+    prefix: '/public/',
+  });
+
+  // API Token 认证 + Session 认证（在 session 插件注册之后）
+  app.addHook('preHandler', async (req, reply) => {
     // 跳过静态资源和登录页面
     if (req.url.startsWith('/public/') || req.url === '/login' || req.url === '/favicon.ico') {
       return;
@@ -405,30 +429,10 @@ async function main(): Promise<void> {
       return reply.code(401).send({ error: 'Authentication required' });
     }
 
-    // 非 API 请求走正常的 session 认证
-    checkAuth(req, reply);
-  });
-
-  await app.register(cookie);
-  await app.register(session, {
-    secret: process.env.SESSION_SECRET || 'a-very-secret-key-change-in-production',
-    cookie: {
-      secure: false,
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-    },
-  });
-
-  await app.register(formbody);
-  await app.register(multipart);
-
-  await app.register(view, {
-    engine: { ejs },
-    root: path.join(__dirname, '..', 'views'),
-  });
-
-  await app.register(fastifyStatic, {
-    root: path.join(__dirname, '..', 'public'),
-    prefix: '/public/',
+    // 非 API 请求走正常的 session 认证（重定向到登录页）
+    if (!req.session?.authenticated) {
+      return reply.redirect('/login');
+    }
   });
 
   app.get('/login', async (req: FastifyRequest, reply: FastifyReply) => {
