@@ -24,10 +24,12 @@
 
 ### 安全特性
 - **用户认证**：内置登录系统，支持密码修改
+- **API Token**：支持生成多个 API Token，用于浏览器扩展和第三方应用
 - **IP 锁定**：10次登录失败后锁定 IP 30分钟
 - **Session 管理**：安全的会话管理
 
 ### 其他特性
+- **浏览器扩展**：一键添加当前页面为书签
 - **任务队列**：后台任务处理，支持取消
 - **实时进度**：SSE 实时显示任务进度
 - **自动备份**：定时备份数据库
@@ -39,14 +41,13 @@
 
 ```bash
 # 克隆项目
-git clone <repository-url>
-cd bookmarks_manager
+git clone https://github.com/ZWXT01/bookmarks-manager.git
+cd bookmarks-manager
 
 # 启动服务
 docker compose up -d --build
 
-# 访问
-# http://localhost:8080
+# 访问 http://localhost:8080
 # 默认账号：admin / admin
 ```
 
@@ -72,7 +73,7 @@ npm start
 | 变量 | 说明 | 默认值 |
 |------|------|--------|
 | `PORT` | 监听端口 | `8080` |
-| `DB_PATH` | SQLite 文件路径 | `/data/app.db` |
+| `DB_PATH` | SQLite 文件路径 | `./data/app.db` |
 | `SESSION_SECRET` | Session 密钥 | 随机生成 |
 
 ### 认证配置
@@ -80,6 +81,7 @@ npm start
 |------|------|--------|
 | `AUTH_USERNAME` | 默认用户名 | `admin` |
 | `AUTH_PASSWORD` | 默认密码 | `admin` |
+| `API_TOKEN` | 静态 API Token（可选） | - |
 
 ### 检查配置
 | 变量 | 说明 | 默认值 |
@@ -102,16 +104,72 @@ npm start
 | `BACKUP_ENABLED` | 启用自动备份 | `0` |
 | `BACKUP_INTERVAL_MINUTES` | 备份间隔(分钟) | `1440` |
 | `BACKUP_RETENTION` | 保留份数 | `10` |
-| `BACKUP_DIR` | 备份目录 | `./backups` |
+| `BACKUP_DIR` | 备份目录 | `./data/backups` |
+
+## 🔑 API Token
+
+API Token 用于浏览器扩展或第三方应用访问 API，无需 Cookie 认证。
+
+### 生成 Token
+
+1. 登录 Web 管理界面
+2. 进入「设置」页面
+3. 在「API Tokens」部分点击「创建 Token」
+4. 输入名称，选择有效期（可选）
+5. **立即复制并保存 Token**（只显示一次）
+
+### 使用 Token
+
+在 API 请求中添加 Authorization 头：
+
+```bash
+curl -H "Authorization: Bearer YOUR_TOKEN" \
+  https://your-domain.com/api/bookmarks
+```
+
+### Token 管理
+
+- 支持创建多个 Token，分别用于不同应用
+- 可设置有效期：7天 / 30天 / 90天 / 1年 / 永不过期
+- 可随时删除不再使用的 Token
+- 系统自动清理过期 Token
+
+## 🔌 浏览器扩展
+
+项目包含浏览器扩展，支持一键添加当前页面到书签管理器。
+
+### 安装扩展
+
+1. 打开浏览器扩展管理页面
+   - Chrome: `chrome://extensions/`
+   - Edge: `edge://extensions/`
+   - Firefox: `about:addons`
+2. 开启「开发者模式」
+3. 点击「加载已解压的扩展程序」
+4. 选择项目中的 `extension` 文件夹
+
+### 配置扩展
+
+1. 点击扩展图标，展开「⚙️ 设置」
+2. 输入服务器地址（如 `https://bookmarks.example.com`）
+3. 输入 API Token（在 Web 设置页面生成）
+4. 点击「保存设置」
+
+### 使用扩展
+
+1. 浏览任意网页
+2. 点击扩展图标
+3. 选择分类（可选）
+4. 点击「保存书签」
 
 ## 📁 项目结构
 
 ```
-bookmarks_manager/
+bookmarks-manager/
 ├── src/                    # TypeScript 源码
 │   ├── index.ts           # 主入口，路由定义
 │   ├── db.ts              # 数据库初始化
-│   ├── auth.ts            # 认证模块
+│   ├── auth.ts            # 认证模块（含 API Token）
 │   ├── checker.ts         # 书签检查器
 │   ├── importer.ts        # 导入模块
 │   ├── exporter.ts        # 导出模块
@@ -121,53 +179,63 @@ bookmarks_manager/
 │   └── ai-simplify-job.ts # AI 精简任务
 ├── views/                  # EJS 模板
 ├── public/                 # 静态资源
+├── extension/              # 浏览器扩展
 ├── data/                   # 数据目录（Docker 挂载）
 ├── Dockerfile
 ├── docker-compose.yml
 └── package.json
 ```
 
-## 🔌 浏览器扩展
+## 🔧 API 接口
 
-项目包含一个浏览器扩展，支持一键添加当前页面到书签管理器。
+所有 API 接口需要认证（Session 或 API Token）。
 
-### 安装扩展
-
-1. 打开浏览器扩展管理页面（`chrome://extensions/` 或 `edge://extensions/`）
-2. 开启"开发者模式"
-3. 点击"加载已解压的扩展程序"
-4. 选择 `extension` 文件夹
-
-### 生成图标
+### 认证方式
 
 ```bash
-cd extension
-chmod +x generate-icons.sh
-./generate-icons.sh
+# 方式1：API Token（推荐用于扩展和脚本）
+curl -H "Authorization: Bearer YOUR_TOKEN" https://your-domain.com/api/bookmarks
+
+# 方式2：Session Cookie（Web 界面使用）
 ```
 
-### 配置扩展
+### 书签管理
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/bookmarks` | 获取书签列表（支持搜索筛选） |
+| POST | `/api/bookmarks` | 添加书签 |
+| PUT | `/api/bookmarks/:id` | 更新书签 |
+| DELETE | `/api/bookmarks/:id` | 删除书签 |
 
-1. 点击扩展图标
-2. 展开"⚙️ 设置"
-3. 输入服务器地址（如 `http://localhost:8080`）
-4. 可选：输入 API Token
+### 分类管理
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/categories` | 获取分类列表 |
+| POST | `/api/categories` | 添加分类 |
+| PUT | `/api/categories/:id` | 更新分类 |
+| DELETE | `/api/categories/:id` | 删除分类 |
 
-详细说明请参考 `extension/README.md`
+### Token 管理
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| GET | `/api/tokens` | 获取 Token 列表 |
+| POST | `/api/tokens` | 创建新 Token |
+| DELETE | `/api/tokens/:id` | 删除 Token |
+
+### 检查功能
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/check/start` | 开始批量检查 |
+| POST | `/api/check/one/:id` | 检查单个书签 |
+
+### AI 功能
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/ai/classify` | AI 分类 |
+| POST | `/api/ai/simplify` | AI 精简分类 |
+| POST | `/api/ai/apply-simplify` | 应用精简建议 |
 
 ## 🔍 高级搜索
-
-书签列表支持多种搜索和筛选方式：
-
-### 搜索功能
-- **多关键词搜索**：空格分隔多个关键词，同时匹配标题和 URL
-- **检查状态筛选**：全部/未检查/正常/访问失败
-- **忽略检查筛选**：全部/已忽略/未忽略
-- **日期范围筛选**：按创建时间筛选
-- **域名筛选**：按域名过滤书签
-- **排序选项**：按 ID/标题/创建时间/检查时间 升序/降序
-
-### API 参数
 
 `GET /api/bookmarks` 支持以下查询参数：
 
@@ -175,60 +243,31 @@ chmod +x generate-icons.sh
 |------|------|------|
 | `q` | 搜索关键词（空格分隔） | `github python` |
 | `category` | 分类 ID 或 `uncategorized` | `1` |
-| `status` | 检查状态 | `ok`/`fail`/`not_checked` |
-| `skip_check` | 忽略检查 | `1`/`0` |
+| `status` | 检查状态 | `ok` / `fail` / `not_checked` |
+| `skip_check` | 忽略检查 | `1` / `0` |
 | `date_from` | 开始日期 | `2024-01-01` |
 | `date_to` | 结束日期 | `2024-12-31` |
 | `domain` | 域名筛选 | `github.com` |
-| `sort` | 排序字段 | `id`/`title`/`created_at`/`last_checked_at` |
-| `order` | 排序方向 | `asc`/`desc` |
+| `sort` | 排序字段 | `id` / `title` / `created_at` |
+| `order` | 排序方向 | `asc` / `desc` |
 | `page` | 页码 | `1` |
 | `pageSize` | 每页数量 | `50` |
-
-## 🔧 API 接口
-
-### 书签管理
-- `GET /api/bookmarks` - 获取书签列表（支持高级搜索）
-- `POST /api/bookmarks` - 添加书签
-- `PUT /api/bookmarks/:id` - 更新书签
-- `DELETE /api/bookmarks/:id` - 删除书签
-- `PATCH /api/bookmarks/:id/status` - 更新检查状态
-- `PATCH /api/bookmarks/:id/skip-check` - 切换忽略检查
-
-### 分类管理
-- `GET /api/categories` - 获取分类列表
-- `POST /api/categories` - 添加分类
-- `PUT /api/categories/:id` - 更新分类
-- `DELETE /api/categories/:id` - 删除分类
-
-### 检查功能
-- `POST /api/check/start` - 开始批量检查
-- `POST /api/check/one/:id` - 检查单个书签
-
-### AI 功能
-- `POST /api/ai/classify` - AI 分类
-- `POST /api/ai/simplify` - AI 精简分类
-- `POST /api/ai/apply-simplify` - 应用精简建议
-
-### 任务管理
-- `GET /api/jobs` - 获取任务列表
-- `GET /api/jobs/:id` - 获取任务详情
-- `DELETE /api/jobs/:id` - 删除任务
-- `POST /api/jobs/clear` - 清理已完成任务
 
 ## 🔒 安全建议
 
 ### 生产环境部署
-1. **修改默认密码**：首次登录后立即修改默认密码
+
+1. **修改默认密码**：首次登录后立即修改
 2. **使用 HTTPS**：通过 Nginx 反向代理配置 SSL
-3. **限制访问**：配置 IP 白名单或 VPN 访问
+3. **限制访问**：配置 IP 白名单或 VPN
 4. **定期备份**：启用自动备份功能
+5. **Token 管理**：定期清理不用的 Token，设置合理有效期
 
 ### Nginx 反向代理配置
 
 ```nginx
 server {
-    listen 443 ssl;
+    listen 443 ssl http2;
     server_name bookmarks.example.com;
 
     ssl_certificate /path/to/cert.pem;
@@ -252,41 +291,50 @@ server {
 ## 📦 数据备份与迁移
 
 ### 手动备份
+
 ```bash
-# 停止容器
-docker compose down
+# Docker 部署
+docker compose exec app sqlite3 /data/app.db ".backup '/data/backup.db'"
 
-# 复制数据库文件
-cp ./data/app.db ./backup/app.db.$(date +%Y%m%d)
-
-# 重新启动
-docker compose up -d
+# 或直接复制
+cp ./data/app.db ./data/app.db.backup
 ```
 
 ### 数据迁移
+
 ```bash
 # 在新服务器上
 mkdir -p ./data
-cp /path/to/backup/app.db ./data/app.db
+scp old-server:/path/to/data/app.db ./data/
 docker compose up -d
 ```
 
 ## 🐛 常见问题
 
+### 扩展显示「网络错误」
+
+1. 检查服务器地址是否正确（包含 `https://`）
+2. 确认 API Token 已正确配置
+3. 检查服务器是否正常运行
+4. 查看浏览器控制台错误信息
+
 ### SSE 进度不刷新
-如果任务进度页面不实时更新，通常是 Nginx 缓冲导致：
-- 添加 `proxy_buffering off;`
-- 添加 `X-Accel-Buffering: no` 响应头（程序已设置）
+
+Nginx 缓冲导致，添加配置：
+```nginx
+proxy_buffering off;
+```
 
 ### 检查失败率高
-1. 增加超时时间：`CHECK_TIMEOUT_MS=10000`
-2. 增加重试次数：`CHECK_RETRIES=2`
-3. 降低并发数：`CHECK_CONCURRENCY=10`
-4. 对特定书签设置"忽略检查"
+
+1. 增加超时：`CHECK_TIMEOUT_MS=10000`
+2. 增加重试：`CHECK_RETRIES=2`
+3. 降低并发：`CHECK_CONCURRENCY=10`
 
 ### AI 分类不工作
+
 1. 检查 AI 配置（Base URL、API Key、Model）
-2. 使用设置页面的"测试连接"功能
+2. 使用设置页面的「测试连接」功能
 3. 确保 API 配额充足
 
 ## 📄 许可证
