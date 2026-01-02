@@ -17,7 +17,7 @@ import ejs from 'ejs';
 import Fastify, { FastifyReply, FastifyRequest } from 'fastify';
 import iconv from 'iconv-lite';
 
-import { checkAuth, validateCredentials, initUserTable, changePassword, getUserInfo, getClientIp } from './auth';
+import { checkAuth, validateCredentials, initUserTable, changePassword, getUserInfo, getClientIp, createApiToken, listApiTokens, deleteApiToken, validateApiToken, cleanupExpiredTokens } from './auth';
 
 import { openDb } from './db';
 import { canonicalizeUrl } from './url';
@@ -355,7 +355,20 @@ async function main(): Promise<void> {
   });
 
   // API Token 认证
-  const apiToken = process.env.API_TOKEN || '';
+  const staticApiToken = process.env.API_TOKEN || '';
+  
+  // 定期清理过期的 API Tokens（每小时）
+  setInterval(() => {
+    try {
+      const cleaned = cleanupExpiredTokens(db);
+      if (cleaned > 0) {
+        app.log.info({ count: cleaned }, 'cleaned up expired API tokens');
+      }
+    } catch (e) {
+      app.log.warn({ err: e }, 'failed to cleanup expired API tokens');
+    }
+  }, 60 * 60 * 1000);
+  
   app.addHook('preHandler', async (req, reply) => {
     // 跳过静态资源和登录页面
     if (req.url.startsWith('/public/') || req.url === '/login' || req.url === '/favicon.ico') {
@@ -366,10 +379,24 @@ async function main(): Promise<void> {
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       const token = authHeader.slice(7);
-      if (apiToken && token === apiToken) {
-        // Token 认证成功
+      
+      // 先检查静态 Token（环境变量）
+      if (staticApiToken && token === staticApiToken) {
         (req as any).apiTokenAuth = true;
         return;
+      }
+      
+      // 再检查数据库中的动态 Token
+      const tokenResult = validateApiToken(db, token);
+      if (tokenResult.valid) {
+        (req as any).apiTokenAuth = true;
+        (req as any).apiTokenId = tokenResult.tokenId;
+        return;
+      }
+      
+      // Token 无效或已过期
+      if (tokenResult.expired) {
+        return reply.code(401).send({ error: 'API token has expired' });
       }
     }
     
@@ -470,6 +497,68 @@ async function main(): Promise<void> {
       return reply.send(info);
     }
     return reply.send({ username });
+  });
+
+  // ==================== API Token 管理 ====================
+  
+  // 列出所有 API Tokens
+  app.get('/api/tokens', async (req: FastifyRequest, reply: FastifyReply) => {
+    try {
+      const tokens = listApiTokens(db);
+      return reply.send({ tokens });
+    } catch (e: any) {
+      req.log.error({ err: e }, 'failed to list API tokens');
+      return reply.code(500).send({ error: '获取 Token 列表失败' });
+    }
+  });
+
+  // 创建新的 API Token
+  app.post('/api/tokens', async (req: FastifyRequest, reply: FastifyReply) => {
+    const body = req.body as any;
+    const name = (body.name || '').trim();
+    const expiresInDays = toInt(body.expires_in_days);
+
+    if (!name) {
+      return reply.code(400).send({ error: 'Token 名称不能为空' });
+    }
+
+    try {
+      const result = createApiToken(db, name, expiresInDays || undefined);
+      req.log.info({ tokenId: result.id, name }, 'API token created');
+      return reply.send({
+        success: true,
+        token: result.token,
+        id: result.id,
+        prefix: result.prefix,
+        message: '请立即保存此 Token，它只会显示一次！',
+      });
+    } catch (e: any) {
+      req.log.error({ err: e }, 'failed to create API token');
+      return reply.code(400).send({ error: e.message || '创建 Token 失败' });
+    }
+  });
+
+  // 删除 API Token
+  app.delete('/api/tokens/:id', async (req: FastifyRequest, reply: FastifyReply) => {
+    const params = req.params as any;
+    const id = toInt(params.id);
+
+    if (id === null) {
+      return reply.code(400).send({ error: '无效的 Token ID' });
+    }
+
+    try {
+      const deleted = deleteApiToken(db, id);
+      if (deleted) {
+        req.log.info({ tokenId: id }, 'API token deleted');
+        return reply.send({ success: true });
+      } else {
+        return reply.code(404).send({ error: 'Token 不存在' });
+      }
+    } catch (e: any) {
+      req.log.error({ err: e }, 'failed to delete API token');
+      return reply.code(500).send({ error: '删除 Token 失败' });
+    }
   });
 
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
@@ -654,6 +743,50 @@ async function main(): Promise<void> {
           <button id="change-password-btn" type="button" class="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">修改密码</button>
         </div>
         <div class="mt-3 text-xs text-slate-500">密码错误10次后账号将被锁定15分钟。</div>
+      </div>
+
+      <div class="mt-2 rounded-lg border bg-white p-3 shadow-sm">
+        <div class="flex items-center justify-between">
+          <div class="text-sm font-semibold text-slate-700">API Tokens</div>
+          <button id="create-token-btn" type="button" class="rounded border px-3 py-1 text-xs hover:bg-slate-50">创建 Token</button>
+        </div>
+        <div class="mt-3 text-xs text-slate-500">API Tokens 用于浏览器扩展或第三方应用访问 API。Token 只在创建时显示一次，请妥善保存。</div>
+        <div id="token-list" class="mt-3">
+          <div class="text-xs text-slate-400">加载中...</div>
+        </div>
+        <div id="new-token-display" class="mt-3 hidden rounded border border-emerald-200 bg-emerald-50 p-3">
+          <div class="text-xs font-semibold text-emerald-700">新 Token 已创建（仅显示一次）：</div>
+          <div class="mt-2 flex items-center gap-2">
+            <input id="new-token-value" type="text" readonly class="flex-1 rounded border bg-white px-3 py-2 font-mono text-xs" />
+            <button id="copy-token-btn" type="button" class="rounded border px-3 py-2 text-xs hover:bg-white">复制</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="create-token-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+        <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+          <div class="text-sm font-semibold text-slate-700">创建 API Token</div>
+          <div class="mt-3 space-y-3">
+            <label class="block">
+              <div class="text-xs text-slate-600">Token 名称</div>
+              <input id="token-name" type="text" placeholder="例如：浏览器扩展" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+            </label>
+            <label class="block">
+              <div class="text-xs text-slate-600">有效期</div>
+              <select id="token-expires" class="mt-1 w-full rounded border px-3 py-2 text-sm">
+                <option value="">永不过期</option>
+                <option value="7">7 天</option>
+                <option value="30">30 天</option>
+                <option value="90">90 天</option>
+                <option value="365">1 年</option>
+              </select>
+            </label>
+          </div>
+          <div class="mt-4 flex justify-end gap-2">
+            <button id="cancel-token-btn" type="button" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+            <button id="confirm-token-btn" type="button" class="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">创建</button>
+          </div>
+        </div>
       </div>
 
       <div class="mt-2 rounded-lg border bg-white p-3 shadow-sm">
@@ -914,6 +1047,154 @@ async function main(): Promise<void> {
             }
           });
         }
+
+        // ==================== API Token 管理 ====================
+        var tokenList = document.getElementById('token-list');
+        var createTokenBtn = document.getElementById('create-token-btn');
+        var createTokenModal = document.getElementById('create-token-modal');
+        var cancelTokenBtn = document.getElementById('cancel-token-btn');
+        var confirmTokenBtn = document.getElementById('confirm-token-btn');
+        var tokenNameInput = document.getElementById('token-name');
+        var tokenExpiresSelect = document.getElementById('token-expires');
+        var newTokenDisplay = document.getElementById('new-token-display');
+        var newTokenValue = document.getElementById('new-token-value');
+        var copyTokenBtn = document.getElementById('copy-token-btn');
+
+        function formatDate(dateStr) {
+          if (!dateStr) return '-';
+          var d = new Date(dateStr);
+          return d.toLocaleDateString('zh-CN') + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+        }
+
+        async function loadTokens() {
+          if (!tokenList) return;
+          try {
+            var res = await fetch('/api/tokens');
+            var data = await res.json();
+            if (data.tokens && data.tokens.length > 0) {
+              var html = '<div class="overflow-hidden rounded border"><table class="w-full"><thead class="bg-slate-50"><tr>';
+              html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">名称</th>';
+              html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">Token</th>';
+              html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">创建时间</th>';
+              html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">最后使用</th>';
+              html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">过期时间</th>';
+              html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">操作</th>';
+              html += '</tr></thead><tbody class="divide-y">';
+              for (var i = 0; i < data.tokens.length; i++) {
+                var t = data.tokens[i];
+                var isExpired = t.expires_at && new Date(t.expires_at) < new Date();
+                html += '<tr class="' + (isExpired ? 'bg-rose-50' : '') + '">';
+                html += '<td class="px-3 py-2 text-xs text-slate-700">' + t.name + '</td>';
+                html += '<td class="px-3 py-2 font-mono text-xs text-slate-500">' + t.token_prefix + '</td>';
+                html += '<td class="px-3 py-2 text-xs text-slate-500">' + formatDate(t.created_at) + '</td>';
+                html += '<td class="px-3 py-2 text-xs text-slate-500">' + formatDate(t.last_used_at) + '</td>';
+                html += '<td class="px-3 py-2 text-xs ' + (isExpired ? 'text-rose-600' : 'text-slate-500') + '">' + (t.expires_at ? formatDate(t.expires_at) + (isExpired ? ' (已过期)' : '') : '永不过期') + '</td>';
+                html += '<td class="px-3 py-2"><button data-token-id="' + t.id + '" class="delete-token-btn rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 hover:bg-rose-50">删除</button></td>';
+                html += '</tr>';
+              }
+              html += '</tbody></table></div>';
+              tokenList.innerHTML = html;
+
+              // 绑定删除按钮事件
+              var deleteBtns = tokenList.querySelectorAll('.delete-token-btn');
+              deleteBtns.forEach(function(btn) {
+                btn.addEventListener('click', async function() {
+                  var tokenId = this.getAttribute('data-token-id');
+                  if (!confirm('确定要删除此 Token 吗？删除后使用此 Token 的应用将无法访问 API。')) return;
+                  try {
+                    var res = await fetch('/api/tokens/' + tokenId, { method: 'DELETE' });
+                    if (res.ok) {
+                      showToast('Token 已删除', 'success');
+                      loadTokens();
+                    } else {
+                      var data = await res.json().catch(function() { return null; });
+                      showToast((data && data.error) || '删除失败', 'error');
+                    }
+                  } catch {
+                    showToast('删除失败', 'error');
+                  }
+                });
+              });
+            } else {
+              tokenList.innerHTML = '<div class="text-xs text-slate-400">暂无 API Token</div>';
+            }
+          } catch {
+            tokenList.innerHTML = '<div class="text-xs text-rose-500">加载失败</div>';
+          }
+        }
+
+        if (createTokenBtn && createTokenModal) {
+          createTokenBtn.addEventListener('click', function() {
+            createTokenModal.classList.remove('hidden');
+            createTokenModal.classList.add('flex');
+            if (tokenNameInput) tokenNameInput.value = '';
+            if (tokenExpiresSelect) tokenExpiresSelect.value = '';
+            if (newTokenDisplay) newTokenDisplay.classList.add('hidden');
+          });
+        }
+
+        if (cancelTokenBtn && createTokenModal) {
+          cancelTokenBtn.addEventListener('click', function() {
+            createTokenModal.classList.add('hidden');
+            createTokenModal.classList.remove('flex');
+          });
+        }
+
+        if (confirmTokenBtn) {
+          confirmTokenBtn.addEventListener('click', async function() {
+            var name = tokenNameInput ? tokenNameInput.value.trim() : '';
+            var expires = tokenExpiresSelect ? tokenExpiresSelect.value : '';
+            
+            if (!name) {
+              showToast('请输入 Token 名称', 'error');
+              return;
+            }
+
+            confirmTokenBtn.disabled = true;
+            confirmTokenBtn.textContent = '创建中...';
+
+            try {
+              var body = { name: name };
+              if (expires) body.expires_in_days = parseInt(expires, 10);
+              
+              var res = await fetch('/api/tokens', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body)
+              });
+              var data = await res.json();
+              
+              if (res.ok && data.token) {
+                createTokenModal.classList.add('hidden');
+                createTokenModal.classList.remove('flex');
+                
+                if (newTokenValue) newTokenValue.value = data.token;
+                if (newTokenDisplay) newTokenDisplay.classList.remove('hidden');
+                
+                showToast('Token 创建成功，请立即复制保存！', 'success');
+                loadTokens();
+              } else {
+                showToast((data && data.error) || '创建失败', 'error');
+              }
+            } catch {
+              showToast('创建失败', 'error');
+            } finally {
+              confirmTokenBtn.disabled = false;
+              confirmTokenBtn.textContent = '创建';
+            }
+          });
+        }
+
+        if (copyTokenBtn && newTokenValue) {
+          copyTokenBtn.addEventListener('click', function() {
+            newTokenValue.select();
+            document.execCommand('copy');
+            showToast('Token 已复制到剪贴板', 'success');
+          });
+        }
+
+        // 页面加载时获取 Token 列表
+        loadTokens();
       })();
     </script>
   </body>

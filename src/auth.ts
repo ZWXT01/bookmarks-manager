@@ -1,5 +1,6 @@
 import type { FastifyRequest, FastifyReply } from 'fastify';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import type { Db } from './db';
 
 // IP登录尝试记录（内存存储，重启后清空）
@@ -195,4 +196,113 @@ export function getUserInfo(db: Db, username: string): { username: string; creat
     createdAt: user.created_at,
     lastLoginAt: user.last_login_at,
   };
+}
+
+
+// ==================== API Token 管理 ====================
+
+export interface ApiToken {
+  id: number;
+  name: string;
+  token_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+}
+
+// 生成安全的随机 Token
+function generateSecureToken(): string {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+// 哈希 Token（用于存储）
+function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+// 创建新的 API Token
+export function createApiToken(
+  db: Db,
+  name: string,
+  expiresInDays?: number
+): { token: string; id: number; prefix: string } {
+  if (!name || name.trim().length === 0) {
+    throw new Error('Token 名称不能为空');
+  }
+  if (name.length > 100) {
+    throw new Error('Token 名称不能超过100个字符');
+  }
+
+  const token = generateSecureToken();
+  const tokenHash = hashToken(token);
+  const tokenPrefix = token.substring(0, 8) + '...';
+  const now = new Date().toISOString();
+  
+  let expiresAt: string | null = null;
+  if (expiresInDays && expiresInDays > 0) {
+    const expDate = new Date();
+    expDate.setDate(expDate.getDate() + expiresInDays);
+    expiresAt = expDate.toISOString();
+  }
+
+  const result = db.prepare(
+    'INSERT INTO api_tokens (name, token_hash, token_prefix, created_at, expires_at) VALUES (?, ?, ?, ?, ?)'
+  ).run(name.trim(), tokenHash, tokenPrefix, now, expiresAt);
+
+  return {
+    token,
+    id: result.lastInsertRowid as number,
+    prefix: tokenPrefix,
+  };
+}
+
+// 列出所有 API Tokens（不返回实际 token）
+export function listApiTokens(db: Db): ApiToken[] {
+  const rows = db.prepare(
+    'SELECT id, name, token_prefix, created_at, last_used_at, expires_at FROM api_tokens ORDER BY created_at DESC'
+  ).all() as ApiToken[];
+  return rows;
+}
+
+// 删除 API Token
+export function deleteApiToken(db: Db, id: number): boolean {
+  const result = db.prepare('DELETE FROM api_tokens WHERE id = ?').run(id);
+  return result.changes > 0;
+}
+
+// 验证 API Token
+export function validateApiToken(db: Db, token: string): { valid: boolean; tokenId?: number; expired?: boolean } {
+  if (!token || token.length === 0) {
+    return { valid: false };
+  }
+
+  const tokenHash = hashToken(token);
+  const row = db.prepare(
+    'SELECT id, expires_at FROM api_tokens WHERE token_hash = ?'
+  ).get(tokenHash) as { id: number; expires_at: string | null } | undefined;
+
+  if (!row) {
+    return { valid: false };
+  }
+
+  // 检查是否过期
+  if (row.expires_at) {
+    const expiresAt = new Date(row.expires_at);
+    if (expiresAt < new Date()) {
+      return { valid: false, expired: true };
+    }
+  }
+
+  // 更新最后使用时间
+  const now = new Date().toISOString();
+  db.prepare('UPDATE api_tokens SET last_used_at = ? WHERE id = ?').run(now, row.id);
+
+  return { valid: true, tokenId: row.id };
+}
+
+// 清理过期的 Tokens
+export function cleanupExpiredTokens(db: Db): number {
+  const now = new Date().toISOString();
+  const result = db.prepare('DELETE FROM api_tokens WHERE expires_at IS NOT NULL AND expires_at < ?').run(now);
+  return result.changes;
 }
