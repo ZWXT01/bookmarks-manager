@@ -69,6 +69,30 @@
       background: #f1f5f9;
       cursor: not-allowed;
     }
+
+    .input-with-btn {
+      display: flex;
+      gap: 8px;
+    }
+
+    .input-with-btn input {
+      flex: 1;
+    }
+
+    .input-with-btn button {
+      padding: 0 12px;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      background: white;
+      color: #64748b;
+      cursor: pointer;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .input-with-btn button:hover {
+      background: #f8fafc;
+    }
     
     .btn {
       width: 100%;
@@ -137,6 +161,13 @@
       color: #0369a1;
       border: 1px solid #bae6fd;
     }
+
+    .status.warning {
+      display: block;
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+    }
     
     .settings-section {
       border-top: 1px solid #e2e8f0;
@@ -200,6 +231,10 @@
     .connection-dot.disconnected {
       background: #ef4444;
     }
+
+    .connection-dot.warning {
+      background: #f59e0b;
+    }
     
     .quick-actions {
       display: flex;
@@ -211,6 +246,21 @@
       flex: 1;
       padding: 8px;
       font-size: 12px;
+    }
+
+    .help-text {
+      font-size: 11px;
+      color: #94a3b8;
+      margin-top: 4px;
+    }
+
+    .help-text a {
+      color: #3b82f6;
+      text-decoration: none;
+    }
+
+    .help-text a:hover {
+      text-decoration: underline;
     }
   </style>
 </head>
@@ -274,8 +324,14 @@
         </div>
         
         <div class="form-group">
-          <label>API Token (可选)</label>
-          <input type="password" id="api-token" placeholder="留空则使用 Cookie 认证">
+          <label>API Token</label>
+          <div class="input-with-btn">
+            <input type="password" id="api-token" placeholder="粘贴你的 API Token">
+            <button type="button" id="toggle-token-btn">显示</button>
+          </div>
+          <div class="help-text">
+            在服务器 <a href="#" id="open-settings-link">设置页面</a> 生成 Token
+          </div>
         </div>
         
         <button class="btn btn-secondary" id="save-settings-btn">

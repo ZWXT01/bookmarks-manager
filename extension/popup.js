@@ -16,7 +16,9 @@
   const settingsContent = document.getElementById('settings-content');
   const serverUrlInput = document.getElementById('server-url');
   const apiTokenInput = document.getElementById('api-token');
+  const toggleTokenBtn = document.getElementById('toggle-token-btn');
   const saveSettingsBtn = document.getElementById('save-settings-btn');
+  const openSettingsLink = document.getElementById('open-settings-link');
 
   // State
   let categories = [];
@@ -92,6 +94,7 @@
   // Check connection to server
   async function checkConnection() {
     const serverUrl = getServerUrl();
+    const hasToken = apiTokenInput.value.trim().length > 0;
     
     try {
       updateConnectionStatus('checking');
@@ -99,7 +102,6 @@
       const response = await fetch(`${serverUrl}/api/categories`, {
         method: 'GET',
         headers: getHeaders(),
-        credentials: 'include',
       });
 
       if (response.ok) {
@@ -109,8 +111,19 @@
         updateConnectionStatus('connected');
         isConnected = true;
         return true;
-      } else if (response.status === 401 || response.status === 403) {
-        updateConnectionStatus('auth_required');
+      } else if (response.status === 401) {
+        const data = await response.json().catch(() => ({}));
+        if (data.error === 'API token has expired') {
+          updateConnectionStatus('token_expired');
+        } else if (data.error === 'Invalid API token') {
+          updateConnectionStatus('token_invalid');
+        } else {
+          updateConnectionStatus('auth_required');
+        }
+        isConnected = false;
+        return false;
+      } else if (response.status === 403) {
+        updateConnectionStatus('forbidden');
         isConnected = false;
         return false;
       } else {
@@ -120,7 +133,12 @@
       }
     } catch (e) {
       console.error('Connection check failed:', e);
-      updateConnectionStatus('error');
+      // 检查是否是 CORS 或网络错误
+      if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
+        updateConnectionStatus('network_error');
+      } else {
+        updateConnectionStatus('error');
+      }
       isConnected = false;
       return false;
     }
@@ -140,7 +158,23 @@
         break;
       case 'auth_required':
         connectionDot.classList.add('disconnected');
-        connectionText.textContent = '需要登录';
+        connectionText.textContent = '需要配置 Token';
+        break;
+      case 'token_expired':
+        connectionDot.classList.add('warning');
+        connectionText.textContent = 'Token 已过期';
+        break;
+      case 'token_invalid':
+        connectionDot.classList.add('disconnected');
+        connectionText.textContent = 'Token 无效';
+        break;
+      case 'forbidden':
+        connectionDot.classList.add('disconnected');
+        connectionText.textContent = '访问被拒绝';
+        break;
+      case 'network_error':
+        connectionDot.classList.add('disconnected');
+        connectionText.textContent = '网络错误';
         break;
       case 'error':
         connectionDot.classList.add('disconnected');
@@ -208,7 +242,6 @@
       const response = await fetch(`${serverUrl}/api/bookmarks`, {
         method: 'POST',
         headers: getHeaders(),
-        credentials: 'include',
         body: JSON.stringify(body),
       });
 
@@ -216,7 +249,7 @@
 
       if (response.ok) {
         if (data.skipped) {
-          showStatus('书签已存在', 'error');
+          showStatus('书签已存在', 'warning');
         } else {
           showStatus('书签已保存！', 'success');
           // Auto close after success
@@ -224,12 +257,21 @@
             window.close();
           }, 1500);
         }
+      } else if (response.status === 401) {
+        if (data.error === 'API token has expired') {
+          showStatus('Token 已过期，请重新生成', 'error');
+          updateConnectionStatus('token_expired');
+        } else {
+          showStatus('认证失败，请检查 Token', 'error');
+          updateConnectionStatus('token_invalid');
+        }
+        isConnected = false;
       } else {
         showStatus(data.error || '保存失败', 'error');
       }
     } catch (e) {
       console.error('Save bookmark failed:', e);
-      showStatus('保存失败：' + e.message, 'error');
+      showStatus('保存失败：网络错误', 'error');
     } finally {
       saveBtn.disabled = false;
     }
@@ -239,6 +281,23 @@
   function openManager() {
     const serverUrl = getServerUrl();
     chrome.tabs.create({ url: serverUrl });
+  }
+
+  // Open settings page
+  function openSettingsPage() {
+    const serverUrl = getServerUrl();
+    chrome.tabs.create({ url: `${serverUrl}/settings` });
+  }
+
+  // Toggle token visibility
+  function toggleTokenVisibility() {
+    if (apiTokenInput.type === 'password') {
+      apiTokenInput.type = 'text';
+      toggleTokenBtn.textContent = '隐藏';
+    } else {
+      apiTokenInput.type = 'password';
+      toggleTokenBtn.textContent = '显示';
+    }
   }
 
   // Setup event listeners
@@ -262,6 +321,15 @@
       settingsContent.classList.toggle('show');
     });
 
+    // Toggle token visibility
+    toggleTokenBtn.addEventListener('click', toggleTokenVisibility);
+
+    // Open settings page link
+    openSettingsLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      openSettingsPage();
+    });
+
     // Save settings
     saveSettingsBtn.addEventListener('click', async () => {
       await saveSettings();
@@ -276,6 +344,10 @@
         saveBookmark();
       }
     });
+
+    // Auto-save settings on blur
+    serverUrlInput.addEventListener('blur', saveSettings);
+    apiTokenInput.addEventListener('blur', saveSettings);
   }
 
   // Start
