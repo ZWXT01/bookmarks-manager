@@ -1,4 +1,4 @@
-// Bookmarks Manager Extension
+// Bookmarks Manager Extension - API Token Only
 (function() {
   'use strict';
 
@@ -28,7 +28,18 @@
   async function init() {
     await loadSettings();
     await getCurrentTab();
-    await checkConnection();
+    
+    // 检查是否配置了 Token
+    const apiToken = apiTokenInput.value.trim();
+    if (!apiToken) {
+      updateConnectionStatus('no_token');
+      // 自动展开设置
+      settingsToggle.classList.add('open');
+      settingsContent.classList.add('show');
+    } else {
+      await checkConnection();
+    }
+    
     setupEventListeners();
   }
 
@@ -79,29 +90,39 @@
     return serverUrlInput.value.trim().replace(/\/$/, '') || 'http://localhost:8080';
   }
 
-  // Get headers for API requests
+  // Get headers for API requests (Token required)
   function getHeaders() {
-    const headers = {
-      'Content-Type': 'application/json',
-    };
     const apiToken = apiTokenInput.value.trim();
-    if (apiToken) {
-      headers['Authorization'] = `Bearer ${apiToken}`;
+    if (!apiToken) {
+      throw new Error('API Token 未配置');
     }
-    return headers;
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiToken}`,
+    };
   }
 
-  // Check connection to server
+  // Check connection to server using API Token
   async function checkConnection() {
     const serverUrl = getServerUrl();
-    const hasToken = apiTokenInput.value.trim().length > 0;
+    const apiToken = apiTokenInput.value.trim();
+    
+    // 必须配置 Token
+    if (!apiToken) {
+      updateConnectionStatus('no_token');
+      isConnected = false;
+      return false;
+    }
     
     try {
       updateConnectionStatus('checking');
       
       const response = await fetch(`${serverUrl}/api/categories`, {
         method: 'GET',
-        headers: getHeaders(),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiToken}`,
+        },
       });
 
       if (response.ok) {
@@ -118,7 +139,7 @@
         } else if (data.error === 'Invalid API token') {
           updateConnectionStatus('token_invalid');
         } else {
-          updateConnectionStatus('auth_required');
+          updateConnectionStatus('token_invalid');
         }
         isConnected = false;
         return false;
@@ -127,25 +148,20 @@
         isConnected = false;
         return false;
       } else {
-        updateConnectionStatus('error');
+        updateConnectionStatus('server_error', response.status);
         isConnected = false;
         return false;
       }
     } catch (e) {
       console.error('Connection check failed:', e);
-      // 检查是否是 CORS 或网络错误
-      if (e.message.includes('Failed to fetch') || e.message.includes('NetworkError')) {
-        updateConnectionStatus('network_error');
-      } else {
-        updateConnectionStatus('error');
-      }
+      updateConnectionStatus('network_error');
       isConnected = false;
       return false;
     }
   }
 
   // Update connection status UI
-  function updateConnectionStatus(status) {
+  function updateConnectionStatus(status, code) {
     connectionDot.className = 'connection-dot';
     
     switch (status) {
@@ -156,13 +172,13 @@
       case 'checking':
         connectionText.textContent = '检查中...';
         break;
-      case 'auth_required':
-        connectionDot.classList.add('disconnected');
-        connectionText.textContent = '需要配置 Token';
+      case 'no_token':
+        connectionDot.classList.add('warning');
+        connectionText.textContent = '请配置 API Token';
         break;
       case 'token_expired':
         connectionDot.classList.add('warning');
-        connectionText.textContent = 'Token 已过期';
+        connectionText.textContent = 'Token 已过期，请重新生成';
         break;
       case 'token_invalid':
         connectionDot.classList.add('disconnected');
@@ -174,11 +190,11 @@
         break;
       case 'network_error':
         connectionDot.classList.add('disconnected');
-        connectionText.textContent = '网络错误';
+        connectionText.textContent = '网络错误，请检查服务器地址';
         break;
-      case 'error':
+      case 'server_error':
         connectionDot.classList.add('disconnected');
-        connectionText.textContent = '连接失败';
+        connectionText.textContent = `服务器错误 (${code || ''})`;
         break;
       default:
         connectionText.textContent = '未连接';
@@ -213,6 +229,12 @@
     const title = titleInput.value.trim();
     const url = urlInput.value.trim();
     const categoryId = categorySelect.value;
+    const apiToken = apiTokenInput.value.trim();
+
+    if (!apiToken) {
+      showStatus('请先配置 API Token', 'error');
+      return;
+    }
 
     if (!url) {
       showStatus('请输入网址', 'error');
@@ -220,7 +242,7 @@
     }
 
     if (!isConnected) {
-      showStatus('请先连接到服务器', 'error');
+      showStatus('未连接到服务器，请检查设置', 'error');
       return;
     }
 
@@ -241,7 +263,10 @@
 
       const response = await fetch(`${serverUrl}/api/bookmarks`, {
         method: 'POST',
-        headers: getHeaders(),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiToken}`,
+        },
         body: JSON.stringify(body),
       });
 
@@ -252,7 +277,6 @@
           showStatus('书签已存在', 'warning');
         } else {
           showStatus('书签已保存！', 'success');
-          // Auto close after success
           setTimeout(() => {
             window.close();
           }, 1500);
@@ -262,7 +286,7 @@
           showStatus('Token 已过期，请重新生成', 'error');
           updateConnectionStatus('token_expired');
         } else {
-          showStatus('认证失败，请检查 Token', 'error');
+          showStatus('Token 无效，请检查配置', 'error');
           updateConnectionStatus('token_invalid');
         }
         isConnected = false;

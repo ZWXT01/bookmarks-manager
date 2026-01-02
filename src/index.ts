@@ -405,7 +405,8 @@ async function main(): Promise<void> {
       if (authHeader) {
         return reply.code(401).send({ error: 'Invalid API token' });
       }
-      // 没有 token 也没有 session，继续检查（可能是 cookie 认证）
+      // 没有 token 也没有 session，返回需要认证
+      return reply.code(401).send({ error: 'Authentication required' });
     }
   });
 
