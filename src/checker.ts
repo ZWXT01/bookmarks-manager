@@ -126,7 +126,7 @@ export async function runCheckJob(db: Db, jobId: string, bookmarkIds: number[], 
     processed: 0,
   });
 
-  const selectStmt = db.prepare('SELECT id, url FROM bookmarks WHERE id = ?');
+  const selectStmt = db.prepare('SELECT id, url, skip_check FROM bookmarks WHERE id = ?');
   const updateStmt = db.prepare(
     'UPDATE bookmarks SET last_checked_at = ?, check_status = ?, check_http_code = ?, check_error = ? WHERE id = ?',
   );
@@ -134,6 +134,7 @@ export async function runCheckJob(db: Db, jobId: string, bookmarkIds: number[], 
   let processed = 0;
   let okCount = 0;
   let failed = 0;
+  let skipped = 0;
 
   const queue = [...bookmarkIds];
 
@@ -150,11 +151,26 @@ export async function runCheckJob(db: Db, jobId: string, bookmarkIds: number[], 
       const id = queue.shift();
       if (!id) return;
 
-      const row = selectStmt.get(id) as { id: number; url: string } | undefined;
+      const row = selectStmt.get(id) as { id: number; url: string; skip_check: number } | undefined;
       if (!row) {
         processed += 1;
         failed += 1;
         addJobFailure(db, jobId, String(id), '书签不存在');
+        continue;
+      }
+
+      // Skip bookmarks with skip_check enabled and increment skipped counter
+      if (row.skip_check === 1) {
+        processed += 1;
+        skipped += 1;
+        if (processed % 10 === 0 || processed === bookmarkIds.length) {
+          updateJob(db, jobId, {
+            processed,
+            inserted: okCount,
+            skipped: skipped,
+            failed: baseFailed + failed,
+          });
+        }
         continue;
       }
 
@@ -175,6 +191,7 @@ export async function runCheckJob(db: Db, jobId: string, bookmarkIds: number[], 
         updateJob(db, jobId, {
           processed,
           inserted: okCount,
+          skipped: skipped,
           failed: baseFailed + failed,
         });
       }
@@ -190,6 +207,7 @@ export async function runCheckJob(db: Db, jobId: string, bookmarkIds: number[], 
       message: '已取消',
       processed,
       inserted: okCount,
+      skipped: skipped,
       failed: baseFailed + failed,
     });
     return;
@@ -200,6 +218,7 @@ export async function runCheckJob(db: Db, jobId: string, bookmarkIds: number[], 
     message: '检查完成',
     processed,
     inserted: okCount,
+    skipped: skipped,
     failed: baseFailed + failed,
   });
 }

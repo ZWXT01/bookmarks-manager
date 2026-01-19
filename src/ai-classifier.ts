@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import type { Db } from './db';
+import { getOrCreateCategoryByPath } from './category-service';
 
 export interface AIClassifyConfig {
   baseUrl: string;
@@ -20,12 +21,29 @@ export interface ClassificationResult {
   confidence: 'high' | 'medium' | 'low';
 }
 
+export interface FailedBookmark {
+  bookmarkId: number;
+  url: string;
+  title: string;
+  reason: string;
+}
+
 export interface BatchClassificationResult {
   results: ClassificationResult[];
 }
 
 export interface ClassifyBatchResult {
   results: ClassificationResult[];
+  failedBookmarks: FailedBookmark[];
+}
+
+export interface TokenEstimate {
+  totalBookmarks: number;
+  estimatedInputTokens: number;
+  estimatedOutputTokens: number;
+  estimatedTotalTokens: number;
+  estimatedCost: number; // USD
+  pricePerMillionTokens: number;
 }
 
 export interface CategoryMapping {
@@ -65,16 +83,50 @@ export class AIClassifier {
     rows.forEach((row) => this.existingCategories.add(row.name));
   }
 
+  /**
+   * 估算 Token 消耗和费用
+   * @param bookmarks 书签列表
+   * @param pricePerMillionTokens 每百万 token 价格（USD），默认 0.15（gpt-4o-mini 输入价格）
+   */
+  static estimateTokens(bookmarks: BookmarkToClassify[], pricePerMillionTokens: number = 0.15): TokenEstimate {
+    // 估算规则：
+    // - systemPrompt 约 200 tokens
+    // - 每个书签约 20-50 tokens（标题 + URL）
+    // - 输出每个书签约 20 tokens
+    const systemPromptTokens = 200;
+    const tokensPerBookmark = 35; // 平均估计
+    const outputTokensPerBookmark = 20;
+
+    const estimatedInputTokens = systemPromptTokens + (bookmarks.length * tokensPerBookmark);
+    const estimatedOutputTokens = bookmarks.length * outputTokensPerBookmark;
+    const estimatedTotalTokens = estimatedInputTokens + estimatedOutputTokens;
+
+    // 费用计算（以 gpt-4o-mini 为参考，实际可能不同）
+    const estimatedCost = (estimatedTotalTokens / 1_000_000) * pricePerMillionTokens;
+
+    return {
+      totalBookmarks: bookmarks.length,
+      estimatedInputTokens,
+      estimatedOutputTokens,
+      estimatedTotalTokens,
+      estimatedCost,
+      pricePerMillionTokens,
+    };
+  }
+
   async classifyBatch(bookmarks: BookmarkToClassify[]): Promise<ClassifyBatchResult> {
     const results: ClassificationResult[] = [];
+    const failedBookmarks: FailedBookmark[] = [];
 
     for (let i = 0; i < bookmarks.length; i += this.batchSize) {
       const batch = bookmarks.slice(i, i + this.batchSize);
-      
+
       try {
         const batchResult = await this.classifyBatchWithAI(batch);
         results.push(...batchResult.results);
       } catch (error) {
+        // AI 失败时使用关键词匹配兜底
+        console.warn('AI classification failed, using fallback:', error instanceof Error ? error.message : error);
         const fallbackResults = this.fallbackClassification(batch);
         results.push(...fallbackResults);
       }
@@ -84,7 +136,7 @@ export class AIClassifier {
       }
     }
 
-    return { results };
+    return { results, failedBookmarks };
   }
 
   private async classifyBatchWithAI(bookmarks: BookmarkToClassify[]): Promise<BatchClassificationResult> {
@@ -99,29 +151,35 @@ export class AIClassifier {
       const first = c.split('/')[0];
       if (first) topLevelCategories.add(first);
     });
-    const topCategoriesHint = topLevelCategories.size > 0
-      ? `\n\n【必须使用的一级分类】：${Array.from(topLevelCategories).slice(0, 15).join('、')}\n如果书签不属于以上任何一级分类，可使用：其他`
-      : '';
 
-    const systemPrompt = `你是书签分类助手。通过联网访问网页了解内容后分类。
+    // 构建一级分类提示
+    const existingTopCategories = Array.from(topLevelCategories).slice(0, 15);
+    const defaultCategories = '技术开发、学习资源、工具软件、娱乐影音、社交媒体、新闻资讯、设计素材、生活服务、游戏、购物电商、金融理财、健康医疗、旅游出行、政府机构、企业服务、其他';
+    const categoriesHint = existingTopCategories.length > 0
+      ? existingTopCategories.join('、')
+      : defaultCategories;
 
-【核心规则】
-1. 分类格式：一级分类 或 一级/二级 或 一级/二级/三级
-2. 禁止超过3级！错误示例：娱乐/视频/B站/UP主（4级，禁止）
-3. 必须复用已有一级分类，不要创建新的一级分类
-4. 相似网站归入同一分类，避免创建过多分类
+    const systemPrompt = `你是专业的书签分类助手。使用联网信息以及根据书签的URL域名和标题判断网站类型并分类。
 
-【标准一级分类】
-技术开发、学习资源、工具软件、购物电商、娱乐影音、社交媒体、新闻资讯、设计素材、生活服务、游戏、成人内容、其他${topCategoriesHint}`;
+分类规则：
+1. 格式必须是：一级分类 或 一级分类/二级分类（最多2级）
+2. 根据网站实际用途分类，而非表面内容
 
-    const userPrompt = `分类以下书签（联网访问了解内容）：
+分类判断优先级：
+0. 使用联网信息
+1. 看域名
+2. 看网站类型
+3. 看标题关键词：作为辅助判断
+
+参考一级分类：${categoriesHint}
+
+⚠️ 必须严格返回JSON格式，不要有任何其他文字！`;
+
+    const userPrompt = `对以下${bookmarks.length}个书签进行分类：
 
 ${bookmarkList}
 
-返回JSON（不要代码块）：
-{"classifications":[{"index":1,"category":"一级/二级"}]}
-
-注意：分类最多3级，禁止4级！`;
+严格返回JSON（无其他内容）：{"classifications":[{"index":1,"category":"分类名"},{"index":2,"category":"分类名"}]}`;
 
     try {
       const openai = new OpenAI({
@@ -141,26 +199,68 @@ ${bookmarkList}
       });
 
       const content = completion.choices?.[0]?.message?.content;
-      
+
       if (!content) {
         throw new Error('AI 未返回有效响应');
       }
 
-      const cleanedContent = content.trim().replace(/^```json\s*/i, '').replace(/```\s*$/, '').trim();
-      
-      let parsed: any;
+      // 增强 JSON 解析：尝试多种格式
+      let classifications: any[] = [];
+      const cleanedContent = content.trim()
+        .replace(/^```json\s*/i, '')
+        .replace(/```\s*$/, '')
+        .trim();
+
+      // 策略1: 直接解析完整 JSON
       try {
-        parsed = JSON.parse(cleanedContent);
-      } catch (e) {
-        throw new Error('AI 返回的内容不是有效的 JSON');
+        const parsed = JSON.parse(cleanedContent);
+        if (parsed.classifications && Array.isArray(parsed.classifications)) {
+          classifications = parsed.classifications;
+        } else if (Array.isArray(parsed)) {
+          classifications = parsed;
+        }
+      } catch {
+        // 策略2: 尝试提取 JSON 对象
+        const jsonMatch = cleanedContent.match(/\{[\s\S]*"classifications"\s*:\s*\[[\s\S]*\]\s*\}/);
+        if (jsonMatch) {
+          try {
+            const parsed = JSON.parse(jsonMatch[0]);
+            if (parsed.classifications) classifications = parsed.classifications;
+          } catch { }
+        }
+
+        // 策略3: 尝试提取数组部分
+        if (classifications.length === 0) {
+          const arrayMatch = cleanedContent.match(/\[[\s\S]*\]/);
+          if (arrayMatch) {
+            try {
+              classifications = JSON.parse(arrayMatch[0]);
+            } catch { }
+          }
+        }
+
+        // 策略4: 逐行解析（应对 AI 返回简单格式）
+        if (classifications.length === 0) {
+          const lines = cleanedContent.split('\n');
+          for (const line of lines) {
+            // 匹配格式：1. 分类名 或 1:分类名 或 {"index":1,"category":"分类名"}
+            const simpleMatch = line.match(/^(\d+)[.\s:：]+(.+)$/);
+            if (simpleMatch) {
+              classifications.push({
+                index: parseInt(simpleMatch[1], 10),
+                category: simpleMatch[2].trim()
+              });
+            }
+          }
+        }
       }
 
-      if (!parsed.classifications || !Array.isArray(parsed.classifications)) {
-        throw new Error('AI 返回格式错误');
+      if (classifications.length === 0) {
+        throw new Error('AI 返回的内容不是有效的 JSON: ' + cleanedContent.slice(0, 200));
       }
 
       const results: ClassificationResult[] = [];
-      for (const item of parsed.classifications) {
+      for (const item of classifications) {
         const idx = (typeof item.index === 'number' ? item.index : parseInt(item.index)) - 1;
         if (idx >= 0 && idx < bookmarks.length && item.category) {
           const category = this.normalizeCategory(item.category);
@@ -169,7 +269,7 @@ ${bookmarkList}
             suggestedCategory: category,
             confidence: 'high',
           });
-          
+
           this.existingCategories.add(category);
         }
       }
@@ -218,13 +318,13 @@ ${bookmarkList}
       .replace(/[\\]/g, '/')
       .replace(/\/+/g, '/')
       .replace(/^\/|\/$/g, '');
-    
-    // 限制分类层级不超过3级
+
+    // 限制分类层级不超过2级
     const parts = normalized.split('/').filter(p => p.trim());
-    if (parts.length > 3) {
-      normalized = parts.slice(0, 3).join('/');
+    if (parts.length > 2) {
+      normalized = parts.slice(0, 2).join('/');
     }
-    
+
     return normalized;
   }
 
@@ -236,30 +336,13 @@ ${bookmarkList}
     const parts = categoryPath.split('/').filter((p) => p.trim());
     if (parts.length === 0) return null;
 
-    const transaction = this.db.transaction(() => {
-      let currentPath = '';
-      let parentId: number | null = null;
-
-      for (const part of parts) {
-        currentPath = currentPath ? `${currentPath}/${part}` : part;
-        
-        let row = this.db.prepare('SELECT id FROM categories WHERE name = ?').get(currentPath) as { id: number } | undefined;
-        
-        if (!row) {
-          const result = this.db
-            .prepare('INSERT INTO categories (name, parent_id, created_at) VALUES (?, ?, ?)')
-            .run(currentPath, parentId, new Date().toISOString());
-          
-          row = { id: Number(result.lastInsertRowid) };
-          this.existingCategories.add(currentPath);
-        }
-        
-        parentId = row.id;
-      }
-
-      return parentId;
-    });
-
-    return transaction();
+    try {
+      // 使用 category-service 中的统一函数创建分类
+      const categoryId = getOrCreateCategoryByPath(this.db, categoryPath);
+      this.existingCategories.add(categoryPath);
+      return categoryId;
+    } catch {
+      return null;
+    }
   }
 }

@@ -1,172 +1,229 @@
 <!doctype html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>任务列表 - 书签管理器</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="/public/app.css" />
-  </head>
-  <body class="bg-slate-50 text-slate-900">
-    <div class="mx-auto max-w-screen-2xl px-2 py-2">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>任务列表 - 书签管理器</title>
+  <script src="/public/lib/tailwind.js"></script>
+  <link rel="stylesheet" href="/public/app.css" />
+  <script>
+    (function () {
+      var theme = localStorage.getItem('theme');
+      if (theme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      } else if (theme === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+</head>
+
+<body class="bg-slate-50 text-slate-900">
+  <!-- Header - 统一风格 -->
+  <div class="glass-header border-b sticky top-0 z-40">
+    <div class="mx-auto max-w-screen-2xl px-4 py-3">
       <div class="flex items-center justify-between">
         <div>
-          <h1 class="text-xl font-semibold">任务列表</h1>
-          <p class="text-sm text-slate-500">导入/检查任务历史（共 <%= total %> 条）</p>
+          <div class="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">📋
+            任务列表</div>
+          <div class="text-xs text-slate-500">导入/检查任务历史（共 <%= total %> 条）</div>
         </div>
-        <div class="flex items-center gap-3">
-          <button id="clear-completed-btn" class="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50 text-slate-700">清理已完成</button>
-          <button id="clear-all-btn" class="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-rose-50 text-rose-600">清空全部</button>
-          <a class="rounded-lg border bg-white px-3 py-2 text-sm hover:bg-slate-50" href="/">返回首页</a>
+        <div class="flex items-center gap-2">
+          <button id="theme-toggle" class="btn-secondary btn-sm">🌙</button>
+          <button id="clear-completed-btn" class="btn-secondary btn-sm">清理已完成</button>
+          <button id="clear-all-btn" class="btn-danger btn-sm">清空全部</button>
+          <a class="btn-secondary btn-sm" href="/">← 返回</a>
         </div>
       </div>
+    </div>
+  </div>
 
-      <div class="mt-4 overflow-hidden rounded-xl border bg-white shadow-sm">
-        <table class="w-full table-fixed">
-          <thead class="bg-slate-50">
+  <div class="mx-auto max-w-screen-2xl px-4 py-4">
+    <div class="card overflow-hidden">
+      <table class="w-full table-fixed">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="w-[22%] px-3 py-2 text-left text-xs font-semibold text-slate-600">任务ID</th>
+            <th class="w-[10%] px-3 py-2 text-left text-xs font-semibold text-slate-600">类型</th>
+            <th class="w-[12%] px-3 py-2 text-left text-xs font-semibold text-slate-600">状态</th>
+            <th class="w-[30%] px-3 py-2 text-left text-xs font-semibold text-slate-600">消息</th>
+            <th class="w-[16%] px-3 py-2 text-left text-xs font-semibold text-slate-600">进度</th>
+            <th class="w-[10%] px-3 py-2 text-left text-xs font-semibold text-slate-600">更新时间</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+          <% if (!jobs.length) { %>
             <tr>
-              <th class="w-[22%] px-3 py-2 text-left text-xs font-semibold text-slate-600">任务ID</th>
-              <th class="w-[10%] px-3 py-2 text-left text-xs font-semibold text-slate-600">类型</th>
-              <th class="w-[12%] px-3 py-2 text-left text-xs font-semibold text-slate-600">状态</th>
-              <th class="w-[30%] px-3 py-2 text-left text-xs font-semibold text-slate-600">消息</th>
-              <th class="w-[16%] px-3 py-2 text-left text-xs font-semibold text-slate-600">进度</th>
-              <th class="w-[10%] px-3 py-2 text-left text-xs font-semibold text-slate-600">更新时间</th>
+              <td colspan="6" class="px-3 py-8 text-center text-sm text-slate-500">暂无任务</td>
             </tr>
-          </thead>
-          <tbody class="divide-y">
-            <% if (!jobs.length) { %>
-              <tr>
-                <td colspan="6" class="px-3 py-8 text-center text-sm text-slate-500">暂无任务</td>
-              </tr>
             <% } %>
 
-            <% jobs.forEach(function(j) { %>
-              <tr class="hover:bg-slate-50" data-job-id="<%= j.id %>">
-                <td class="px-3 py-3 align-top text-sm">
-                  <a class="font-medium text-slate-900 hover:underline" href="/jobs/<%= j.id %>"><%= j.id %></a>
-                </td>
-                <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="type"><%= j.type %></td>
-                <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="status"><%= j.status %></td>
-                <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="message">
-                  <div class="truncate"><%= j.message || '' %></div>
-                </td>
-                <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="progress">
-                  <div><span data-col="processed"><%= j.processed %></span> / <span data-col="total"><%= j.total %></span></div>
-                  <div class="text-xs text-slate-500">成功 <span data-col="inserted"><%= j.inserted %></span> · 跳过 <span data-col="skipped"><%= j.skipped %></span> · 失败 <span data-col="failed"><%= j.failed %></span></div>
-                </td>
-                <td class="px-3 py-3 align-top text-xs text-slate-500" data-col="updated_at"><%= new Date(j.updated_at).toLocaleString('zh-CN') %></td>
-              </tr>
-            <% }); %>
-          </tbody>
-        </table>
+              <% jobs.forEach(function(j) { %>
+                <tr class="hover:bg-slate-50" data-job-id="<%= j.id %>">
+                  <td class="px-3 py-3 align-top text-sm">
+                    <a class="font-medium text-slate-900 hover:underline" href="/jobs/<%= j.id %>">
+                      <%= j.id %>
+                    </a>
+                  </td>
+                  <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="type">
+                    <%= j.type %>
+                  </td>
+                  <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="status">
+                    <%= j.status %>
+                  </td>
+                  <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="message">
+                    <div class="truncate">
+                      <%= j.message || '' %>
+                    </div>
+                  </td>
+                  <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="progress">
+                    <div><span data-col="processed">
+                        <%= j.processed %>
+                      </span> / <span data-col="total">
+                        <%= j.total %>
+                      </span></div>
+                    <div class="text-xs text-slate-500">成功 <span data-col="inserted">
+                        <%= j.inserted %>
+                      </span> · 跳过 <span data-col="skipped">
+                        <%= j.skipped %>
+                      </span> · 失败 <span data-col="failed">
+                        <%= j.failed %>
+                      </span></div>
+                  </td>
+                  <td class="px-3 py-3 align-top text-xs text-slate-500" data-col="updated_at">
+                    <%= new Date(j.updated_at).toLocaleString('zh-CN') %>
+                  </td>
+                </tr>
+                <% }); %>
+        </tbody>
+      </table>
 
-        <div class="border-t bg-white px-3 py-3">
-          <div class="flex items-center justify-between">
-            <div class="text-xs text-slate-500">第 <%= page %>/<%= totalPages %> 页</div>
-            <div class="flex items-center gap-2">
-              <% if (page > 1) { %>
-                <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50" href="<%= pageUrlPrefix %><%= page - 1 %>">上一页</a>
+      <div class="border-t bg-white px-3 py-3">
+        <div class="flex items-center justify-between">
+          <div class="text-xs text-slate-500">第 <%= page %>/<%= totalPages %> 页</div>
+          <div class="flex items-center gap-2">
+            <% if (page> 1) { %>
+              <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50"
+                href="<%= pageUrlPrefix %><%= page - 1 %>">上一页</a>
               <% } else { %>
                 <span class="rounded-lg border px-3 py-1 text-sm text-slate-400">上一页</span>
-              <% } %>
+                <% } %>
 
-              <% if (page < totalPages) { %>
-                <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50" href="<%= pageUrlPrefix %><%= page + 1 %>">下一页</a>
-              <% } else { %>
-                <span class="rounded-lg border px-3 py-1 text-sm text-slate-400">下一页</span>
-              <% } %>
-            </div>
+                  <% if (page < totalPages) { %>
+                    <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50"
+                      href="<%= pageUrlPrefix %><%= page + 1 %>">下一页</a>
+                    <% } else { %>
+                      <span class="rounded-lg border px-3 py-1 text-sm text-slate-400">下一页</span>
+                      <% } %>
           </div>
         </div>
       </div>
     </div>
+  </div>
 
-    <script>
-      (function () {
-        var page = <%= page %>;
-        var timer = null;
-        var running = false;
+  <script>
+    (function () {
+      var page = <%= page %>;
+      var timer = null;
+      var running = false;
 
-        function setText(el, text) {
-          if (!el) return;
-          el.textContent = text;
+      function setText(el, text) {
+        if (!el) return;
+        el.textContent = text;
+      }
+
+      function formatTime(iso) {
+        try {
+          return new Date(iso).toLocaleString('zh-CN');
+        } catch {
+          return '';
         }
+      }
 
-        function formatTime(iso) {
-          try {
-            return new Date(iso).toLocaleString('zh-CN');
-          } catch {
-            return '';
+      async function tick() {
+        if (running) return;
+        if (document.hidden) return;
+        running = true;
+        try {
+          var res = await fetch('/api/jobs?page=' + page, { headers: { 'Accept': 'application/json' } });
+          if (!res.ok) return;
+          var data = await res.json();
+          var jobs = (data && Array.isArray(data.jobs)) ? data.jobs : [];
+          for (var i = 0; i < jobs.length; i++) {
+            var j = jobs[i];
+            var row = document.querySelector('tr[data-job-id="' + j.id + '"]');
+            if (!row) continue;
+            setText(row.querySelector('[data-col="type"]'), j.type);
+            setText(row.querySelector('[data-col="status"]'), j.status);
+            setText(row.querySelector('[data-col="message"] .truncate'), j.message || '');
+            setText(row.querySelector('[data-col="processed"]'), String(j.processed));
+            setText(row.querySelector('[data-col="total"]'), String(j.total));
+            setText(row.querySelector('[data-col="inserted"]'), String(j.inserted));
+            setText(row.querySelector('[data-col="skipped"]'), String(j.skipped));
+            setText(row.querySelector('[data-col="failed"]'), String(j.failed));
+            setText(row.querySelector('[data-col="updated_at"]'), formatTime(j.updated_at));
           }
+        } catch {
+        } finally {
+          running = false;
         }
+      }
 
-        async function tick() {
-          if (running) return;
-          if (document.hidden) return;
-          running = true;
-          try {
-            var res = await fetch('/api/jobs?page=' + page, { headers: { 'Accept': 'application/json' } });
-            if (!res.ok) return;
-            var data = await res.json();
-            var jobs = (data && Array.isArray(data.jobs)) ? data.jobs : [];
-            for (var i = 0; i < jobs.length; i++) {
-              var j = jobs[i];
-              var row = document.querySelector('tr[data-job-id="' + j.id + '"]');
-              if (!row) continue;
-              setText(row.querySelector('[data-col="type"]'), j.type);
-              setText(row.querySelector('[data-col="status"]'), j.status);
-              setText(row.querySelector('[data-col="message"] .truncate'), j.message || '');
-              setText(row.querySelector('[data-col="processed"]'), String(j.processed));
-              setText(row.querySelector('[data-col="total"]'), String(j.total));
-              setText(row.querySelector('[data-col="inserted"]'), String(j.inserted));
-              setText(row.querySelector('[data-col="skipped"]'), String(j.skipped));
-              setText(row.querySelector('[data-col="failed"]'), String(j.failed));
-              setText(row.querySelector('[data-col="updated_at"]'), formatTime(j.updated_at));
-            }
-          } catch {
-          } finally {
-            running = false;
+      timer = setInterval(tick, 3000);
+      if (timer && typeof timer.unref === 'function') timer.unref();
+      tick();
+
+      // 清理已完成任务
+      document.getElementById('clear-completed-btn').addEventListener('click', async function () {
+        if (!confirm('确定要清理所有已完成的任务吗？')) return;
+        try {
+          var res = await fetch('/api/jobs/clear-completed', { method: 'POST' });
+          var data = await res.json();
+          if (res.ok && data.success) {
+            alert('已清理 ' + data.deleted + ' 条已完成任务');
+            location.reload();
+          } else {
+            alert('清理失败：' + (data.error || '未知错误'));
           }
+        } catch {
+          alert('清理失败');
         }
+      });
 
-        timer = setInterval(tick, 3000);
-        if (timer && typeof timer.unref === 'function') timer.unref();
-        tick();
-        
-        // 清理已完成任务
-        document.getElementById('clear-completed-btn').addEventListener('click', async function() {
-          if (!confirm('确定要清理所有已完成的任务吗？')) return;
-          try {
-            var res = await fetch('/api/jobs/clear-completed', { method: 'POST' });
-            var data = await res.json();
-            if (res.ok && data.success) {
-              alert('已清理 ' + data.deleted + ' 条已完成任务');
-              location.reload();
-            } else {
-              alert('清理失败：' + (data.error || '未知错误'));
-            }
-          } catch {
-            alert('清理失败');
+      // 清空全部任务
+      document.getElementById('clear-all-btn').addEventListener('click', async function () {
+        if (!confirm('确定要清空所有任务记录吗？此操作不可恢复！')) return;
+        try {
+          var res = await fetch('/api/jobs/clear-all', { method: 'POST' });
+          var data = await res.json();
+          if (res.ok && data.success) {
+            alert('已清空 ' + data.deleted + ' 条任务记录');
+            location.reload();
+          } else {
+            alert('清空失败：' + (data.error || '未知错误'));
           }
-        });
-        
-        // 清空全部任务
-        document.getElementById('clear-all-btn').addEventListener('click', async function() {
-          if (!confirm('确定要清空所有任务记录吗？此操作不可恢复！')) return;
-          try {
-            var res = await fetch('/api/jobs/clear-all', { method: 'POST' });
-            var data = await res.json();
-            if (res.ok && data.success) {
-              alert('已清空 ' + data.deleted + ' 条任务记录');
-              location.reload();
-            } else {
-              alert('清空失败：' + (data.error || '未知错误'));
-            }
-          } catch {
-            alert('清空失败');
-          }
-        });
-      })();
-    </script>
-  </body>
+        } catch {
+          alert('清空失败');
+        }
+      });
+
+      // 主题切换
+      const btn = document.getElementById('theme-toggle');
+      const updateIcon = () => {
+        const theme = document.documentElement.getAttribute('data-theme');
+        btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+      };
+      updateIcon();
+      btn.addEventListener('click', () => {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        updateIcon();
+      });
+    })();
+  </script>
+</body>
+
 </html>

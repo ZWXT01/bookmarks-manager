@@ -1,11 +1,12 @@
 import type { Db } from './db';
 import { canonicalizeUrl } from './url';
 import { addJobFailure, updateJob } from './jobs';
+import { getOrCreateCategoryByPath } from './category-service';
 
 export type ImportOptions = {
   defaultCategoryId: number | null;
-  checkAfterImport: boolean;
-  createCategories?: boolean;
+  skipDuplicates?: boolean;  // 导入前检查 URL 是否已存在
+  overrideCategory?: boolean;  // 是否忽略原有分类，使用 defaultCategoryId
   logger?: any;
 };
 
@@ -136,54 +137,8 @@ export function parseImportContent(text: string): ImportBookmarkItem[] {
   return parseTextLines(text, null);
 }
 
-function getOrCreateCategoryId(db: Db, name: string): number {
-  const now = new Date().toISOString();
-  db.prepare('INSERT OR IGNORE INTO categories (name, parent_id, created_at) VALUES (?, NULL, ?)').run(name, now);
-  const row = db.prepare('SELECT id FROM categories WHERE name = ?').get(name) as { id: number } | undefined;
-  if (!row) throw new Error('category create failed');
-  return row.id;
-}
-
-function getOrCreateCategoryIdWithParent(db: Db, name: string, parentId: number | null): number {
-  const row = db.prepare('SELECT id, parent_id FROM categories WHERE name = ?').get(name) as
-    | { id: number; parent_id: number | null }
-    | undefined;
-  if (row) {
-    if (parentId !== null && row.parent_id === null) {
-      try {
-        db.prepare('UPDATE categories SET parent_id = ? WHERE id = ? AND parent_id IS NULL').run(parentId, row.id);
-      } catch {
-      }
-    }
-    return row.id;
-  }
-
-  const now = new Date().toISOString();
-  db.prepare('INSERT OR IGNORE INTO categories (name, parent_id, created_at) VALUES (?, ?, ?)').run(name, parentId, now);
-  const created = db.prepare('SELECT id FROM categories WHERE name = ?').get(name) as { id: number } | undefined;
-  if (!created) throw new Error('category create failed');
-  return created.id;
-}
-
-function getOrCreateCategoryPathId(db: Db, path: string): number {
-  const parts = path
-    .split('/')
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (!parts.length) {
-    return getOrCreateCategoryId(db, path);
-  }
-
-  let parentId: number | null = null;
-  let curId: number | null = null;
-  for (let i = 0; i < parts.length; i += 1) {
-    const full = parts.slice(0, i + 1).join('/');
-    curId = getOrCreateCategoryIdWithParent(db, full, parentId);
-    parentId = curId;
-  }
-  if (curId === null) throw new Error('category create failed');
-  return curId;
-}
+// 导入时使用 category-service 中的 getOrCreateCategoryByPath
+// 它会自动处理路径格式（如 "技术/编程"）并建立正确的父子关系
 
 export async function runImportJob(db: Db, jobId: string, items: ImportBookmarkItem[], options: ImportOptions): Promise<{ insertedIds: number[] }> {
   updateJob(db, jobId, {
@@ -198,6 +153,7 @@ export async function runImportJob(db: Db, jobId: string, items: ImportBookmarkI
   const insertStmt = db.prepare(
     'INSERT INTO bookmarks (url, canonical_url, title, category_id, created_at) VALUES (?, ?, ?, ?, ?)',
   );
+  const existsStmt = db.prepare('SELECT id FROM bookmarks WHERE url = ?');
 
   const batchSize = 100;
 
@@ -206,7 +162,7 @@ export async function runImportJob(db: Db, jobId: string, items: ImportBookmarkI
   let skipped = 0;
   let failed = 0;
 
-  const createCategories = options.createCategories === true;
+  const skipDuplicates = options.skipDuplicates === true;
 
   for (let i = 0; i < items.length; i += batchSize) {
     const batch = items.slice(i, i + batchSize);
@@ -222,9 +178,25 @@ export async function runImportJob(db: Db, jobId: string, items: ImportBookmarkI
           continue;
         }
 
-        let categoryId = options.defaultCategoryId;
-        if (createCategories && item.categoryName) {
-          categoryId = getOrCreateCategoryPathId(db, item.categoryName);
+        // 显式去重检查（基于 URL）
+        if (skipDuplicates) {
+          const existing = existsStmt.get(canon.normalizedUrl);
+          if (existing) {
+            skipped += 1;
+            continue;
+          }
+        }
+
+        // 处理分类逻辑：
+        // - 如果勾选了 overrideCategory，则统一使用 defaultCategoryId
+        // - 否则优先使用书签文件中的分类信息，无分类信息时归为未分类
+        let categoryId: number | null = null;
+        if (options.overrideCategory) {
+          // 忽略原有分类，统一使用选择的分类
+          categoryId = options.defaultCategoryId;
+        } else if (item.categoryName) {
+          // 保留原有分类
+          categoryId = getOrCreateCategoryByPath(db, item.categoryName);
         }
 
         try {

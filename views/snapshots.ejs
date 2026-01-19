@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>快照管理 - 书签管理器</title>
+    <script src="/public/lib/tailwind.js"></script>
+    <link rel="stylesheet" href="/public/app.css" />
+    <script>
+        (function () {
+            var theme = localStorage.getItem('theme');
+            if (theme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else if (theme === 'light') {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+        })();
+    </script>
+</head>
+
+<body class="bg-slate-50 text-slate-900">
+    <!-- Header - 统一风格 -->
+    <div class="glass-header border-b sticky top-0 z-40">
+        <div class="mx-auto max-w-screen-2xl px-4 py-3">
+            <div class="flex items-center justify-between">
+                <div
+                    class="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                    📸 快照管理</div>
+                <div class="flex items-center gap-2">
+                    <button id="theme-toggle" class="btn-secondary btn-sm">🌙</button>
+                    <a href="/" class="btn-secondary btn-sm">返回</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="mx-auto max-w-screen-2xl px-4 py-4">
+        <!-- Stats Cards -->
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            <div class="card p-4">
+                <div class="text-sm text-slate-500">快照总数</div>
+                <div class="text-2xl font-bold text-blue-600 mt-1" id="stats-total">
+                    <%= pagination.total %>
+                </div>
+            </div>
+            <div class="card p-4">
+                <div class="text-sm text-slate-500">总存储空间</div>
+                <div class="text-2xl font-bold text-purple-600 mt-1" id="stats-size">
+                    <%= totalSizeMB %> MB
+                </div>
+            </div>
+        </div>
+
+        <!-- Search and Filter - AJAX无刷新 -->
+        <div class="card p-3 mb-4">
+            <div class="flex flex-wrap items-center gap-3">
+                <input type="text" id="search-input" placeholder="搜索标题或URL..."
+                    class="flex-1 min-w-[200px] rounded-lg border px-3 py-2 text-sm" />
+                <input type="date" id="date-filter" class="rounded-lg border px-3 py-2 text-sm" title="筛选日期" />
+                <button type="button" id="clear-filter-btn" class="btn-secondary btn-sm">清除</button>
+                <button type="button" onclick="location.reload()" class="btn-primary btn-sm">🔄 刷新</button>
+            </div>
+        </div>
+
+        <!-- Batch Actions -->
+        <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+                <input type="checkbox" id="select-all" class="rounded" />
+                <label for="select-all" class="text-sm text-slate-600">全选</label>
+                <button id="batch-delete-btn" disabled
+                    class="ml-4 rounded border border-rose-300 px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed">
+                    批量删除 (<span id="selected-count">0</span>)
+                </button>
+            </div>
+            <div class="text-sm text-slate-500">
+                显示 <span id="showing-count">0</span> 条
+            </div>
+        </div>
+
+        <!-- Snapshot List - 按日期分组 -->
+        <div id="snapshot-list" class="space-y-4">
+            <!-- 动态加载 -->
+        </div>
+
+        <!-- Empty State -->
+        <div id="empty-state" class="hidden rounded-lg border bg-white p-8 text-center text-slate-500 shadow-sm">
+            <p class="text-lg">暂无快照</p>
+            <p class="text-sm mt-2">使用浏览器扩展保存网页快照</p>
+        </div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div id="deleteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+        <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+            <h3 class="text-lg font-semibold">确认删除</h3>
+            <p class="mt-2 text-sm text-slate-600">确定要删除快照 "<span id="deleteTitle"></span>" 吗？此操作不可撤销。</p>
+            <div class="mt-4 flex justify-end gap-2">
+                <button id="cancelDeleteBtn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                <button id="confirmDeleteBtn"
+                    class="rounded bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">删除</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Batch Delete Confirmation Modal -->
+    <div id="batchDeleteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+        <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+            <h3 class="text-lg font-semibold">批量删除</h3>
+            <p class="mt-2 text-sm text-slate-600">确定要删除选中的 <span id="batchDeleteCount"></span> 个快照吗？此操作不可撤销。</p>
+            <div class="mt-4 flex justify-end gap-2">
+                <button id="cancelBatchDeleteBtn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                <button id="confirmBatchDeleteBtn"
+                    class="rounded bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">删除</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const apiToken = '<%= apiToken %>';
+        const allSnapshots =  <%- JSON.stringify(snapshots) %>;
+        let deleteId = null;
+        const selectedIds = new Set();
+        let filteredSnapshots = [...allSnapshots];
+
+        // 日期格式化
+        function formatDate(dateStr) {
+            const d = new Date(dateStr);
+            return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+        }
+
+        function formatDateTime(dateStr) {
+            const d = new Date(dateStr);
+            return d.toLocaleString('zh-CN');
+        }
+
+        function getDateKey(dateStr) {
+            const d = new Date(dateStr);
+            return d.toISOString().slice(0, 10);
+        }
+
+        // 过滤和渲染
+        function filterAndRender() {
+            const query = document.getElementById('search-input').value.toLowerCase().trim();
+            const dateFilter = document.getElementById('date-filter').value;
+
+            filteredSnapshots = allSnapshots.filter(s => {
+                // 搜索过滤
+                if (query) {
+                    const matchTitle = s.title.toLowerCase().includes(query);
+                    const matchUrl = s.url.toLowerCase().includes(query);
+                    if (!matchTitle && !matchUrl) return false;
+                }
+                // 日期过滤
+                if (dateFilter) {
+                    const snapshotDate = getDateKey(s.created_at);
+                    if (snapshotDate !== dateFilter) return false;
+                }
+                return true;
+            });
+
+            renderSnapshots();
+        }
+
+        // 按日期分组渲染
+        function renderSnapshots() {
+            const container = document.getElementById('snapshot-list');
+            const emptyState = document.getElementById('empty-state');
+
+            document.getElementById('showing-count').textContent = filteredSnapshots.length;
+
+            // 清除选择
+            selectedIds.clear();
+            updateSelectedCount();
+            document.getElementById('select-all').checked = false;
+
+            if (filteredSnapshots.length === 0) {
+                container.innerHTML = '';
+                emptyState.classList.remove('hidden');
+                return;
+            }
+
+            emptyState.classList.add('hidden');
+
+            // 按日期分组
+            const groups = {};
+            filteredSnapshots.forEach(s => {
+                const dateKey = getDateKey(s.created_at);
+                if (!groups[dateKey]) groups[dateKey] = [];
+                groups[dateKey].push(s);
+            });
+
+            // 按日期排序（最新在前）
+            const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
+
+            let html = '';
+            sortedDates.forEach(dateKey => {
+                const snapshots = groups[dateKey];
+                const dateDisplay = formatDate(snapshots[0].created_at);
+
+                html += `
+                <div class="rounded-lg border bg-white shadow-sm overflow-hidden">
+                    <div class="bg-slate-50 px-4 py-2 border-b">
+                        <span class="font-medium text-sm">${dateDisplay}</span>
+                        <span class="text-xs text-slate-500 ml-2">${snapshots.length} 个快照</span>
+                    </div>
+                    <div class="divide-y">
+                `;
+
+                snapshots.forEach(s => {
+                    const time = new Date(s.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                    html += `
+                    <div class="flex items-center p-3 hover:bg-slate-50 snapshot-item" data-id="${s.id}">
+                        <input type="checkbox" class="snapshot-checkbox mr-3" value="${s.id}" />
+                        <div class="flex-1 min-w-0">
+                            <div class="font-medium text-sm truncate" title="${escapeHtml(s.title)}">${escapeHtml(s.title)}</div>
+                            <div class="text-xs text-slate-500 truncate mt-0.5" title="${escapeHtml(s.url)}">${escapeHtml(s.url)}</div>
+                            <div class="flex items-center gap-3 mt-1 text-xs text-slate-400">
+                                <span>⏰ ${time}</span>
+                                <span>📦 ${(s.file_size / 1024).toFixed(1)} KB</span>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 ml-4">
+                            <a href="/snapshots/${s.filename}" target="_blank" 
+                                class="rounded border px-3 py-1.5 text-xs hover:bg-slate-50">查看</a>
+                            <a href="/snapshots/${s.filename}" download="${escapeHtml(s.title)}.html"
+                                class="rounded border px-3 py-1.5 text-xs hover:bg-slate-50">下载</a>
+                            <button class="delete-btn rounded border border-rose-300 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50"
+                                data-id="${s.id}" data-title="${escapeHtml(s.title)}">删除</button>
+                        </div>
+                    </div>
+                    `;
+                });
+
+                html += `</div></div>`;
+            });
+
+            container.innerHTML = html;
+            bindEvents();
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function updateSelectedCount() {
+            document.getElementById('selected-count').textContent = selectedIds.size;
+            document.getElementById('batch-delete-btn').disabled = selectedIds.size === 0;
+        }
+
+        function bindEvents() {
+            // Checkbox events
+            document.querySelectorAll('.snapshot-checkbox').forEach(cb => {
+                cb.addEventListener('change', function () {
+                    if (this.checked) {
+                        selectedIds.add(this.value);
+                    } else {
+                        selectedIds.delete(this.value);
+                    }
+                    updateSelectedCount();
+
+                    const allCheckboxes = document.querySelectorAll('.snapshot-checkbox');
+                    const allChecked = Array.from(allCheckboxes).every(c => c.checked);
+                    document.getElementById('select-all').checked = allChecked && allCheckboxes.length > 0;
+                });
+            });
+
+            // Delete buttons
+            document.querySelectorAll('.delete-btn').forEach(btn => {
+                btn.addEventListener('click', function () {
+                    deleteId = this.dataset.id;
+                    document.getElementById('deleteTitle').textContent = this.dataset.title;
+                    document.getElementById('deleteModal').classList.remove('hidden');
+                    document.getElementById('deleteModal').classList.add('flex');
+                });
+            });
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function () {
+            renderSnapshots();
+
+            // 搜索 - 实时过滤
+            let searchTimeout;
+            document.getElementById('search-input').addEventListener('input', function () {
+                clearTimeout(searchTimeout);
+                searchTimeout = setTimeout(filterAndRender, 300);
+            });
+
+            // 日期筛选
+            document.getElementById('date-filter').addEventListener('change', filterAndRender);
+
+            // 清除按钮
+            document.getElementById('clear-filter-btn').addEventListener('click', function () {
+                document.getElementById('search-input').value = '';
+                document.getElementById('date-filter').value = '';
+                filterAndRender();
+            });
+
+            // Select all
+            document.getElementById('select-all').addEventListener('change', function () {
+                document.querySelectorAll('.snapshot-checkbox').forEach(cb => {
+                    cb.checked = this.checked;
+                    if (this.checked) {
+                        selectedIds.add(cb.value);
+                    } else {
+                        selectedIds.delete(cb.value);
+                    }
+                });
+                updateSelectedCount();
+            });
+
+            // Single delete
+            document.getElementById('cancelDeleteBtn').addEventListener('click', closeDeleteModal);
+            document.getElementById('confirmDeleteBtn').addEventListener('click', async function () {
+                if (!deleteId) return;
+                try {
+                    const res = await fetch('/api/snapshots/' + deleteId, {
+                        method: 'DELETE',
+                        headers: { 'Authorization': 'Bearer ' + apiToken }
+                    });
+                    if (res.ok) {
+                        // 从数组中移除
+                        const idx = allSnapshots.findIndex(s => String(s.id) === String(deleteId));
+                        if (idx !== -1) allSnapshots.splice(idx, 1);
+                        filterAndRender();
+                        updateStats();
+                    } else {
+                        const data = await res.json();
+                        alert(data.error || '删除失败');
+                    }
+                } catch (e) {
+                    alert('删除失败: ' + e.message);
+                }
+                closeDeleteModal();
+            });
+
+            // Batch delete
+            document.getElementById('batch-delete-btn').addEventListener('click', function () {
+                if (selectedIds.size === 0) return;
+                document.getElementById('batchDeleteCount').textContent = selectedIds.size;
+                document.getElementById('batchDeleteModal').classList.remove('hidden');
+                document.getElementById('batchDeleteModal').classList.add('flex');
+            });
+
+            document.getElementById('cancelBatchDeleteBtn').addEventListener('click', closeBatchDeleteModal);
+            document.getElementById('confirmBatchDeleteBtn').addEventListener('click', async function () {
+                if (selectedIds.size === 0) return;
+                const btn = this;
+                btn.disabled = true;
+                btn.textContent = '删除中...';
+
+                try {
+                    const res = await fetch('/api/snapshots/batch-delete', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Bearer ' + apiToken
+                        },
+                        body: JSON.stringify({ ids: Array.from(selectedIds) })
+                    });
+                    const data = await res.json();
+                    if (res.ok && data.success) {
+                        // 从数组中移除
+                        selectedIds.forEach(id => {
+                            const idx = allSnapshots.findIndex(s => String(s.id) === String(id));
+                            if (idx !== -1) allSnapshots.splice(idx, 1);
+                        });
+                        selectedIds.clear();
+                        filterAndRender();
+                        document.getElementById('stats-total').textContent = allSnapshots.length;
+                    } else {
+                        alert(data.error || '批量删除失败');
+                    }
+                } catch (e) {
+                    alert('批量删除失败: ' + e.message);
+                }
+                btn.disabled = false;
+                btn.textContent = '删除';
+                closeBatchDeleteModal();
+            });
+
+            // Modal close handlers
+            ['deleteModal', 'batchDeleteModal'].forEach(id => {
+                document.getElementById(id).addEventListener('click', function (e) {
+                    if (e.target === this) {
+                        this.classList.add('hidden');
+                        this.classList.remove('flex');
+                    }
+                });
+            });
+        });
+
+        function closeDeleteModal() {
+            deleteId = null;
+            document.getElementById('deleteModal').classList.add('hidden');
+            document.getElementById('deleteModal').classList.remove('flex');
+        }
+
+        function closeBatchDeleteModal() {
+            document.getElementById('batchDeleteModal').classList.add('hidden');
+            document.getElementById('batchDeleteModal').classList.remove('flex');
+        }
+
+        // 动态更新统计
+        function updateStats() {
+            document.getElementById('stats-total').textContent = allSnapshots.length;
+            const totalBytes = allSnapshots.reduce((sum, s) => sum + (s.file_size || 0), 0);
+            const totalMB = (totalBytes / 1024 / 1024).toFixed(2);
+            document.getElementById('stats-size').textContent = totalMB + ' MB';
+        }
+
+        // 主题切换
+        (function () {
+            const btn = document.getElementById('theme-toggle');
+            if (!btn) return;
+            const updateIcon = () => {
+                const theme = document.documentElement.getAttribute('data-theme');
+                btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+            };
+            updateIcon();
+            btn.addEventListener('click', () => {
+                const current = document.documentElement.getAttribute('data-theme');
+                const next = current === 'dark' ? 'light' : 'dark';
+                document.documentElement.setAttribute('data-theme', next);
+                localStorage.setItem('theme', next);
+                updateIcon();
+            });
+        })();
+    </script>
+</body>
+
+</html>

@@ -1,459 +1,1226 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>书签管理器</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="/public/app.css" />
-    <script src="/public/app.js" defer></script>
+    <script src="/public/lib/tailwind.js"></script>
+    <link rel="stylesheet" href="/public/app.css">
+    <script src="/public/app.js"></script>
+    <style>
+        [x-cloak] {
+            display: none !important;
+        }
+    </style>
     <script>
-      function statusText(status) {
-        return status === 'ok' ? '正常' : status === 'fail' ? '访问失败' : '未检查';
-      }
+        (function () {
+            var theme = localStorage.getItem('theme');
+            if (theme === 'dark') {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            } else if (theme === 'light') {
+                document.documentElement.setAttribute('data-theme', 'light');
+            }
+        })();
     </script>
-  </head>
-  <body class="bg-slate-50 text-slate-900">
-    <div class="mx-auto max-w-7xl px-4 py-4">
-      <div class="flex items-center justify-between">
-        <div>
-          <h1 class="text-xl font-semibold">书签管理器</h1>
-          <p class="text-sm text-slate-500">轻量 · SQLite · 支持导入/导出与有效性检查</p>
-        </div>
-      </div>
+</head>
 
-      <div class="mt-3 grid grid-cols-12 gap-3">
-        <div class="col-span-12 lg:col-span-8">
-          <div class="rounded-lg border bg-white p-3 shadow-sm">
-            <div class="text-sm font-semibold text-slate-700">导入书签</div>
-            <div class="mt-2 text-xs text-slate-500">支持：浏览器书签HTML（Netscape）、JSON（部分结构）、纯文本URL列表。默认按规范化URL去重并跳过重复。</div>
-            <form id="import-form" class="mt-3 flex flex-col gap-2 md:flex-row md:items-center" method="post" action="/import" enctype="multipart/form-data">
-              <input
-                class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
-                type="file"
-                name="file"
-                accept=".html,.htm,.json,.txt"
-                required
-              />
-              <label class="flex items-center gap-2 text-sm text-slate-700">
-                <input type="checkbox" name="checkAfterImport" value="1" />
-                导入后检查
-              </label>
-              <button
-                type="submit"
-                class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-              >
-                开始导入
-              </button>
-            </form>
-          </div>
-        </div>
-        <div class="col-span-12 lg:col-span-4">
-          <div class="rounded-lg border bg-white p-3 shadow-sm">
-            <div class="text-sm font-semibold text-slate-700">工具</div>
-            <div class="mt-3 flex flex-col gap-2">
-              <a
-                class="rounded-lg border px-4 py-2 text-center text-sm font-medium text-slate-800 hover:bg-slate-50"
-                href="/export"
-              >
-                导出为浏览器书签HTML
-              </a>
-              <a
-                class="rounded-lg border px-4 py-2 text-center text-sm font-medium text-slate-800 hover:bg-slate-50"
-                href="/jobs"
-              >
-                任务列表
-              </a>
-              <form method="post" action="/check/all" class="rounded-lg border bg-slate-50 p-3">
-                <input type="hidden" name="redirect" value="<%= listUrl %>" />
-                <div class="grid grid-cols-12 gap-2">
-                  <div class="col-span-12">
-                    <label class="block text-xs font-semibold text-slate-600">检查范围</label>
-                    <select id="check-scope" name="scope" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400">
-                      <option value="all">全部</option>
-                      <option value="not_checked">仅未检查</option>
-                      <option value="failed">仅访问失败（重试）</option>
-                    </select>
-                  </div>
-                  <div class="col-span-6">
-                    <label class="block text-xs font-semibold text-slate-600">重试次数</label>
-                    <select id="check-retries" name="retries" class="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400">
-                      <option value="0">0</option>
-                      <option value="1">1</option>
-                      <option value="2">2</option>
-                      <option value="3">3</option>
-                      <option value="4">4</option>
-                      <option value="5">5</option>
-                    </select>
-                  </div>
-                  <div class="col-span-6">
-                    <label class="block text-xs font-semibold text-slate-600">重试间隔(ms)</label>
-                    <input
-                      id="check-retry-delay"
-                      name="retry_delay_ms"
-                      value="0"
-                      class="mt-1 w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
-                      placeholder="0"
-                    />
-                  </div>
-                  <div class="col-span-12">
-                    <button
-                      type="submit"
-                      class="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                    >
-                      开始检查
-                    </button>
-                  </div>
-                </div>
-              </form>
-              <div class="text-xs text-slate-500">导入/检查均为后台任务，会跳转到进度页。</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <% if (msg) { %>
-      <div class="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
-        <%= msg %>
-      </div>
-      <% } %>
-      <% if (err) { %>
-      <div class="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
-        <%= err %>
-      </div>
-      <% } %>
-
-      <div class="mt-4 grid grid-cols-12 gap-3">
-        <aside class="col-span-12 lg:col-span-3">
-          <div class="rounded-lg border bg-white p-3 shadow-sm">
-            <div class="flex items-center justify-between">
-              <h2 class="text-sm font-semibold text-slate-700">分类</h2>
-            </div>
-
-            <div class="mt-3 space-y-1">
-              <a
-                class="block rounded-lg px-3 py-2 text-sm hover:bg-slate-50 <%= activeCategoryId === null ? 'bg-slate-100 font-medium' : '' %>"
-                href="/<%= keyword ? '?q=' + encodeURIComponent(keyword) : '' %>"
-              >
-                全部
-                <span class="float-right text-slate-500"><%= totalCount %></span>
-              </a>
-
-              <a
-                class="block rounded-lg px-3 py-2 text-sm hover:bg-slate-50 <%= activeCategoryId === 'uncategorized' ? 'bg-slate-100 font-medium' : '' %>"
-                href="/?category=uncategorized<%= keyword ? '&q=' + encodeURIComponent(keyword) : '' %>"
-              >
-                未分类
-                <span class="float-right text-slate-500"><%= uncategorizedCount %></span>
-              </a>
-
-              <% categories.forEach(function(c) { %>
-                <div class="flex items-center justify-between rounded-lg px-3 py-2 text-sm hover:bg-slate-50 <%= activeCategoryId === c.id ? 'bg-slate-100 font-medium' : '' %>">
-                  <a class="min-w-0 flex-1 truncate" href="/?category=<%= c.id %><%= keyword ? '&q=' + encodeURIComponent(keyword) : '' %>">
-                    <%= c.name %>
-                  </a>
-                  <div class="ml-2 flex items-center gap-2">
-                    <span class="text-slate-500"><%= c.count %></span>
-                    <a class="text-xs text-slate-500 hover:text-slate-700" href="<%= editCategoryUrlPrefix %><%= c.id %>">编辑</a>
-                  </div>
-                </div>
-              <% }); %>
-            </div>
-
-            <div class="mt-3 border-t pt-3">
-              <form id="category-form" method="post" action="/categories" class="flex gap-2">
-                <input type="hidden" name="redirect" value="<%= listUrl %>" />
-                <input
-                  name="name"
-                  class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
-                  placeholder="新建分类"
-                />
-                <button
-                  type="submit"
-                  class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                >
-                  添加
-                </button>
-              </form>
-            </div>
-
-            <% if (editCategory) { %>
-              <div class="mt-4 rounded-lg border bg-slate-50 p-3">
-                <div class="text-xs font-semibold text-slate-600">编辑分类</div>
-                <form class="mt-2 flex gap-2" method="post" action="/categories/<%= editCategory.id %>/update">
-                  <input type="hidden" name="redirect" value="<%= listUrl %>" />
-                  <input
-                    name="name"
-                    value="<%= editCategory.name %>"
-                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
-                    placeholder="分类名称"
-                  />
-                  <button type="submit" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">保存</button>
-                  <a class="rounded-lg border px-3 py-2 text-sm hover:bg-white" href="<%= listUrl %>">取消</a>
-                </form>
-                <form class="mt-2" method="post" action="/categories/<%= editCategory.id %>/delete" onsubmit="return confirm('确认删除该分类？（分类下书签会变为未分类）');">
-                  <input type="hidden" name="redirect" value="<%= listUrl %>" />
-                  <button type="submit" class="w-full rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100">删除分类</button>
-                </form>
-              </div>
-            <% } %>
-          </div>
-        </aside>
-
-        <main class="col-span-12 lg:col-span-9">
-          <div class="rounded-lg border bg-white p-3 shadow-sm">
-            <div class="flex items-center justify-between">
-              <div>
-                <h2 class="text-sm font-semibold text-slate-700">书签列表</h2>
-                <p class="text-xs text-slate-500">当前：<%= selectedCategoryName %>（共 <%= totalMatches %> 条，第 <%= page %>/<%= totalPages %> 页，每页 <%= pageSize %> 条）</p>
-              </div>
-              <form method="get" action="/" class="flex items-center gap-2">
-                <% if (activeCategoryId === 'uncategorized') { %>
-                  <input type="hidden" name="category" value="uncategorized" />
-                <% } else if (typeof activeCategoryId === 'number') { %>
-                  <input type="hidden" name="category" value="<%= activeCategoryId %>" />
-                <% } %>
-                <input
-                  name="q"
-                  value="<%= keyword %>"
-                  class="w-56 rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
-                  placeholder="搜索标题/URL"
-                />
-                <button type="submit" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800">搜索</button>
-                <% if (keyword) { %>
-                  <% if (activeCategoryId === null) { %>
-                    <a class="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" href="/">清除</a>
-                  <% } else if (activeCategoryId === 'uncategorized') { %>
-                    <a class="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" href="/?category=uncategorized">清除</a>
-                  <% } else { %>
-                    <a class="rounded-lg border px-3 py-2 text-sm hover:bg-slate-50" href="/?category=<%= activeCategoryId %>">清除</a>
-                  <% } %>
-                <% } %>
-              </form>
-            </div>
-
-            <div class="mt-4 rounded-lg bg-slate-50 p-3">
-              <% if (editBookmark) { %>
-              <form method="post" action="/bookmarks/<%= editBookmark.id %>/update" class="grid grid-cols-12 gap-2">
-                <input type="hidden" name="redirect" value="<%= listUrl %>" />
-                <div class="col-span-12 md:col-span-5">
-                  <input
-                    name="url"
-                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
-                    placeholder="URL（支持不带协议，默认https）"
-                    value="<%= editBookmark.url %>"
-                  />
-                </div>
-                <div class="col-span-12 md:col-span-4">
-                  <input
-                    name="title"
-                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
-                    placeholder="标题（可选）"
-                    value="<%= editBookmark.title %>"
-                  />
-                </div>
-                <div class="col-span-8 md:col-span-2">
-                  <select
-                    name="category_id"
-                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
-                  >
-                    <option value="">未分类</option>
-                    <% categories.forEach(function(c) { %>
-                      <option value="<%= c.id %>" <%= editBookmark.category_id === c.id ? 'selected' : '' %>><%= c.name %></option>
-                    <% }); %>
-                  </select>
-                </div>
-                <div class="col-span-4 md:col-span-1">
-                  <button
-                    type="submit"
-                    class="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                  >
-                    保存
-                  </button>
-                </div>
-              </form>
-              <div class="mt-2 flex items-center justify-end gap-2">
-                <a class="rounded-lg border px-3 py-2 text-sm hover:bg-white" href="<%= listUrl %>">取消编辑</a>
-                <form method="post" action="/bookmarks/<%= editBookmark.id %>/delete" onsubmit="return confirm('确认删除该书签？');">
-                  <input type="hidden" name="redirect" value="<%= listUrl %>" />
-                  <button type="submit" class="rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700 hover:bg-rose-100">删除</button>
-                </form>
-              </div>
-              <% } else { %>
-              <form id="bookmark-form" method="post" action="/bookmarks" class="grid grid-cols-12 gap-2">
-                <input type="hidden" name="redirect" value="<%= listUrl %>" />
-                <div class="col-span-12 md:col-span-5">
-                  <input
-                    name="url"
-                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
-                    placeholder="URL（支持不带协议，默认https）"
-                  />
-                </div>
-                <div class="col-span-12 md:col-span-4">
-                  <input
-                    name="title"
-                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
-                    placeholder="标题（可选）"
-                  />
-                </div>
-                <div class="col-span-8 md:col-span-2">
-                  <select
-                    name="category_id"
-                    class="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-slate-400"
-                  >
-                    <option value="">未分类</option>
-                    <% categories.forEach(function(c) { %>
-                      <option value="<%= c.id %>"><%= c.name %></option>
-                    <% }); %>
-                  </select>
-                </div>
-                <div class="col-span-4 md:col-span-1">
-                  <button
-                    type="submit"
-                    class="w-full rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                  >
-                    添加
-                  </button>
-                </div>
-              </form>
-              <% } %>
-            </div>
-
-            <form id="check-form" method="post" action="/check">
-              <input type="hidden" name="redirect" value="<%= listUrl %>" />
-              <input id="check-form-retries" type="hidden" name="retries" value="0" />
-              <input id="check-form-retry-delay" type="hidden" name="retry_delay_ms" value="0" />
-            </form>
-
-            <div class="mt-4 flex items-center justify-between gap-2">
-                <label class="flex items-center gap-2 text-sm text-slate-700">
-                  <input id="select-all" type="checkbox" />
-                  全选当前列表
-                </label>
-                <button
-                  type="submit"
-                  form="check-form"
-                  class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-                >
-                  检查选中
-                </button>
-            </div>
-
-            <div class="mt-3 overflow-hidden rounded-lg border">
-              <table class="w-full table-fixed">
-                <thead class="bg-slate-50">
-                  <tr>
-                    <th class="w-[6%] px-3 py-2 text-left text-xs font-semibold text-slate-600">选择</th>
-                    <th class="w-[40%] px-3 py-2 text-left text-xs font-semibold text-slate-600">标题 / URL</th>
-                    <th class="w-[16%] px-3 py-2 text-left text-xs font-semibold text-slate-600">分类</th>
-                    <th class="w-[18%] px-3 py-2 text-left text-xs font-semibold text-slate-600">检查状态</th>
-                    <th class="w-[14%] px-3 py-2 text-left text-xs font-semibold text-slate-600">创建时间</th>
-                    <th class="w-[6%] px-3 py-2 text-left text-xs font-semibold text-slate-600">操作</th>
-                  </tr>
-                </thead>
-                <tbody class="divide-y">
-                  <% if (!bookmarks.length) { %>
-                    <tr>
-                      <td colspan="6" class="px-3 py-8 text-center text-sm text-slate-500">暂无书签</td>
-                    </tr>
-                  <% } %>
-
-                  <% bookmarks.forEach(function(b) { %>
-                    <tr class="hover:bg-slate-50">
-                      <td class="px-3 py-3 align-top">
-                        <input class="bookmark-select" type="checkbox" form="check-form" name="bookmark_ids" value="<%= b.id %>" />
-                      </td>
-                      <td class="px-3 py-3 align-top">
-                        <div class="truncate text-sm font-medium text-slate-900">
-                          <a class="hover:underline" href="<%= b.url %>" target="_blank" rel="noreferrer"><%= b.title %></a>
-                        </div>
-                        <div class="truncate text-xs text-slate-500"><%= b.url %></div>
-                      </td>
-                      <td class="px-3 py-3 align-top text-sm text-slate-700">
-                        <%= b.category_name || '未分类' %>
-                      </td>
-                      <td class="px-3 py-3 align-top text-sm">
-                        <div class="text-slate-700"><script>document.write(statusText('<%= b.check_status %>'));</script></div>
-                        <% if (b.check_http_code) { %>
-                          <div class="text-xs text-slate-500">HTTP <%= b.check_http_code %></div>
-                        <% } %>
-                        <% if (b.check_error) { %>
-                          <div class="text-xs text-rose-600"><%= b.check_error %></div>
-                        <% } %>
-                      </td>
-                      <td class="px-3 py-3 align-top text-sm text-slate-700">
-                        <%= new Date(b.created_at).toLocaleString('zh-CN') %>
-                      </td>
-                      <td class="px-3 py-3 align-top text-sm">
-                        <div class="flex items-center gap-2">
-                          <a class="text-xs text-slate-500 hover:text-slate-700" href="<%= editBookmarkUrlPrefix %><%= b.id %>">编辑</a>
-                          <form method="post" action="/bookmarks/<%= b.id %>/delete" onsubmit="return confirm('确认删除该书签？');">
-                            <input type="hidden" name="redirect" value="<%= listUrl %>" />
-                            <button type="submit" class="text-xs text-rose-700 hover:underline">删除</button>
-                          </form>
-                        </div>
-                      </td>
-                    </tr>
-                  <% }); %>
-                </tbody>
-              </table>
-
-              <div class="border-t bg-white px-3 py-3">
+<body class="bg-slate-50 text-slate-900">
+    <div x-data="bookmarkApp()" x-init="init()">
+        <!-- Header -->
+        <div class="glass-header border-b sticky top-0 z-40">
+            <div class="mx-auto max-w-screen-2xl px-4 py-3">
                 <div class="flex items-center justify-between">
-                  <div class="text-xs text-slate-500">共 <%= totalMatches %> 条</div>
-                  <div class="flex items-center gap-2">
-                    <% if (page > 1) { %>
-                      <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50" href="<%= pageUrlPrefix %><%= page - 1 %>">上一页</a>
-                    <% } else { %>
-                      <span class="rounded-lg border px-3 py-1 text-sm text-slate-400">上一页</span>
-                    <% } %>
-
-                    <span class="text-sm text-slate-700">第 <%= page %>/<%= totalPages %> 页</span>
-
-                    <% if (page < totalPages) { %>
-                      <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50" href="<%= pageUrlPrefix %><%= page + 1 %>">下一页</a>
-                    <% } else { %>
-                      <span class="rounded-lg border px-3 py-1 text-sm text-slate-400">下一页</span>
-                    <% } %>
-                  </div>
+                    <div>
+                        <h1
+                            class="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                            📚 书签管理器</h1>
+                        <p class="text-xs text-slate-500">轻量 · SQLite · 支持导入/导出与有效性检查</p>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <!-- Current Job Progress -->
+                        <template
+                            x-if="currentJob && (currentJob.status === 'running' || currentJob.status === 'queued')">
+                            <div
+                                class="flex items-center gap-2 text-xs bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg px-3 py-2 border border-blue-200 shadow-sm animate-fade-in">
+                                <span class="animate-pulse"
+                                    x-text="currentJob.type === 'ai_classify' ? '🤖 AI分类' : currentJob.type === 'ai_simplify' ? '🗂️ AI精简' : currentJob.type === 'check' ? '🔍 检查' : currentJob.type === 'import' ? '📥 导入' : '任务'"></span>
+                                <span x-text="currentJob.processed + '/' + currentJob.total" class="font-medium"></span>
+                                <div class="w-20 h-2 progress-bar">
+                                    <div class="progress-bar-fill"
+                                        :style="'width:' + (currentJob.total > 0 ? Math.floor(currentJob.processed / currentJob.total * 100) : 0) + '%'">
+                                    </div>
+                                </div>
+                                <span x-text="currentJob.status === 'running' ? '运行中' : '等待中'"
+                                    class="text-slate-600"></span>
+                                <a :href="'/jobs/' + currentJob.id"
+                                    class="text-blue-600 hover:text-blue-700 font-medium">详情</a>
+                                <button @click="cancelCurrentJob()"
+                                    class="text-rose-500 hover:text-rose-700 hover:scale-110 transition-transform">✕</button>
+                            </div>
+                        </template>
+                        <button @click="toggleTheme()" class="btn-secondary btn-sm"
+                            x-text="theme === 'dark' ? '☀️' : '🌙'"></button>
+                        <button @click="openBackupModal()" class="btn-secondary btn-sm">💾 备份</button>
+                        <button @click="openExportModal()" class="btn-secondary btn-sm">📤 导出</button>
+                        <a href="/snapshots" class="btn-secondary btn-sm inline-flex items-center">📸 快照</a>
+                        <a href="/jobs" class="btn-secondary btn-sm inline-flex items-center">📋 任务</a>
+                        <a href="/settings" class="btn-secondary btn-sm inline-flex items-center">⚙️ 设置</a>
+                        <form action="/logout" method="POST" class="inline">
+                            <button type="submit" class="btn-danger btn-sm">🚪 退出</button>
+                        </form>
+                    </div>
                 </div>
-              </div>
             </div>
-          </div>
-        </main>
-      </div>
+        </div>
+
+        <div class="mx-auto max-w-screen-2xl px-4 py-4 h-[calc(100vh-70px)] flex flex-col lg:flex-row gap-4">
+            <div class="flex flex-col lg:flex-row gap-4 flex-1 min-h-0">
+                <!-- Sidebar -->
+                <aside class="lg:w-72 flex-shrink-0 flex flex-col gap-4 lg:max-h-[calc(100vh-100px)]">
+                    <!-- Import -->
+                    <div class="card p-4 flex-shrink-0 animate-fade-in">
+                        <h2 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                            <span
+                                class="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs">📥</span>
+                            导入书签
+                        </h2>
+                        <form id="import-form" @submit.prevent="startImport($el)">
+                            <input type="file" name="file" accept=".html,.htm,.json,.txt" required
+                                class="w-full text-xs mb-3 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                            <label class="flex items-center gap-2 text-xs text-slate-600 mb-2">
+                                <input type="checkbox" x-model="importOverrideCategory">
+                                忽略原有分类，统一导入到：
+                            </label>
+                            <input type="hidden" name="overrideCategory" :value="importOverrideCategory ? '1' : ''">
+                            <div class="mb-3" x-show="importOverrideCategory">
+                                <select name="defaultCategoryId" class="w-full rounded-lg border px-3 py-2 text-xs">
+                                    <option value="">未分类</option>
+                                    <template x-for="cat in categories" :key="cat.id">
+                                        <option :value="cat.id" x-text="cat.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <label class="flex items-center gap-2 text-xs text-slate-600 mb-3">
+                                <input type="checkbox" name="skipDuplicates" value="1" checked>
+                                跳过重复书签
+                            </label>
+                            <button type="submit" class="btn-primary w-full">开始导入</button>
+                        </form>
+                    </div>
+
+                    <!-- Tools -->
+                    <div class="card p-4 flex-shrink-0">
+                        <h2 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
+                            <span
+                                class="w-6 h-6 rounded-md bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white text-xs">🛠️</span>
+                            工具
+                        </h2>
+                        <div class="space-y-2">
+                            <button @click="openCheckModal()" class="btn-secondary w-full text-left justify-start">🔍
+                                批量检查</button>
+                            <button @click="openAIClassifyModal()"
+                                class="btn-secondary w-full text-left justify-start">🤖 AI 分类</button>
+                            <button @click="openAISimplifyModal()"
+                                class="btn-secondary w-full text-left justify-start">🗂️ AI 精简分类</button>
+                        </div>
+                    </div>
+                    <!-- Categories - Scrollable -->
+                    <div class="card p-4 flex-1 flex flex-col min-h-0 overflow-hidden custom-scrollbar">
+                        <h2 class="text-sm font-bold text-slate-700 mb-3 flex-shrink-0 flex items-center gap-2">
+                            <span
+                                class="w-6 h-6 rounded-md bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white text-xs">📁</span>
+                            分类
+                        </h2>
+
+                        <!-- Category Search -->
+                        <input type="text" x-model="categorySearch" placeholder="🔍 搜索分类..."
+                            class="w-full rounded-lg border px-3 py-2 text-xs mb-3 flex-shrink-0">
+
+                        <!-- Category List - Scrollable -->
+                        <div class="flex-1 overflow-y-auto min-h-0 custom-scrollbar">
+                            <!-- All Bookmarks -->
+                            <div @click="loadCategory(null)"
+                                class="flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all hover:bg-slate-50"
+                                :class="currentCategory === null ? 'bg-gradient-to-r from-blue-50 to-purple-50 text-blue-700 shadow-sm' : ''">
+                                <span class="text-sm font-medium">📚 全部</span>
+                                <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100" x-text="totalCount"></span>
+                            </div>
+
+                            <!-- Uncategorized -->
+                            <div @click="loadCategory('uncategorized')"
+                                class="flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer transition-all hover:bg-slate-50 mt-1"
+                                :class="currentCategory === 'uncategorized' ? 'bg-gradient-to-r from-blue-50 to-purple-50 text-blue-700 shadow-sm' : ''">
+                                <span class="text-sm font-medium">📂 未分类</span>
+                                <span class="text-xs px-2 py-0.5 rounded-full bg-slate-100"
+                                    x-text="uncategorizedCount"></span>
+                            </div>
+
+                            <!-- Select All Categories -->
+                            <div class="flex items-center gap-2 mt-3 mb-1 px-1 py-1 border-b border-slate-100">
+                                <input type="checkbox" id="select-all-categories"
+                                    @change="toggleSelectAllCategories($event.target.checked)"
+                                    :checked="selectedCategories.length > 0 && selectedCategories.length === getAllCategoryIds().length"
+                                    class="rounded">
+                                <label for="select-all-categories"
+                                    class="text-xs text-slate-500 cursor-pointer">全选分类</label>
+                            </div>
+
+                            <!-- Category Tree - 移除 max-h-80 限制 -->
+                            <div class="space-y-0.5 custom-scrollbar">
+                                <template x-for="cat in categoryTree" :key="cat.id">
+                                    <div>
+                                        <!-- Parent Category -->
+                                        <div class="flex items-center group">
+                                            <input type="checkbox" :value="String(cat.id)" x-model="selectedCategories"
+                                                class="mr-1 flex-shrink-0" @click.stop>
+                                            <button x-show="cat.children && cat.children.length > 0"
+                                                @click.stop="toggleCategoryExpand(cat.id)"
+                                                class="w-4 h-4 flex items-center justify-center text-xs text-slate-400 hover:text-slate-600">
+                                                <span x-text="isCategoryExpanded(cat.id) ? '▼' : '▶'"></span>
+                                            </button>
+                                            <span x-show="!cat.children || cat.children.length === 0"
+                                                class="w-4"></span>
+                                            <div @click="loadCategory(cat.id)"
+                                                class="flex-1 flex items-center justify-between px-2 py-1 rounded cursor-pointer hover:bg-slate-50"
+                                                :class="currentCategory == cat.id ? 'bg-blue-50 text-blue-700' : ''">
+                                                <span class="text-sm flex items-center gap-1">
+                                                    <span x-text="cat.icon || '📁'"
+                                                        :style="cat.color ? 'color:' + cat.color : ''"></span>
+                                                    <span x-text="cat.name"></span>
+                                                </span>
+                                                <span class="text-xs text-slate-500" x-text="cat.count"></span>
+                                            </div>
+                                            <div class="hidden group-hover:flex gap-0.5">
+                                                <button @click.stop="createSubCategory(cat.id)"
+                                                    class="text-xs text-slate-400 hover:text-blue-500"
+                                                    title="添加子分类">+</button>
+                                                <button @click.stop="openCategoryStyleModal(cat)"
+                                                    class="text-xs text-slate-400 hover:text-blue-500"
+                                                    title="设置样式">🎨</button>
+                                                <button @click.stop="deleteCategory(cat.id)"
+                                                    class="text-xs text-slate-400 hover:text-rose-500"
+                                                    title="删除">🗑️</button>
+                                            </div>
+                                        </div>
+                                        <!-- Child Categories -->
+                                        <template
+                                            x-if="cat.children && cat.children.length > 0 && isCategoryExpanded(cat.id)">
+                                            <div class="ml-4 pl-2 border-l-2 border-slate-200">
+                                                <template x-for="child in cat.children" :key="child.id">
+                                                    <div class="flex items-center group">
+                                                        <input type="checkbox" :value="String(child.id)"
+                                                            x-model="selectedCategories" class="mr-1 flex-shrink-0"
+                                                            @click.stop>
+                                                        <div @click="loadCategory(child.id)"
+                                                            class="flex-1 flex items-center justify-between px-2 py-1 rounded cursor-pointer hover:bg-slate-50"
+                                                            :class="currentCategory == child.id ? 'bg-blue-50 text-blue-700' : ''">
+                                                            <span class="text-sm flex items-center gap-1">
+                                                                <span x-text="child.icon || '📄'"
+                                                                    :style="child.color ? 'color:' + child.color : ''"></span>
+                                                                <span x-text="child.displayName || child.name"></span>
+                                                            </span>
+                                                            <span class="text-xs text-slate-500"
+                                                                x-text="child.count"></span>
+                                                        </div>
+                                                        <div class="hidden group-hover:flex gap-0.5">
+                                                            <button @click.stop="openCategoryStyleModal(child)"
+                                                                class="text-xs text-slate-400 hover:text-blue-500"
+                                                                title="设置样式">🎨</button>
+                                                            <button @click.stop="deleteCategory(child.id)"
+                                                                class="text-xs text-slate-400 hover:text-rose-500"
+                                                                title="删除">🗑️</button>
+                                                        </div>
+                                                    </div>
+                                                </template>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </template>
+                            </div>
+
+                        </div>
+
+                        <!-- New Category - Fixed at bottom -->
+                        <div class="mt-3 pt-3 border-t flex-shrink-0">
+                            <!-- 批量操作 -->
+                            <template x-if="selectedCategories.length > 0">
+                                <div class="flex gap-2 mb-2">
+                                    <button @click="batchDeleteCategories()"
+                                        class="flex-1 rounded border border-rose-200 px-2 py-1.5 text-xs text-rose-600 hover:bg-rose-50">
+                                        🗑️ 删除选中 (<span x-text="selectedCategories.length"></span>)
+                                    </button>
+                                </div>
+                            </template>
+                            <div class="flex gap-2">
+                                <input type="text" x-model="newCategoryName" placeholder="新分类名称"
+                                    class="flex-1 rounded border px-2 py-1.5 text-xs" @keyup.enter="createCategory()">
+                                <button @click="createCategory()"
+                                    class="rounded bg-slate-900 text-white px-3 py-1.5 text-xs hover:bg-slate-800">创建</button>
+                            </div>
+                        </div>
+                    </div>
+
+                </aside>
+
+                <!-- Main Content -->
+                <main class="flex-1 min-w-0 flex flex-col overflow-hidden">
+                    <!-- Add Bookmark (moved to top) -->
+                    <div class="rounded-lg border bg-white p-4 shadow-sm mb-4">
+                        <h3 class="text-sm font-semibold text-slate-700 mb-3">➕ 添加书签</h3>
+                        <div class="flex flex-wrap items-end gap-3">
+                            <div class="flex-1 min-w-[200px]">
+                                <input type="text" x-model="newBookmark.url" placeholder="URL"
+                                    class="w-full rounded border px-3 py-2 text-sm">
+                            </div>
+                            <div class="flex-1 min-w-[150px]">
+                                <input type="text" x-model="newBookmark.title" placeholder="标题（可选）"
+                                    class="w-full rounded border px-3 py-2 text-sm">
+                            </div>
+                            <div class="w-32">
+                                <select x-model="newBookmark.category_id"
+                                    class="w-full rounded border px-3 py-2 text-sm">
+                                    <option value="">未分类</option>
+                                    <template x-for="cat in categories" :key="cat.id">
+                                        <option :value="cat.id" x-text="cat.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+                            <button @click="addBookmark()"
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">添加</button>
+                            <button @click="aiSuggestNewBookmark()"
+                                class="rounded border px-3 py-2 text-sm hover:bg-slate-50">🤖 AI
+                                建议</button>
+                        </div>
+                        <div x-cloak x-show="aiSuggestion" class="mt-2 text-sm text-emerald-600"
+                            x-text="'建议分类: ' + aiSuggestion"></div>
+                    </div>
+
+                    <!-- Search & Filters -->
+                    <div class="rounded-lg border bg-white p-3 shadow-sm mb-4">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <input type="text" x-model="searchKeyword" @input="debouncedSearch()"
+                                @keyup.enter="searchBookmarks()" placeholder="搜索书签..."
+                                class="flex-1 min-w-[200px] rounded border px-3 py-2 text-sm">
+                            <button @click="searchBookmarks()"
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">搜索</button>
+                            <button @click="showAdvancedSearch = !showAdvancedSearch"
+                                class="rounded border px-3 py-2 text-sm hover:bg-slate-50">
+                                <span x-text="showAdvancedSearch ? '收起 ▲' : '筛选 ▼'"></span>
+                            </button>
+                            <button @click="toggleViewMode()" class="rounded border px-3 py-2 text-sm hover:bg-slate-50"
+                                x-text="viewMode === 'table' ? '🗂️ 卡片' : '📋 表格'"></button>
+                        </div>
+
+                        <!-- Advanced Search -->
+                        <div x-show="showAdvancedSearch"
+                            class="mt-3 pt-3 border-t grid grid-cols-2 md:grid-cols-4 gap-3">
+                            <div>
+                                <label class="text-xs text-slate-600">状态</label>
+                                <select x-model="advancedSearch.status"
+                                    class="w-full rounded border px-2 py-1.5 text-sm mt-1">
+                                    <option value="all">全部</option>
+                                    <option value="not_checked">未检查</option>
+                                    <option value="ok">正常</option>
+                                    <option value="fail">失败</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-xs text-slate-600">排序</label>
+                                <select x-model="advancedSearch.sort"
+                                    class="w-full rounded border px-2 py-1.5 text-sm mt-1">
+                                    <option value="id">ID</option>
+                                    <option value="title">标题</option>
+                                    <option value="created_at">创建时间</option>
+                                    <option value="check_status">检查状态</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-xs text-slate-600">排序方向</label>
+                                <select x-model="advancedSearch.order"
+                                    class="w-full rounded border px-2 py-1.5 text-sm mt-1">
+                                    <option value="desc">降序</option>
+                                    <option value="asc">升序</option>
+                                </select>
+                            </div>
+                            <div class="flex items-end gap-2">
+                                <button @click="applyAdvancedSearch()"
+                                    class="rounded bg-slate-900 text-white px-4 py-1.5 text-sm hover:bg-slate-800">应用</button>
+                                <button @click="resetAdvancedSearch()"
+                                    class="rounded border px-4 py-1.5 text-sm hover:bg-slate-50">重置</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Batch Actions & Pagination -->
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                        <div class="flex items-center gap-2 flex-wrap">
+                            <span class="text-sm text-slate-500">
+                                共 <span x-text="total"></span> 条，已选 <span x-text="selectedBookmarks.length"></span> 条
+                            </span>
+                            <template x-if="selectedBookmarks.length > 0">
+                                <div class="flex gap-1">
+                                    <button @click="openMoveSelectedModal()"
+                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-50">📁
+                                        移动</button>
+                                    <button @click="openCheckModalForSelected()"
+                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-50">🔍 检查</button>
+                                    <button @click="aiClassifySelected()"
+                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-50">🤖
+                                        AI分类</button>
+                                    <button @click="batchDelete()"
+                                        class="rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 hover:bg-rose-50">🗑️
+                                        删除选中</button>
+                                </div>
+                            </template>
+                            <!-- Delete All / Current Page -->
+                            <div class="flex gap-1 ml-2">
+                                <button @click="deleteCurrentPage()"
+                                    class="rounded border border-rose-200 px-2 py-1 text-xs text-rose-500 hover:bg-rose-50">删除本页</button>
+                                <button @click="deleteAllBookmarks()"
+                                    class="rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 hover:bg-rose-50">删除全部</button>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-500">第 <span x-text="page"></span>/<span
+                                    x-text="totalPages"></span>
+                                页</span>
+                            <button @click="prevPage()" :disabled="page <= 1"
+                                class="rounded border px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50">上一页</button>
+                            <button @click="nextPage()" :disabled="page >= totalPages"
+                                class="rounded border px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50">下一页</button>
+                        </div>
+                    </div>
+
+                    <!-- Bookmark List Area -->
+                    <div class="flex-1 overflow-y-auto min-h-0">
+                        <!-- Table View -->
+                        <div x-show="viewMode === 'table'" class="rounded-lg border bg-white shadow-sm overflow-hidden">
+                            <table class="w-full">
+                                <thead class="bg-slate-50">
+                                    <tr>
+                                        <th class="w-10 px-3 py-2"><input type="checkbox" @change="toggleAll($event)"
+                                                :checked="allSelected">
+                                        </th>
+                                        <th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">标题</th>
+                                        <th class="w-24 px-3 py-2 text-left text-xs font-semibold text-slate-600">分类
+                                        </th>
+                                        <th class="w-20 px-3 py-2 text-center text-xs font-semibold text-slate-600">状态
+                                        </th>
+                                        <th class="w-24 px-3 py-2 text-center text-xs font-semibold text-slate-600">操作
+                                        </th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y">
+                                    <template x-for="bookmark in displayBookmarks" :key="bookmark.id">
+                                        <tr class="hover:bg-slate-50">
+                                            <td class="px-3 py-2">
+                                                <input type="checkbox" :value="String(bookmark.id)"
+                                                    x-model="selectedBookmarks">
+                                            </td>
+                                            <td class="px-3 py-2 max-w-xs">
+                                                <a :href="bookmark.url" target="_blank"
+                                                    class="text-sm text-blue-600 hover:underline line-clamp-1"
+                                                    x-text="bookmark.title"></a>
+                                                <div class="text-xs text-slate-400 truncate max-w-xs"
+                                                    x-text="bookmark.url">
+                                                </div>
+                                            </td>
+                                            <td class="px-3 py-2"><span class="text-xs text-slate-500"
+                                                    x-text="bookmark.category_name || '未分类'"></span></td>
+                                            <td class="px-3 py-2 text-center">
+                                                <span class="inline-flex items-center gap-1">
+                                                    <span class="w-2 h-2 rounded-full"
+                                                        :class="bookmark.check_status === 'ok' ? 'bg-emerald-500' : bookmark.check_status === 'fail' ? 'bg-rose-500' : 'bg-slate-300'"></span>
+                                                    <span
+                                                        x-show="bookmark.skip_check == 1 || bookmark.skip_check === true"
+                                                        class="text-xs text-slate-400" title="忽略检查">🚫</span>
+                                                </span>
+                                            </td>
+                                            <td class="px-3 py-2 text-center relative">
+                                                <!-- Dropdown Menu Button -->
+                                                <button
+                                                    @click.stop="openDropdownId === bookmark.id ? closeAllDropdowns() : openDropdown(bookmark.id)"
+                                                    class="rounded border px-2 py-1 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 dark:border-slate-600">操作
+                                                    ▼</button>
+                                                <!-- Dropdown Menu -->
+                                                <div x-show="openDropdownId === bookmark.id"
+                                                    @click.away="closeAllDropdowns()" x-effect="if (openDropdownId === bookmark.id) { 
+                                                        $nextTick(() => { 
+                                                            const rect = $el.parentElement.getBoundingClientRect();
+                                                            const spaceBelow = window.innerHeight - rect.bottom;
+                                                            if (spaceBelow < 250) {
+                                                                $el.style.top = 'auto';
+                                                                $el.style.bottom = '100%';
+                                                                $el.style.marginBottom = '0.25rem';
+                                                                $el.style.marginTop = '0';
+                                                            } else {
+                                                                $el.style.bottom = 'auto';
+                                                                $el.style.top = '100%';
+                                                                $el.style.marginTop = '0.25rem';
+                                                                $el.style.marginBottom = '0';
+                                                            }
+                                                        });
+                                                    }"
+                                                    class="absolute right-0 z-50 w-32 rounded-lg border bg-white dark:bg-slate-800 dark:border-slate-600 shadow-lg py-1 text-left max-h-80 overflow-y-auto">
+                                                    <button @click="openEditBookmark(bookmark); closeAllDropdowns()"
+                                                        class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">✏️
+                                                        编辑</button>
+                                                    <button @click="openMoveBookmark(bookmark); closeAllDropdowns()"
+                                                        class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">📁
+                                                        移动</button>
+                                                    <button @click="startCheckOne(bookmark.id); closeAllDropdowns()"
+                                                        class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">🔍
+                                                        检查</button>
+                                                    <button @click="aiClassifyOne(bookmark); closeAllDropdowns()"
+                                                        class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">🤖
+                                                        AI分类</button>
+                                                    <hr class="my-1">
+                                                    <button
+                                                        @click="updateBookmarkStatus(bookmark.id, 'ok'); closeAllDropdowns()"
+                                                        class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">✅
+                                                        标记正常</button>
+                                                    <button
+                                                        @click="updateBookmarkStatus(bookmark.id, 'fail'); closeAllDropdowns()"
+                                                        class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">❌
+                                                        标记失败</button>
+                                                    <button @click="toggleSkipCheck(bookmark); closeAllDropdowns()"
+                                                        class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left"
+                                                        x-text="bookmark.skip_check ? '🔄 取消忽略' : '🚫 忽略检查'"></button>
+                                                    <hr class="my-1">
+                                                    <button @click="deleteBookmark(bookmark.id); closeAllDropdowns()"
+                                                        class="block w-full px-3 py-1.5 text-xs hover:bg-rose-50 text-rose-600 text-left">🗑️
+                                                        删除</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    </template>
+                                </tbody>
+                            </table>
+                            <div x-show="displayBookmarks.length === 0" class="text-center py-10 text-slate-400">暂无书签
+                            </div>
+                        </div>
+
+                        <!-- Card View -->
+                        <div x-show="viewMode === 'card'" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                            <template x-for="bookmark in displayBookmarks" :key="bookmark.id">
+                                <div class="rounded-lg border bg-white p-4 shadow-sm hover:shadow-md transition-shadow">
+                                    <div class="flex items-start gap-2">
+                                        <input type="checkbox" :value="String(bookmark.id)" x-model="selectedBookmarks"
+                                            class="mt-1">
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex items-start justify-between gap-2">
+                                                <a :href="bookmark.url" target="_blank"
+                                                    class="text-sm font-medium text-blue-600 hover:underline line-clamp-2 flex-1"
+                                                    x-text="bookmark.title"></a>
+                                                <span class="inline-flex items-center gap-1 flex-shrink-0 mt-1">
+                                                    <span class="w-2 h-2 rounded-full"
+                                                        :class="bookmark.check_status === 'ok' ? 'bg-emerald-500' : bookmark.check_status === 'fail' ? 'bg-rose-500' : 'bg-slate-300'"></span>
+                                                    <span
+                                                        x-show="bookmark.skip_check == 1 || bookmark.skip_check === true"
+                                                        class="text-xs text-slate-400" title="忽略检查">🚫</span>
+                                                </span>
+                                            </div>
+                                            <div class="text-xs text-slate-400 truncate max-w-xs mt-1"
+                                                x-text="bookmark.url">
+                                            </div>
+                                            <div class="flex items-center justify-between mt-3">
+                                                <span class="text-xs bg-slate-100 rounded px-2 py-0.5"
+                                                    x-text="bookmark.category_name || '未分类'"></span>
+                                                <div class="relative">
+                                                    <button
+                                                        @click.stop="openDropdownId === ('card-' + bookmark.id) ? closeAllDropdowns() : openDropdown('card-' + bookmark.id)"
+                                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-100">操作
+                                                        ▼</button>
+                                                    <div x-show="openDropdownId === ('card-' + bookmark.id)"
+                                                        @click.away="closeAllDropdowns()"
+                                                        class="absolute right-0 top-full mt-1 z-50 w-32 rounded-lg border bg-white shadow-lg py-1 text-left">
+                                                        <button @click="openEditBookmark(bookmark); closeAllDropdowns()"
+                                                            class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">✏️
+                                                            编辑</button>
+                                                        <button @click="openMoveBookmark(bookmark); closeAllDropdowns()"
+                                                            class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">📁
+                                                            移动</button>
+                                                        <button @click="startCheckOne(bookmark.id); closeAllDropdowns()"
+                                                            class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">�
+                                                            检查</button>
+                                                        <button @click="aiClassifyOne(bookmark); closeAllDropdowns()"
+                                                            class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">🤖
+                                                            AI分类</button>
+                                                        <hr class="my-1">
+                                                        <button
+                                                            @click="updateBookmarkStatus(bookmark.id, 'ok'); closeAllDropdowns()"
+                                                            class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">✅
+                                                            标记正常</button>
+                                                        <button
+                                                            @click="updateBookmarkStatus(bookmark.id, 'fail'); closeAllDropdowns()"
+                                                            class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">❌
+                                                            标记失败</button>
+                                                        <button @click="toggleSkipCheck(bookmark); closeAllDropdowns()"
+                                                            class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left"
+                                                            x-text="bookmark.skip_check ? '🔄 取消忽略' : '🚫 忽略检查'"></button>
+                                                        <hr class="my-1">
+                                                        <button
+                                                            @click="deleteBookmark(bookmark.id); closeAllDropdowns()"
+                                                            class="block w-full px-3 py-1.5 text-xs hover:bg-rose-50 text-rose-600 text-left">🗑️
+                                                            删除</button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                </main>
+            </div>
+        </div>
+
+        <!-- Edit Bookmark Modal -->
+        <div x-cloak x-show="showEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeEditModal()">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">编辑书签</h3>
+                    <button @click="closeEditModal()"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <div class="space-y-3">
+                    <input type="text" x-model="editBookmark.url" placeholder="URL"
+                        class="w-full rounded border px-3 py-2 text-sm">
+                    <input type="text" x-model="editBookmark.title" placeholder="标题"
+                        class="w-full rounded border px-3 py-2 text-sm">
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button @click="closeEditModal()"
+                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                    <button @click="saveEditBookmark()"
+                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Move One Bookmark Modal -->
+        <div x-cloak x-show="showMoveOneModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeMoveOneModal()">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">移动书签</h3>
+                    <button @click="closeMoveOneModal()"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <select x-model="moveOneTargetCategory" class="w-full rounded border px-3 py-2 text-sm">
+                    <option value="">未分类</option>
+                    <template x-for="cat in categories" :key="cat.id">
+                        <option :value="cat.id" x-text="cat.name"></option>
+                    </template>
+                </select>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button @click="closeMoveOneModal()"
+                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                    <button @click="confirmMoveOneBookmark()"
+                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">确认移动</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Move Selected Modal -->
+        <div x-cloak x-show="showMoveSelectedModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeMoveSelectedModal()">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+                <h3 class="text-lg font-semibold mb-3">批量移动书签</h3>
+                <p class="text-sm text-slate-500 mb-3">将 <span x-text="selectedBookmarks.length"></span> 个书签移动到：</p>
+                <select x-model="moveSelectedTargetCategory" class="w-full rounded border px-3 py-2 text-sm">
+                    <option value="">未分类</option>
+                    <template x-for="cat in categories" :key="cat.id">
+                        <option :value="cat.id" x-text="cat.name"></option>
+                    </template>
+                </select>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button @click="closeMoveSelectedModal()"
+                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                    <button @click="confirmMoveSelectedBookmarks()"
+                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">确认移动</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Category Style Modal -->
+        <div x-cloak x-show="showCategoryStyleModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeCategoryStyleModal()">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+                <h3 class="text-lg font-semibold mb-3">分类样式</h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs text-slate-600">图标</label>
+                        <div class="flex flex-wrap gap-2 mt-1">
+                            <template
+                                x-for="icon in ['📁', '📂', '📄', '📝', '📚', '🔖', '⭐', '❤️', '🎮', '🎵', '🎬', '📷', '💻', '🌐', '🛠️', '📱']">
+                                <button @click="categoryIcon = icon"
+                                    class="w-8 h-8 rounded border hover:bg-slate-50 flex items-center justify-center"
+                                    :class="categoryIcon === icon ? 'border-blue-500 bg-blue-50' : ''"
+                                    x-text="icon"></button>
+                            </template>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-600">颜色</label>
+                        <div class="flex flex-wrap gap-2 mt-1">
+                            <template
+                                x-for="color in ['', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899']">
+                                <button @click="categoryColor = color" class="w-8 h-8 rounded border hover:opacity-80"
+                                    :class="categoryColor === color ? 'ring-2 ring-blue-500' : ''"
+                                    :style="color ? 'background-color:' + color : ''"
+                                    x-text="color ? '' : '✕'"></button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button @click="closeCategoryStyleModal()"
+                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                    <button @click="saveCategoryStyle()"
+                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">保存</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Check Modal -->
+        <div x-cloak x-show="showCheckModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeCheckModal()">
+            <div class="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">🔍 批量检查</h3>
+                    <button @click="closeCheckModal()"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <template x-if="!checkJobId">
+                    <div class="space-y-3">
+                        <div>
+                            <label class="text-xs text-slate-600">检查范围</label>
+                            <select x-model="checkOptions.scope" class="w-full rounded border px-3 py-2 text-sm mt-1">
+                                <option value="all">全部书签</option>
+                                <option value="not_checked">仅未检查</option>
+                                <option value="failed">仅失败书签</option>
+                                <option value="category">当前分类</option>
+                                <option value="selected">选中书签</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="text-xs text-slate-600">重试次数</label>
+                                <select x-model="checkOptions.retries"
+                                    class="w-full rounded border px-3 py-2 text-sm mt-1">
+                                    <option value="0">0</option>
+                                    <option value="1">1</option>
+                                    <option value="2">2</option>
+                                    <option value="3">3</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-xs text-slate-600">重试间隔(ms)</label>
+                                <input type="number" x-model="checkOptions.retry_delay_ms"
+                                    class="w-full rounded border px-3 py-2 text-sm mt-1">
+                            </div>
+                        </div>
+                        <div class="flex justify-end gap-2">
+                            <button @click="closeCheckModal()"
+                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                            <button @click="startCheck()"
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">开始检查</button>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="checkJobId && !checkJobDone">
+                    <div class="space-y-4">
+                        <!-- Circular Progress Ring -->
+                        <div class="flex flex-col items-center gap-3">
+                            <div class="relative w-24 h-24">
+                                <svg class="w-24 h-24 transform -rotate-90">
+                                    <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
+                                    <circle cx="48" cy="48" r="40" stroke="#3b82f6" stroke-width="8" fill="none"
+                                        stroke-linecap="round" :stroke-dasharray="251.2"
+                                        :stroke-dashoffset="251.2 - (251.2 * checkProgress / 100)" />
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <span class="text-xl font-bold text-blue-600" x-text="checkProgress + '%'"></span>
+                                </div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-sm font-medium text-slate-700"
+                                    x-text="'处理中 ' + checkStats.processed + ' / ' + checkStats.total"></div>
+                                <div class="text-xs text-slate-400 mt-1">正在检查书签可用性...</div>
+                            </div>
+                        </div>
+                        <!-- Action Buttons -->
+                        <div class="flex justify-center gap-3 pt-2 border-t">
+                            <button @click="cancelCheckJob()"
+                                class="flex items-center gap-1 rounded-lg border border-rose-200 text-rose-600 px-4 py-2 text-sm hover:bg-rose-50 transition">
+                                <span>✕</span> 取消任务
+                            </button>
+                            <a :href="'/jobs/' + checkJobId"
+                                class="flex items-center gap-1 rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">
+                                <span>📋</span> 查看详情
+                            </a>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="checkJobDone">
+                    <div class="space-y-4">
+                        <!-- 100% Completion Ring -->
+                        <div class="flex flex-col items-center gap-3">
+                            <div class="relative w-24 h-24">
+                                <svg class="w-24 h-24 transform -rotate-90">
+                                    <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
+                                    <circle cx="48" cy="48" r="40" stroke="#10b981" stroke-width="8" fill="none"
+                                        stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="0" />
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <span class="text-xl font-bold text-emerald-600">100%</span>
+                                </div>
+                            </div>
+                            <div class="text-emerald-600 font-medium">✅ 检查完成</div>
+                            <div class="text-sm text-slate-500"
+                                x-text="'成功: ' + checkStats.inserted + '  失败: ' + checkStats.failed"></div>
+                        </div>
+                        <!-- Action Buttons -->
+                        <div class="flex justify-center gap-3 pt-2 border-t">
+                            <a :href="'/jobs/' + checkJobId"
+                                class="flex items-center gap-1 rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">
+                                <span>📋</span> 查看详情
+                            </a>
+                            <button @click="closeCheckModal()"
+                                class="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">关闭</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- AI Classify Modal -->
+        <div x-cloak x-show="showAIClassifyModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeAIClassifyModal()">
+            <div class="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl max-h-[90vh] overflow-y-auto">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">🤖 AI 分类</h3>
+                    <button @click="closeAIClassifyModal()"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <template x-if="!aiClassifyJobId && !aiClassifyJobDone">
+                    <div class="space-y-3">
+                        <div>
+                            <label class="text-xs text-slate-600">分类级别</label>
+                            <select x-model="aiClassifyOptions.level"
+                                class="w-full rounded border px-3 py-2 text-sm mt-1">
+                                <option value="">自动（混合分类）</option>
+                                <option value="1">一级分类（大类）</option>
+                                <option value="2">二级分类（小类）</option>
+                            </select>
+                            <p class="text-xs text-slate-400 mt-1" x-show="aiClassifyOptions.level === '2'">
+                                注：无一级分类的书签将被跳过
+                            </p>
+                        </div>
+                        <div>
+                            <label class="text-xs text-slate-600">分类范围</label>
+                            <select x-model="aiClassifyOptions.scope"
+                                class="w-full rounded border px-3 py-2 text-sm mt-1">
+                                <option value="uncategorized">未分类书签</option>
+                                <option value="all">全部书签</option>
+                                <option value="selected">选中书签</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="text-xs text-slate-600">每批数量</label>
+                            <select x-model="aiClassifyOptions.batchSize"
+                                class="w-full rounded border px-3 py-2 text-sm mt-1">
+                                <option value="15">15</option>
+                                <option value="30">30</option>
+                                <option value="50">50</option>
+                            </select>
+                        </div>
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox" x-model="aiClassifyOptions.autoApply">
+                            自动应用分类建议
+                        </label>
+                        <div class="flex justify-end gap-2">
+                            <button @click="closeAIClassifyModal()"
+                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                            <button @click="startAIClassify()"
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">开始分类</button>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="aiClassifyJobId && !aiClassifyJobDone">
+                    <div class="space-y-4">
+                        <!-- Progress Ring -->
+                        <div class="flex flex-col items-center gap-3">
+                            <div class="relative w-24 h-24">
+                                <svg class="w-24 h-24 transform -rotate-90">
+                                    <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
+                                    <circle cx="48" cy="48" r="40" stroke="#10b981" stroke-width="8" fill="none"
+                                        stroke-linecap="round" :stroke-dasharray="251.2"
+                                        :stroke-dashoffset="251.2 - (251.2 * aiClassifyProgress / 100)" />
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <span class="text-xl font-bold text-emerald-600"
+                                        x-text="aiClassifyProgress + '%'"></span>
+                                </div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-sm font-medium text-slate-700"
+                                    x-text="'处理中 ' + aiClassifyStats.processed + ' / ' + aiClassifyStats.total"></div>
+                                <div class="text-xs text-slate-400 mt-1">正在进行AI分类...</div>
+                            </div>
+                        </div>
+                        <!-- Action Buttons -->
+                        <div class="flex justify-center gap-3 pt-2 border-t">
+                            <button @click="cancelAIClassify()"
+                                class="flex items-center gap-1 rounded-lg border border-rose-200 text-rose-600 px-4 py-2 text-sm hover:bg-rose-50 transition">
+                                <span>✕</span> 取消任务
+                            </button>
+                            <a :href="'/jobs/' + aiClassifyJobId"
+                                class="flex items-center gap-1 rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">
+                                <span>📋</span> 查看详情
+                            </a>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="aiClassifyJobDone">
+                    <div class="space-y-4">
+                        <!-- 100% Progress Ring -->
+                        <div class="flex flex-col items-center gap-3">
+                            <div class="relative w-24 h-24">
+                                <svg class="w-24 h-24 transform -rotate-90">
+                                    <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
+                                    <circle cx="48" cy="48" r="40" stroke="#10b981" stroke-width="8" fill="none"
+                                        stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="0" />
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <span class="text-xl font-bold text-emerald-600">100%</span>
+                                </div>
+                            </div>
+                            <div class="text-emerald-600 font-medium">✅ 分类完成</div>
+                        </div>
+                        <template x-if="aiSuggestions.length > 0">
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-sm font-medium">待确认建议 (<span
+                                            x-text="aiSuggestions.length"></span>)</span>
+                                    <button @click="applyAllSuggestions()"
+                                        class="rounded bg-emerald-500 text-white px-3 py-1 text-xs hover:bg-emerald-600">全部应用</button>
+                                </div>
+                                <div class="max-h-60 overflow-y-auto space-y-2">
+                                    <template x-for="s in aiSuggestions" :key="s.bookmark_id">
+                                        <div class="flex items-center justify-between p-2 bg-slate-50 rounded text-sm">
+                                            <div class="flex-1 truncate" x-text="s.title"></div>
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-emerald-600" x-text="s.category"></span>
+                                                <button @click="applySuggestion(s.bookmark_id, s.category)"
+                                                    class="text-xs text-blue-500 hover:underline">应用</button>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                        <div class="flex justify-center gap-3 pt-2 border-t">
+                            <a :href="'/jobs/' + aiClassifyJobId"
+                                class="flex items-center gap-1 rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">
+                                <span>📋</span> 查看详情
+                            </a>
+                            <button @click="closeAIClassifyModal()"
+                                class="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">关闭</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- AI Suggestion Modal (Single) -->
+        <div x-cloak x-show="showAISuggestionModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeAISuggestionModal()">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">🤖 AI 分类建议</h3>
+                    <button @click="closeAISuggestionModal()"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <template x-if="aiSuggestionBookmark">
+                    <div>
+                        <div class="text-sm font-medium truncate mb-1" x-text="aiSuggestionBookmark.title"></div>
+                        <div class="text-xs text-slate-400 truncate mb-3" x-text="aiSuggestionBookmark.url"></div>
+                        <div class="text-center py-4">
+                            <template x-if="aiSuggestionLoading">
+                                <div class="text-slate-500">正在分析中...</div>
+                            </template>
+                            <template x-if="!aiSuggestionLoading">
+                                <div class="text-lg text-emerald-600 font-medium" x-text="aiSuggestionCategory"></div>
+                            </template>
+                        </div>
+                    </div>
+                </template>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button @click="closeAISuggestionModal()"
+                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                    <button @click="applyAISuggestion()" :disabled="aiSuggestionLoading"
+                        class="rounded bg-emerald-500 text-white px-4 py-2 text-sm hover:bg-emerald-600 disabled:opacity-50">应用此分类</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- AI Simplify Modal -->
+        <div x-cloak x-show="showAISimplifyModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeAISimplifyModal()">
+            <div class="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">🗂️ AI 精简分类</h3>
+                    <button @click="closeAISimplifyModal()"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <p class="text-sm text-slate-500 mb-4">AI 会分析现有分类结构，合并相似分类，简化层级。</p>
+                <template x-if="!aiSimplifyJobId && !aiSimplifyJobDone">
+                    <div class="space-y-3">
+                        <div>
+                            <label class="text-xs text-slate-600">精简级别</label>
+                            <select x-model="aiSimplifyOptions.level"
+                                class="w-full rounded border px-3 py-2 text-sm mt-1">
+                                <option value="">自动（全部精简）</option>
+                                <option value="1">一级分类精简（大类合并）</option>
+                                <option value="2">二级分类精简（小类合并）</option>
+                            </select>
+                        </div>
+                        <template x-if="aiSimplifyOptions.level === '2'">
+                            <div>
+                                <label class="text-xs text-slate-600 mb-2 block">选择要精简的大类</label>
+                                <div class="max-h-40 overflow-y-auto border rounded p-2 space-y-1">
+                                    <template x-for="cat in topLevelCategories" :key="cat.id">
+                                        <label class="flex items-center gap-2 text-sm hover:bg-slate-50 p-1 rounded">
+                                            <input type="checkbox" :value="cat.id"
+                                                x-model="aiSimplifyOptions.parentIds">
+                                            <span x-text="cat.name"></span>
+                                            <span class="text-xs text-slate-400" x-text="'(' + cat.count + '条)'"></span>
+                                        </label>
+                                    </template>
+                                </div>
+                                <p class="text-xs text-slate-400 mt-1">不选择则精简全部大类的二级分类</p>
+                            </div>
+                        </template>
+                        <label class="flex items-center gap-2 text-sm">
+                            <input type="checkbox" x-model="aiSimplifyOptions.autoApply">
+                            自动应用精简建议
+                        </label>
+                        <div class="flex justify-end gap-2">
+                            <button @click="closeAISimplifyModal()"
+                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                            <button @click="startAISimplify()"
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">开始精简</button>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="aiSimplifyJobId && !aiSimplifyJobDone">
+                    <div class="space-y-4">
+                        <!-- Progress Ring -->
+                        <div class="flex flex-col items-center gap-3">
+                            <div class="relative w-24 h-24">
+                                <svg class="w-24 h-24 transform -rotate-90">
+                                    <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
+                                    <circle cx="48" cy="48" r="40" stroke="#8b5cf6" stroke-width="8" fill="none"
+                                        stroke-linecap="round" :stroke-dasharray="251.2"
+                                        :stroke-dashoffset="251.2 - (251.2 * aiSimplifyProgress / 100)" />
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <span class="text-xl font-bold text-purple-600"
+                                        x-text="aiSimplifyProgress + '%'"></span>
+                                </div>
+                            </div>
+                            <div class="text-center">
+                                <div class="text-sm font-medium text-slate-700"
+                                    x-text="'处理中 ' + aiSimplifyStats.processed + ' / ' + aiSimplifyStats.total"></div>
+                                <div class="text-xs text-slate-400 mt-1">正在分析分类结构...</div>
+                            </div>
+                        </div>
+                        <!-- Action Buttons -->
+                        <div class="flex justify-center gap-3 pt-2 border-t">
+                            <button @click="cancelAISimplify()"
+                                class="flex items-center gap-1 rounded-lg border border-rose-200 text-rose-600 px-4 py-2 text-sm hover:bg-rose-50 transition">
+                                <span>✕</span> 取消任务
+                            </button>
+                            <a :href="'/jobs/' + aiSimplifyJobId"
+                                class="flex items-center gap-1 rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">
+                                <span>📋</span> 查看详情
+                            </a>
+                        </div>
+                    </div>
+                </template>
+                <template x-if="aiSimplifyJobDone">
+                    <div class="space-y-4">
+                        <!-- 100% Progress Ring -->
+                        <div class="flex flex-col items-center gap-3">
+                            <div class="relative w-24 h-24">
+                                <svg class="w-24 h-24 transform -rotate-90">
+                                    <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
+                                    <circle cx="48" cy="48" r="40" stroke="#10b981" stroke-width="8" fill="none"
+                                        stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="0" />
+                                </svg>
+                                <div class="absolute inset-0 flex items-center justify-center">
+                                    <span class="text-xl font-bold text-emerald-600">100%</span>
+                                </div>
+                            </div>
+                            <div class="text-emerald-600 font-medium">✅ 精简完成</div>
+                        </div>
+                        <!-- Action Buttons -->
+                        <div class="flex justify-center gap-3 pt-2 border-t">
+                            <a :href="'/jobs/' + aiSimplifyJobId"
+                                class="flex items-center gap-1 rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">
+                                <span>📋</span> 查看详情
+                            </a>
+                            <button @click="closeAISimplifyModal()"
+                                class="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">关闭</button>
+                        </div>
+                    </div>
+                </template>
+            </div>
+        </div>
+
+        <!-- Import Progress Modal -->
+        <div x-cloak x-show="showImportProgressModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">📥 导入进度</h3>
+                    <button @click="closeImportProgressModal()"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <div class="space-y-3 text-center">
+                    <div class="text-2xl" x-text="importProgress + '%'"></div>
+                    <div class="w-full h-2 bg-slate-200 rounded overflow-hidden">
+                        <div class="h-full bg-blue-500 transition-all" :style="'width:' + importProgress + '%'"></div>
+                    </div>
+                    <div class="text-sm text-slate-500"
+                        x-text="importStats.processed + '/' + importStats.total + ' (成功:' + importStats.inserted + ' 失败:' + importStats.failed + ')'">
+                    </div>
+                    <button @click="cancelImportJob()"
+                        class="rounded border border-rose-300 text-rose-600 px-4 py-2 text-sm hover:bg-rose-50">取消导入</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Backup Modal -->
+        <div x-cloak x-show="showBackupModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeBackupModal()">
+            <div class="w-full max-w-2xl rounded-lg bg-white p-4 shadow-xl max-h-[90vh] overflow-y-auto">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">💾 备份管理</h3>
+                    <button @click="closeBackupModal()"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <div class="flex justify-between items-center mb-4">
+                    <button @click="runBackupNow()"
+                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">立即备份</button>
+                    <a href="/settings" class="text-sm text-blue-500 hover:underline">备份设置</a>
+                </div>
+                <div class="space-y-4">
+                    <!-- Manual Backups -->
+                    <div>
+                        <h4 class="text-sm font-medium text-slate-700 mb-2">手动备份</h4>
+                        <template x-if="manualBackups.length === 0">
+                            <div class="text-xs text-slate-400">暂无手动备份</div>
+                        </template>
+                        <div class="space-y-1">
+                            <template x-for="b in manualBackups" :key="b.name">
+                                <div class="flex items-center justify-between p-2 bg-slate-50 rounded text-sm">
+                                    <span x-text="b.name"></span>
+                                    <div class="flex items-center gap-2 text-xs">
+                                        <span class="text-slate-400" x-text="formatBytes(b.size)"></span>
+                                        <button @click="restoreBackup(b.name)"
+                                            class="text-blue-500 hover:underline">还原</button>
+                                        <button @click="deleteBackup(b.name)"
+                                            class="text-rose-500 hover:underline">删除</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <!-- Auto Backups -->
+                    <div>
+                        <h4 class="text-sm font-medium text-slate-700 mb-2">自动备份</h4>
+                        <template x-if="autoBackups.length === 0">
+                            <div class="text-xs text-slate-400">暂无自动备份</div>
+                        </template>
+                        <div class="space-y-1">
+                            <template x-for="b in autoBackups" :key="b.name">
+                                <div class="flex items-center justify-between p-2 bg-slate-50 rounded text-sm">
+                                    <span x-text="b.name"></span>
+                                    <div class="flex items-center gap-2 text-xs">
+                                        <span class="text-slate-400" x-text="formatBytes(b.size)"></span>
+                                        <button @click="restoreBackup(b.name)"
+                                            class="text-blue-500 hover:underline">还原</button>
+                                        <button @click="deleteBackup(b.name)"
+                                            class="text-rose-500 hover:underline">删除</button>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+                    <!-- Upload Restore -->
+                    <div class="pt-4 border-t">
+                        <h4 class="text-sm font-medium text-slate-700 mb-2">上传还原</h4>
+                        <form @submit.prevent="uploadAndRestore($event)">
+                            <input type="file" name="file" accept=".db" class="text-xs mb-2">
+                            <button type="submit"
+                                class="rounded border px-3 py-1.5 text-sm hover:bg-slate-50">上传并还原</button>
+                        </form>
+                    </div>
+                </div>
+                <div class="flex justify-end mt-4">
+                    <button @click="closeBackupModal()"
+                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">关闭</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Export Modal -->
+        <div x-cloak x-show="showExportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeExportModal()">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">📤 导出书签</h3>
+                    <button @click="closeExportModal()"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs text-slate-600">导出范围</label>
+                        <select x-model="exportScope" class="w-full rounded border px-3 py-2 text-sm mt-1">
+                            <option value="all">全部书签</option>
+                            <option value="uncategorized">仅未分类</option>
+                            <option value="selected" x-show="selectedCategories.length > 0">选中分类</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-600">导出格式</label>
+                        <select x-model="exportFormat" class="w-full rounded border px-3 py-2 text-sm mt-1">
+                            <option value="html">浏览器书签 (HTML)</option>
+                            <option value="json">JSON</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button @click="closeExportModal()"
+                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                    <a :href="getExportUrl()" @click="closeExportModal()"
+                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800 inline-block">下载</a>
+                </div>
+            </div>
+        </div>
     </div>
+    <script src="/public/lib/alpine.min.js"></script>
+</body>
 
-    <script>
-      (function () {
-        var selectAll = document.getElementById('select-all');
-        if (!selectAll) return;
-
-        function getBoxes() {
-          return Array.prototype.slice.call(document.querySelectorAll('.bookmark-select'));
-        }
-
-        selectAll.addEventListener('change', function () {
-          var boxes = getBoxes();
-          for (var i = 0; i < boxes.length; i++) {
-            boxes[i].checked = selectAll.checked;
-          }
-        });
-
-        var retriesEl = document.getElementById('check-retries');
-        var retryDelayEl = document.getElementById('check-retry-delay');
-        var formRetries = document.getElementById('check-form-retries');
-        var formRetryDelay = document.getElementById('check-form-retry-delay');
-
-        function syncRetryOptions() {
-          if (retriesEl && formRetries) formRetries.value = retriesEl.value;
-          if (retryDelayEl && formRetryDelay) formRetryDelay.value = retryDelayEl.value;
-        }
-
-        if (retriesEl) retriesEl.addEventListener('change', syncRetryOptions);
-        if (retryDelayEl) retryDelayEl.addEventListener('change', syncRetryOptions);
-        syncRetryOptions();
-      })();
-    </script>
-  </body>
 </html>

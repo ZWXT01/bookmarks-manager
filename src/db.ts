@@ -47,6 +47,7 @@ export function openDb(dbPath: string): Db {
       skipped INTEGER NOT NULL DEFAULT 0,
       failed INTEGER NOT NULL DEFAULT 0,
       message TEXT NULL,
+      extra TEXT NULL,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
@@ -67,6 +68,7 @@ export function openDb(dbPath: string): Db {
 
     CREATE TABLE IF NOT EXISTS ai_classification_suggestions (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
+      job_id TEXT,
       bookmark_id INTEGER NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
       suggested_category TEXT NOT NULL,
       confidence TEXT NOT NULL,
@@ -102,6 +104,54 @@ export function openDb(dbPath: string): Db {
   if (!hasSkipCheck) {
     db.exec(`ALTER TABLE bookmarks ADD COLUMN skip_check INTEGER NOT NULL DEFAULT 0`);
   }
+
+  // 迁移：添加 description 字段（如果不存在）
+  const hasDescription = columns.some(col => col.name === 'description');
+  if (!hasDescription) {
+    db.exec(`ALTER TABLE bookmarks ADD COLUMN description TEXT`);
+  }
+
+  // 迁移：添加 is_starred 字段（如果不存在）
+  const hasIsStarred = columns.some(col => col.name === 'is_starred');
+  if (!hasIsStarred) {
+    db.exec(`ALTER TABLE bookmarks ADD COLUMN is_starred INTEGER NOT NULL DEFAULT 0`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_bookmarks_is_starred ON bookmarks(is_starred)`);
+  }
+
+  // 迁移：添加分类 icon 和 color 字段
+  const catColumns = db.prepare("PRAGMA table_info(categories)").all() as Array<{ name: string }>;
+  const hasIcon = catColumns.some(col => col.name === 'icon');
+  if (!hasIcon) {
+    db.exec(`ALTER TABLE categories ADD COLUMN icon TEXT`);
+  }
+  const hasColor = catColumns.some(col => col.name === 'color');
+  if (!hasColor) {
+    db.exec(`ALTER TABLE categories ADD COLUMN color TEXT`);
+  }
+
+  // 迁移：添加 jobs 表 extra 字段
+  const jobColumns = db.prepare("PRAGMA table_info(jobs)").all() as Array<{ name: string }>;
+  const hasExtra = jobColumns.some(col => col.name === 'extra');
+  if (!hasExtra) {
+    db.exec(`ALTER TABLE jobs ADD COLUMN extra TEXT`);
+  }
+
+  // 迁移：添加 ai_classification_suggestions 表 job_id 字段
+  const sugColumns = db.prepare("PRAGMA table_info(ai_classification_suggestions)").all() as Array<{ name: string }>;
+  const hasJobId = sugColumns.some(col => col.name === 'job_id');
+  if (!hasJobId) {
+    db.exec(`ALTER TABLE ai_classification_suggestions ADD COLUMN job_id TEXT`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_ai_suggestions_job_id ON ai_classification_suggestions(job_id)`);
+  }
+
+  // 迁移：添加分类 sort_order 字段（用于同级排序）
+  const hasSortOrder = catColumns.some(col => col.name === 'sort_order');
+  if (!hasSortOrder) {
+    db.exec(`ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 0`);
+  }
+
+  // 创建 parent_id 索引（用于树状查询）
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON categories(parent_id)`);
 
   return db;
 }

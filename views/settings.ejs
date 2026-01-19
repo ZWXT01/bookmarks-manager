@@ -1,0 +1,689 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>设置 - 书签管理器</title>
+  <script src="/public/lib/tailwind.js"></script>
+  <link rel="stylesheet" href="/public/app.css" />
+  <script>
+    // 初始化主题
+    (function () {
+      var theme = localStorage.getItem('theme');
+      if (theme === 'dark') {
+        document.documentElement.setAttribute('data-theme', 'dark');
+      } else if (theme === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+</head>
+
+<body class="bg-slate-50 text-slate-900">
+  <div class="glass-header border-b sticky top-0 z-40">
+    <div class="mx-auto max-w-screen-2xl px-4 py-3">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">⚙️
+            设置</div>
+          <div class="text-xs text-slate-500">说明：如同时配置了环境变量，则以环境变量为准（本应用启动时也会读取 .env）。</div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="theme-toggle" class="btn-secondary btn-sm">🌙</button>
+          <a class="btn-secondary btn-sm inline-flex items-center" href="/">← 返回</a>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="settings-toast" class="fixed top-4 right-4 z-50 hidden rounded border px-4 py-2 text-sm shadow-lg"></div>
+
+  <div class="mx-auto max-w-screen-2xl px-2 py-2">
+
+    <form id="settings-form" method="post" action="/settings" class="space-y-2">
+      <div class="card p-4">
+        <div class="text-sm font-bold text-slate-700 flex items-center gap-2">
+          <span
+            class="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-xs">🔍</span>
+          检查默认参数
+        </div>
+        <div class="mt-3 grid grid-cols-2 gap-3">
+          <label class="block">
+            <div class="text-xs text-slate-600">默认重试次数</div>
+            <input name="check_retries" value="<%= curCheckRetries %>"
+              class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+          </label>
+          <label class="block">
+            <div class="text-xs text-slate-600">默认重试间隔(ms)</div>
+            <input name="check_retry_delay_ms" value="<%= curCheckRetryDelayMs %>"
+              class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+          </label>
+        </div>
+        <div class="mt-3 text-xs text-slate-500">这些默认值会用于：主页检查弹窗默认选项、导入后自动检查的重试参数、以及未显式传参的检查接口。</div>
+        <div class="mt-1 text-xs text-slate-500">保存后即时生效，并同步写入 .env（<%- envFilePath %>）供下次启动使用。</div>
+        <%- checkEnvOverride ? `<div class="mt-1 text-xs text-amber-600">提示：检测到已配置 CHECK_*
+          环境变量，本次保存会覆盖数据库默认值并立即生效；环境变量仅作为启动时的初始值。
+      </div>` : '' %>
+  </div>
+
+  <div class="card p-4">
+    <div class="text-sm font-bold text-slate-700 flex items-center gap-2">
+      <span
+        class="w-6 h-6 rounded-md bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white text-xs">💾</span>
+      备份参数
+    </div>
+    <div class="mt-3 grid grid-cols-3 gap-3">
+      <label class="block col-span-1">
+        <div class="text-xs text-slate-600">启用备份</div>
+        <select name="backup_enabled" class="mt-1 w-full rounded border px-3 py-2 text-sm">
+          <option value="0" <%- curBackupEnabled ? '' : 'selected' %>>关闭</option>
+          <option value="1" <%- curBackupEnabled ? 'selected' : '' %>>开启</option>
+        </select>
+      </label>
+      <label class="block col-span-1">
+        <div class="text-xs text-slate-600">间隔(分钟)</div>
+        <input name="backup_interval_minutes" value="<%= curBackupIntervalMinutes %>"
+          class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+      </label>
+      <label class="block col-span-1">
+        <div class="text-xs text-slate-600">保留份数</div>
+        <input name="backup_retention" value="<%= curBackupRetention %>"
+          class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+      </label>
+    </div>
+    <div class="mt-3 text-xs text-slate-500">修改后需重启生效（定时器在启动时创建）。</div>
+    <%- backupEnvOverride ? `<div class="mt-1 text-xs text-amber-600">提示：检测到已配置 BACKUP_* 环境变量，运行时将以环境变量为准。
+  </div>` : '' %>
+  </div>
+
+  <div class="card p-4">
+    <div class="text-sm font-bold text-slate-700 flex items-center gap-2">
+      <span
+        class="w-6 h-6 rounded-md bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white text-xs">🔄</span>
+      定期检查
+    </div>
+    <div class="mt-3 grid grid-cols-3 gap-3">
+      <label class="block">
+        <div class="text-xs text-slate-600">启用定期检查</div>
+        <select name="periodic_check_enabled" class="mt-1 w-full rounded border px-3 py-2 text-sm">
+          <option value="0" <%- curPeriodicCheckEnabled ? '' : 'selected' %>>关闭</option>
+          <option value="1" <%- curPeriodicCheckEnabled ? 'selected' : '' %>>开启</option>
+        </select>
+      </label>
+      <label class="block">
+        <div class="text-xs text-slate-600">检查周期</div>
+        <select name="periodic_check_schedule" class="mt-1 w-full rounded border px-3 py-2 text-sm">
+          <option value="weekly" <%- curPeriodicCheckSchedule==='weekly' ? 'selected' : '' %>>每周（周一）</option>
+          <option value="monthly" <%- curPeriodicCheckSchedule==='monthly' ? 'selected' : '' %>>每月（1号）</option>
+        </select>
+      </label>
+      <label class="block">
+        <div class="text-xs text-slate-600">执行时间</div>
+        <select name="periodic_check_hour" class="mt-1 w-full rounded border px-3 py-2 text-sm">
+          <option value="2" <%- curPeriodicCheckHour===2 ? 'selected' : '' %>>凌晨2点</option>
+          <option value="3" <%- curPeriodicCheckHour===3 ? 'selected' : '' %>>凌晨3点</option>
+          <option value="4" <%- curPeriodicCheckHour===4 ? 'selected' : '' %>>凌晨4点</option>
+          <option value="5" <%- curPeriodicCheckHour===5 ? 'selected' : '' %>>凌晨5点</option>
+        </select>
+      </label>
+    </div>
+    <div class="mt-3 text-xs text-slate-500">开启后系统会在指定时间自动检查所有书签的有效性。修改后需重启生效。</div>
+  </div>
+
+  <div class="card p-4">
+    <div class="flex items-center justify-between">
+      <div class="text-sm font-bold text-slate-700 flex items-center gap-2">
+        <span
+          class="w-6 h-6 rounded-md bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs">🤖</span>
+        AI 自动分类（OpenAI 兼容）
+      </div>
+      <button id="ai-test-btn" type="button" class="btn-secondary btn-sm">测试连接</button>
+    </div>
+    <div class="mt-3 space-y-3">
+      <label class="block">
+        <div class="text-xs text-slate-600">Base URL（例如 https://api.openai.com）</div>
+        <input name="ai_base_url" value="<%- aiBaseUrl %>" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+      </label>
+      <label class="block">
+        <div class="text-xs text-slate-600">API Key</div>
+        <input name="ai_api_key" value="<%- aiApiKey %>" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+      </label>
+      <label class="block">
+        <div class="text-xs text-slate-600">Model（例如 gpt-4o-mini）</div>
+        <input name="ai_model" value="<%- aiModel %>" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+      </label>
+      <label class="block">
+        <div class="text-xs text-slate-600">每批分类数量</div>
+        <select name="ai_batch_size" class="mt-1 w-full rounded border px-3 py-2 text-sm">
+          <option value="15" <%- aiBatchSize==='15' ? 'selected' : '' %>>15</option>
+          <option value="30" <%- aiBatchSize==='30' || !aiBatchSize ? 'selected' : '' %>>30（默认）</option>
+          <option value="50" <%- aiBatchSize==='50' ? 'selected' : '' %>>50</option>
+          <option value="100" <%- aiBatchSize==='100' ? 'selected' : '' %>>100</option>
+        </select>
+      </label>
+    </div>
+    <div class="mt-3 text-xs text-slate-500">配置后可调用 /api/ai/classify 获取分类建议（先输出分类路径）。</div>
+  </div>
+
+  <div class="flex items-center justify-between gap-2">
+    <button id="settings-reset" type="button" class="btn-danger btn-sm">恢复默认设置</button>
+    <button id="settings-save" type="submit" class="btn-primary">保存</button>
+  </div>
+  </form>
+
+  <div class="mt-2 rounded-lg border bg-white p-3 shadow-sm">
+    <div class="text-sm font-semibold text-slate-700">账号安全</div>
+    <div class="mt-3 space-y-3">
+      <label class="block">
+        <div class="text-xs text-slate-600">原密码</div>
+        <input id="old-password" type="password" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+      </label>
+      <label class="block">
+        <div class="text-xs text-slate-600">新密码（至少6位）</div>
+        <input id="new-password" type="password" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+      </label>
+      <label class="block">
+        <div class="text-xs text-slate-600">确认新密码</div>
+        <input id="confirm-password" type="password" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+      </label>
+      <button id="change-password-btn" type="button"
+        class="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">修改密码</button>
+    </div>
+    <div class="mt-3 text-xs text-slate-500">密码错误10次后账号将被锁定15分钟。</div>
+  </div>
+
+  <div class="mt-2 rounded-lg border bg-white p-3 shadow-sm">
+    <div class="flex items-center justify-between">
+      <div class="text-sm font-semibold text-slate-700">API Tokens</div>
+      <button id="create-token-btn" type="button" class="rounded border px-3 py-1 text-xs hover:bg-slate-50">创建
+        Token</button>
+    </div>
+    <div class="mt-3 text-xs text-slate-500">API Tokens 用于浏览器扩展或第三方应用访问 API。Token 只在创建时显示一次，请妥善保存。</div>
+    <div id="token-list" class="mt-3">
+      <div class="text-xs text-slate-400">加载中...</div>
+    </div>
+    <div id="new-token-display" class="mt-3 hidden rounded border border-emerald-200 bg-emerald-50 p-3">
+      <div class="text-xs font-semibold text-emerald-700">新 Token 已创建（仅显示一次）：</div>
+      <div class="mt-2 flex items-center gap-2">
+        <input id="new-token-value" type="text" readonly
+          class="flex-1 rounded border bg-white px-3 py-2 font-mono text-xs" />
+        <button id="copy-token-btn" type="button" class="rounded border px-3 py-2 text-xs hover:bg-white">复制</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="create-token-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+    <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+      <div class="text-sm font-semibold text-slate-700">创建 API Token</div>
+      <div class="mt-3 space-y-3">
+        <label class="block">
+          <div class="text-xs text-slate-600">Token 名称</div>
+          <input id="token-name" type="text" placeholder="例如：浏览器扩展"
+            class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+          <div id="token-name-error" class="mt-1 text-xs text-rose-600 hidden">请输入 Token 名称</div>
+        </label>
+        <label class="block">
+          <div class="text-xs text-slate-600">有效期</div>
+          <select id="token-expires" class="mt-1 w-full rounded border px-3 py-2 text-sm">
+            <option value="">永不过期</option>
+            <option value="7">7 天</option>
+            <option value="30">30 天</option>
+            <option value="90">90 天</option>
+            <option value="365">1 年</option>
+          </select>
+        </label>
+      </div>
+      <div class="mt-4 flex justify-end gap-2">
+        <button id="cancel-token-btn" type="button"
+          class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+        <button id="confirm-token-btn" type="button"
+          class="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">创建</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="mt-2 rounded-lg border bg-white p-3 shadow-sm">
+    <div class="text-sm font-semibold text-slate-700">系统信息</div>
+    <div class="mt-2 overflow-hidden rounded border">
+      <table class="w-full table-fixed">
+        <thead class="bg-slate-50">
+          <tr>
+            <th class="w-[35%] px-3 py-2 text-left text-xs font-semibold text-slate-600">Key</th>
+            <th class="w-[65%] px-3 py-2 text-left text-xs font-semibold text-slate-600">Value</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y">
+          <tr>
+            <td class="px-3 py-2 font-mono text-xs text-slate-700">DB_PATH</td>
+            <td class="px-3 py-2 font-mono text-xs text-slate-700"><%- dbPath %></td>
+          </tr>
+          <tr>
+            <td class="px-3 py-2 font-mono text-xs text-slate-700">BACKUP_DIR</td>
+            <td class="px-3 py-2 font-mono text-xs text-slate-700"><%- backupDir %></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+  </div>
+
+  <script>
+    (function () {
+      var form = document.getElementById('settings-form');
+      var toast = document.getElementById('settings-toast');
+      var btn = document.getElementById('settings-save');
+
+      function showToast(msg, type) {
+        if (!toast) return;
+        toast.classList.remove('hidden');
+        toast.classList.remove('border-emerald-200', 'bg-emerald-50', 'text-emerald-700');
+        toast.classList.remove('border-amber-200', 'bg-amber-50', 'text-amber-800');
+        toast.classList.remove('border-rose-200', 'bg-rose-50', 'text-rose-700');
+        if (type === 'success') {
+          toast.classList.add('border-emerald-200', 'bg-emerald-50', 'text-emerald-700');
+        } else if (type === 'warn') {
+          toast.classList.add('border-amber-200', 'bg-amber-50', 'text-amber-800');
+        } else {
+          toast.classList.add('border-rose-200', 'bg-rose-50', 'text-rose-700');
+        }
+        toast.textContent = msg;
+        try {
+          clearTimeout(showToast._t);
+          showToast._t = setTimeout(function () {
+            toast.classList.add('hidden');
+            toast.textContent = '';
+          }, 2500);
+        } catch { }
+      }
+
+      if (!form) return;
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        if (btn) {
+          btn.disabled = true;
+          btn.classList.add('opacity-60');
+        }
+        try {
+          var fd = new FormData(form);
+          var body = new URLSearchParams();
+          fd.forEach(function (v, k) { body.append(k, String(v)); });
+
+          var res = await fetch(form.action || '/settings', {
+            method: 'POST',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'
+            },
+            body: body.toString()
+          });
+          var data = await res.json().catch(function () { return null; });
+          if (res.ok) {
+            try {
+              var saved = data && data.saved ? data.saved : null;
+              if (saved) {
+                if (saved.check_retries != null) {
+                  var el1 = form.querySelector('input[name="check_retries"]');
+                  if (el1) el1.value = String(saved.check_retries);
+                }
+                if (saved.check_retry_delay_ms != null) {
+                  var el2 = form.querySelector('input[name="check_retry_delay_ms"]');
+                  if (el2) el2.value = String(saved.check_retry_delay_ms);
+                }
+                if (saved.backup_enabled != null) {
+                  var el3 = form.querySelector('select[name="backup_enabled"]');
+                  if (el3) el3.value = saved.backup_enabled ? '1' : '0';
+                }
+                if (saved.backup_interval_minutes != null) {
+                  var el4 = form.querySelector('input[name="backup_interval_minutes"]');
+                  if (el4) el4.value = String(saved.backup_interval_minutes);
+                }
+                if (saved.backup_retention != null) {
+                  var el5 = form.querySelector('input[name="backup_retention"]');
+                  if (el5) el5.value = String(saved.backup_retention);
+                }
+                if (saved.ai_base_url != null) {
+                  var el6 = form.querySelector('input[name="ai_base_url"]');
+                  if (el6) el6.value = String(saved.ai_base_url);
+                }
+                if (saved.ai_model != null) {
+                  var el7 = form.querySelector('input[name="ai_model"]');
+                  if (el7) el7.value = String(saved.ai_model);
+                }
+              }
+            } catch { }
+            try {
+              var env = data && data.env ? data.env : null;
+              if (env && env.success === false) {
+                showToast('设置已保存，但 .env 同步失败：' + (env.error || ''), 'warn');
+              } else if (env && env.success === true) {
+                showToast('设置已保存（已同步到 .env）', 'success');
+              } else {
+                showToast('设置已保存', 'success');
+              }
+            } catch {
+              showToast('设置已保存', 'success');
+            }
+          } else {
+            showToast((data && data.error) ? data.error : '保存失败', 'error');
+          }
+        } catch (err) {
+          showToast('保存失败', 'error');
+        } finally {
+          if (btn) {
+            btn.disabled = false;
+            btn.classList.remove('opacity-60');
+          }
+        }
+      });
+
+      var resetBtn = document.getElementById('settings-reset');
+      if (resetBtn) {
+        resetBtn.addEventListener('click', async function () {
+          if (!confirm('确定要恢复默认设置吗？这将清空 AI 配置并重置所有参数为默认值。')) return;
+          resetBtn.disabled = true;
+          resetBtn.classList.add('opacity-60');
+          try {
+            var res = await fetch('/api/settings/reset', {
+              method: 'POST',
+              headers: { 'Accept': 'application/json' }
+            });
+            var data = await res.json().catch(function () { return null; });
+            if (res.ok && data && data.defaults) {
+              var d = data.defaults;
+              var el1 = form.querySelector('input[name="check_retries"]');
+              if (el1) el1.value = d.check_retries || '2';
+              var el2 = form.querySelector('input[name="check_retry_delay_ms"]');
+              if (el2) el2.value = d.check_retry_delay_ms || '1000';
+              var el3 = form.querySelector('select[name="backup_enabled"]');
+              if (el3) el3.value = d.backup_enabled === '1' ? '1' : '0';
+              var el4 = form.querySelector('input[name="backup_interval_minutes"]');
+              if (el4) el4.value = d.backup_interval_minutes || '60';
+              var el5 = form.querySelector('input[name="backup_retention"]');
+              if (el5) el5.value = d.backup_retention || '7';
+              var el6 = form.querySelector('input[name="ai_base_url"]');
+              if (el6) el6.value = d.ai_base_url || '';
+              var el7 = form.querySelector('input[name="ai_api_key"]');
+              if (el7) el7.value = d.ai_api_key || '';
+              var el8 = form.querySelector('input[name="ai_model"]');
+              if (el8) el8.value = d.ai_model || '';
+              showToast('已恢复默认设置', 'success');
+            } else {
+              showToast((data && data.error) ? data.error : '重置失败', 'error');
+            }
+          } catch {
+            showToast('重置失败', 'error');
+          } finally {
+            resetBtn.disabled = false;
+            resetBtn.classList.remove('opacity-60');
+          }
+        });
+      }
+
+      var aiTestBtn = document.getElementById('ai-test-btn');
+      if (aiTestBtn) {
+        aiTestBtn.addEventListener('click', async function () {
+          var baseUrl = form.querySelector('input[name="ai_base_url"]').value.trim();
+          var apiKey = form.querySelector('input[name="ai_api_key"]').value.trim();
+          var model = form.querySelector('input[name="ai_model"]').value.trim();
+
+          if (!baseUrl || !apiKey || !model) {
+            showToast('请先填写完整的 AI 配置', 'error');
+            return;
+          }
+
+          aiTestBtn.disabled = true;
+          aiTestBtn.textContent = '测试中...';
+
+          try {
+            var res = await fetch('/api/ai/test', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+              },
+              body: JSON.stringify({ base_url: baseUrl, api_key: apiKey, model: model })
+            });
+            var data = await res.json().catch(function () { return null; });
+            if (res.ok && data && data.success) {
+              showToast('AI 连接测试成功！', 'success');
+            } else {
+              showToast('AI 连接测试失败：' + ((data && data.error) || '未知错误'), 'error');
+            }
+          } catch (err) {
+            showToast('AI 连接测试失败：网络错误', 'error');
+          } finally {
+            aiTestBtn.disabled = false;
+            aiTestBtn.textContent = '测试连接';
+          }
+        });
+      }
+      // 修改密码
+      var changePwdBtn = document.getElementById('change-password-btn');
+      if (changePwdBtn) {
+        changePwdBtn.addEventListener('click', async function () {
+          var oldPwd = document.getElementById('old-password').value;
+          var newPwd = document.getElementById('new-password').value;
+          var confirmPwd = document.getElementById('confirm-password').value;
+
+          if (!oldPwd || !newPwd || !confirmPwd) {
+            showToast('请填写完整的密码信息', 'error');
+            return;
+          }
+
+          if (newPwd !== confirmPwd) {
+            showToast('两次输入的新密码不一致', 'error');
+            return;
+          }
+
+          if (newPwd.length < 6) {
+            showToast('新密码长度至少6位', 'error');
+            return;
+          }
+
+          changePwdBtn.disabled = true;
+          changePwdBtn.textContent = '修改中...';
+
+          try {
+            var res = await fetch('/api/change-password', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+              body: JSON.stringify({ old_password: oldPwd, new_password: newPwd, confirm_password: confirmPwd })
+            });
+            var data = await res.json().catch(function () { return null; });
+            if (res.ok && data && data.success) {
+              showToast('密码修改成功', 'success');
+              document.getElementById('old-password').value = '';
+              document.getElementById('new-password').value = '';
+              document.getElementById('confirm-password').value = '';
+            } else {
+              showToast((data && data.error) ? data.error : '修改密码失败', 'error');
+            }
+          } catch {
+            showToast('修改密码失败', 'error');
+          } finally {
+            changePwdBtn.disabled = false;
+            changePwdBtn.textContent = '修改密码';
+          }
+        });
+      }
+
+      // ==================== API Token 管理 ====================
+      var tokenList = document.getElementById('token-list');
+      var createTokenBtn = document.getElementById('create-token-btn');
+      var createTokenModal = document.getElementById('create-token-modal');
+      var cancelTokenBtn = document.getElementById('cancel-token-btn');
+      var confirmTokenBtn = document.getElementById('confirm-token-btn');
+      var tokenNameInput = document.getElementById('token-name');
+      var tokenExpiresSelect = document.getElementById('token-expires');
+      var newTokenDisplay = document.getElementById('new-token-display');
+      var newTokenValue = document.getElementById('new-token-value');
+      var copyTokenBtn = document.getElementById('copy-token-btn');
+
+      function formatDate(dateStr) {
+        if (!dateStr) return '-';
+        var d = new Date(dateStr);
+        return d.toLocaleDateString('zh-CN') + ' ' + d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      }
+
+      async function loadTokens() {
+        if (!tokenList) return;
+        try {
+          var res = await fetch('/api/tokens');
+          var data = await res.json();
+          if (data.tokens && data.tokens.length > 0) {
+            var html = '<div class="overflow-hidden rounded border"><table class="w-full"><thead class="bg-slate-50"><tr>';
+            html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">名称</th>';
+            html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">Token</th>';
+            html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">创建时间</th>';
+            html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">最后使用</th>';
+            html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">过期时间</th>';
+            html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">操作</th>';
+            html += '</tr></thead><tbody class="divide-y">';
+            for (var i = 0; i < data.tokens.length; i++) {
+              var t = data.tokens[i];
+              var isExpired = t.expires_at && new Date(t.expires_at) < new Date();
+              html += '<tr class="' + (isExpired ? 'bg-rose-50' : '') + '">';
+              html += '<td class="px-3 py-2 text-xs text-slate-700">' + t.name + '</td>';
+              html += '<td class="px-3 py-2 font-mono text-xs text-slate-500">' + t.token_prefix + '</td>';
+              html += '<td class="px-3 py-2 text-xs text-slate-500">' + formatDate(t.created_at) + '</td>';
+              html += '<td class="px-3 py-2 text-xs text-slate-500">' + formatDate(t.last_used_at) + '</td>';
+              html += '<td class="px-3 py-2 text-xs ' + (isExpired ? 'text-rose-600' : 'text-slate-500') + '">' + (t.expires_at ? formatDate(t.expires_at) + (isExpired ? ' (已过期)' : '') : '永不过期') + '</td>';
+              html += '<td class="px-3 py-2"><button data-token-id="' + t.id + '" class="delete-token-btn rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 hover:bg-rose-50">删除</button></td>';
+              html += '</tr>';
+            }
+            html += '</tbody></table></div>';
+            tokenList.innerHTML = html;
+
+            // 绑定删除按钮事件
+            var deleteBtns = tokenList.querySelectorAll('.delete-token-btn');
+            deleteBtns.forEach(function (btn) {
+              btn.addEventListener('click', async function () {
+                var tokenId = this.getAttribute('data-token-id');
+                if (!confirm('确定要删除此 Token 吗？删除后使用此 Token 的应用将无法访问 API。')) return;
+                try {
+                  var res = await fetch('/api/tokens/' + tokenId, { method: 'DELETE' });
+                  if (res.ok) {
+                    showToast('Token 已删除', 'success');
+                    loadTokens();
+                  } else {
+                    var data = await res.json().catch(function () { return null; });
+                    showToast((data && data.error) || '删除失败', 'error');
+                  }
+                } catch {
+                  showToast('删除失败', 'error');
+                }
+              });
+            });
+          } else {
+            tokenList.innerHTML = '<div class="text-xs text-slate-400">暂无 API Token</div>';
+          }
+        } catch {
+          tokenList.innerHTML = '<div class="text-xs text-rose-500">加载失败</div>';
+        }
+      }
+
+      if (createTokenBtn && createTokenModal) {
+        createTokenBtn.addEventListener('click', function () {
+          createTokenModal.classList.remove('hidden');
+          createTokenModal.classList.add('flex');
+          if (tokenNameInput) tokenNameInput.value = '';
+          if (tokenExpiresSelect) tokenExpiresSelect.value = '';
+          if (newTokenDisplay) newTokenDisplay.classList.add('hidden');
+        });
+      }
+
+      if (cancelTokenBtn && createTokenModal) {
+        cancelTokenBtn.addEventListener('click', function () {
+          createTokenModal.classList.add('hidden');
+          createTokenModal.classList.remove('flex');
+        });
+      }
+
+      if (confirmTokenBtn) {
+        confirmTokenBtn.addEventListener('click', async function () {
+          var name = tokenNameInput ? tokenNameInput.value.trim() : '';
+          var expires = tokenExpiresSelect ? tokenExpiresSelect.value : '';
+
+          if (!name) {
+            var errorEl = document.getElementById('token-name-error');
+            if (errorEl) {
+              errorEl.classList.remove('hidden');
+              tokenNameInput.classList.add('border-rose-500');
+            }
+            return;
+          }
+          // 清除错误状态
+          var errorEl = document.getElementById('token-name-error');
+          if (errorEl) {
+            errorEl.classList.add('hidden');
+            tokenNameInput.classList.remove('border-rose-500');
+          }
+
+          confirmTokenBtn.disabled = true;
+          confirmTokenBtn.textContent = '创建中...';
+
+          try {
+            var body = { name: name };
+            if (expires) body.expires_in_days = parseInt(expires, 10);
+
+            var res = await fetch('/api/tokens', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(body)
+            });
+            var data = await res.json();
+
+            if (res.ok && data.token) {
+              createTokenModal.classList.add('hidden');
+              createTokenModal.classList.remove('flex');
+
+              if (newTokenValue) newTokenValue.value = data.token;
+              if (newTokenDisplay) newTokenDisplay.classList.remove('hidden');
+
+              showToast('Token 创建成功，请立即复制保存！', 'success');
+              loadTokens();
+            } else {
+              showToast((data && data.error) || '创建失败', 'error');
+            }
+          } catch {
+            showToast('创建失败', 'error');
+          } finally {
+            confirmTokenBtn.disabled = false;
+            confirmTokenBtn.textContent = '创建';
+          }
+        });
+      }
+
+      if (copyTokenBtn && newTokenValue) {
+        copyTokenBtn.addEventListener('click', function () {
+          newTokenValue.select();
+          document.execCommand('copy');
+          showToast('Token 已复制到剪贴板', 'success');
+        });
+      }
+
+      // 页面加载时获取 Token 列表
+      loadTokens();
+
+      // 主题切换
+      (function () {
+        const btn = document.getElementById('theme-toggle');
+        const updateIcon = () => {
+          const theme = document.documentElement.getAttribute('data-theme');
+          btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+        };
+        updateIcon();
+        btn.addEventListener('click', () => {
+          const current = document.documentElement.getAttribute('data-theme');
+          const next = current === 'dark' ? 'light' : 'dark';
+          document.documentElement.setAttribute('data-theme', next);
+          localStorage.setItem('theme', next);
+          updateIcon();
+        });
+      })();
+    })();
+  </script>
+</body>
+
+</html>
