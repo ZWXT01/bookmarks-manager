@@ -14,6 +14,7 @@
 * **Database**: SQLite (better-sqlite3)
 * **Auth**: 内置 Session + API Token 认证
 * **Build Tool**: esbuild
+* **Testing**: Vitest
 * **Snapshot**: SingleFile 集成
 
 ## 3. Directory Structure (项目结构)
@@ -44,6 +45,13 @@ extension-new/          # 浏览器扩展 (v2.0)
 ├── popup.*            # 弹窗 UI
 ├── content.js         # 内容脚本
 └── lib/single-file.js # SingleFile 核心库
+tests/                  # 测试目录
+├── helpers/db.ts      # 测试辅助（内存 DB）
+├── url.test.ts        # URL 标准化测试
+├── exporter.test.ts   # 导出测试
+├── importer.test.ts   # 导入解析测试
+├── jobs.test.ts       # 任务队列测试
+└── category-service.test.ts # 分类服务测试
 data/                   # 数据目录
 ├── app.db             # SQLite 数据库
 ├── snapshots/         # 网页快照文件
@@ -62,6 +70,10 @@ npm run dev     # Start development server
 npm run build   # Build for production
 npm start       # Start production server
 
+# Testing
+npm test              # Run all tests (vitest run)
+npm run test:watch    # Watch mode
+
 # Docker 部署
 docker compose up -d --build
 # 访问 http://localhost:8080
@@ -79,6 +91,51 @@ docker compose up -d --build
 * **安全**: 登录认证、记住密码、多 API Token、IP 锁定
 
 ## 6. Change Log (变更日志)
+
+### 2026-02-11 - Grok API 预设支持
+
+#### UI 变更
+| 变更 | 详情 |
+|------|------|
+| **API 预设下拉** | 设置页 AI 配置区新增「快捷预设」选择器，支持 Grok (grok2api) 和 OpenAI 一键填充 Base URL + Model |
+| **Placeholder 更新** | Base URL / Model 输入框提示文案增加 Grok 示例 |
+
+#### 文件变更
+| 文件 | 变更 |
+|------|------|
+| `views/settings.ejs` | 新增 `#ai-preset-select` 下拉 + JS 自动填充逻辑，更新 placeholder |
+
+**说明**：后端无任何修改，项目已通过 OpenAI SDK `baseURL` 参数原生支持 Grok 等 OpenAI 兼容 API。
+
+---
+
+### 2026-02-10 - 测试基础设施搭建
+
+#### 新增依赖
+| 依赖 | 用途 |
+|------|------|
+| `vitest` (devDep) | 单元测试框架，原生 TypeScript 支持 |
+
+#### 新增文件
+| 文件 | 说明 |
+|------|------|
+| `vitest.config.ts` | Vitest 配置 |
+| `tests/helpers/db.ts` | 测试辅助：临时 SQLite DB + seed 工具 |
+| `tests/url.test.ts` | URL 标准化 12 个测试 |
+| `tests/exporter.test.ts` | Netscape HTML 导出 6 个测试 |
+| `tests/importer.test.ts` | 导入解析 12 个测试 |
+| `tests/jobs.test.ts` | 任务 CRUD + JobQueue 12 个测试 |
+| `tests/category-service.test.ts` | 分类服务 CRUD 16 个测试 |
+
+#### 修改文件
+| 文件 | 变更 |
+|------|------|
+| `package.json` | 添加 `test`/`test:watch` scripts, `vitest` devDep |
+| `tsconfig.json` | include 添加 `tests/**/*.ts` |
+
+**测试结果**: 5 文件 58 测试全部通过
+
+---
 
 ### 2026-01-13 - Bug 修复 & UI 统一 & 问题调查
 
@@ -513,3 +570,33 @@ docker compose up -d --build
 |------|------|
 | `ai-classifier.ts` | `getOrCreateCategoryId` 改用 `category-service` |
 | `ai-simplify-job.ts` | `getOrCreateHierarchicalCategory` 改用 `category-service` |
+
+### 2026-02-10: AI 分类两级重构
+**Impact**: ai_classification_suggestions 表结构变更（不兼容旧数据，自动迁移删除重建）
+
+#### 数据库变更 (`db.ts`)
+| 变更 | 详情 |
+|------|------|
+| `suggested_category` 字段移除 | 替换为 `parent_category` + `child_category` |
+| 新增 `applied` 字段 | 内建于建表语句，不再运行时 ALTER |
+| 自动迁移 | 检测旧 `suggested_category` 列 → DROP + CREATE |
+
+#### 后端核心 (`ai-classify-level.ts`, `ai-classify-job.ts`)
+| 变更 | 详情 |
+|------|------|
+| Prompt 重设计 | 数据直接嵌入 JSON，不描述输入格式 |
+| 结果字段 | `suggestedCategory` → `parentCategory` + `childCategory` |
+| 应用逻辑 | 直接覆盖书签当前分类（overwrite） |
+
+#### API 路由 (`routes/ai.ts`, `routes/pages.ts`)
+| 端点 | 变更 |
+|------|------|
+| `GET /api/ai/suggestions` | 返回 `parent_category`, `child_category` |
+| `POST /api/ai/apply-suggestion` | 支持 `parent_category`/`child_category` 和旧 `category` 格式 |
+| `POST /api/ai/apply-all-suggestions` | 从 `parent_category`/`child_category` 构建路径 |
+
+#### 前端 (`job.ejs`)
+| 变更 | 详情 |
+|------|------|
+| 建议表格 | 两列显示：一级分类（蓝色）+ 二级分类（紫色） |
+| 应用逻辑 | 传递 `parent_category`/`child_category` 到 API |

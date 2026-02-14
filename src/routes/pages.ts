@@ -43,10 +43,6 @@ export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts
 
         if (job.type === 'ai_classify') {
             try {
-                try {
-                    db.exec('ALTER TABLE ai_classification_suggestions ADD COLUMN applied INTEGER DEFAULT 0');
-                } catch { }
-
                 suggestionPage = clamp(q.sug_page, 1, 10_000, 1);
                 const countRow = db.prepare('SELECT COUNT(*) as cnt FROM ai_classification_suggestions WHERE job_id = ?').get(jobId) as { cnt: number };
                 suggestionTotal = countRow.cnt;

@@ -114,6 +114,11 @@ export async function runCheckJob(db: Db, jobId: string, bookmarkIds: number[], 
   const baseFailed = base ? base.failed : 0;
 
   const statusStmt = db.prepare('SELECT status FROM jobs WHERE id = ?');
+  const existing = statusStmt.get(jobId) as { status: string } | undefined;
+  if (!existing || existing.status === 'canceled') {
+    return;
+  }
+
   let canceled = false;
 
   const retries = Math.max(0, Math.min(5, options.retries ?? 0));

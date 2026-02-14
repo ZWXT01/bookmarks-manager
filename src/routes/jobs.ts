@@ -3,7 +3,7 @@
  */
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
-import { getJob, subscribeJob } from '../jobs';
+import { getJob, jobQueue, pruneJobsToRecent, subscribeJob, updateJob } from '../jobs';
 import { toInt } from '../utils/helpers';
 
 export interface JobsRoutesOptions {
@@ -30,6 +30,25 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
             return reply.send({ job: null });
         } catch (e: any) {
             return reply.send({ job: null });
+        }
+    });
+
+    // GET /api/jobs/:id - 获取单个任务
+    app.get('/api/jobs/:id', async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+        const jobId = req.params.id;
+        if (!jobId) {
+            return reply.code(400).send({ error: 'Operation failed' });
+        }
+
+        try {
+            const job = getJob(db, jobId);
+            if (!job) {
+                return reply.code(404).send({ error: 'Operation failed' });
+            }
+            return reply.send({ job });
+        } catch (e: any) {
+            req.log.error({ err: e, jobId }, 'get job failed');
+            return reply.code(500).send({ error: 'Operation failed' });
         }
     });
 
@@ -75,6 +94,32 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
             req.log.info({ jobId }, 'sse disconnected');
             reply.raw.end();
         });
+    });
+
+    // POST /api/jobs/:id/cancel - 取消任务
+    app.post('/api/jobs/:id/cancel', async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+        const jobId = req.params.id;
+        if (!jobId) {
+            return reply.code(400).send({ error: 'Operation failed' });
+        }
+
+        try {
+            const job = getJob(db, jobId);
+            if (!job) {
+                return reply.code(404).send({ error: 'Operation failed' });
+            }
+
+            if (job.status === 'done' || job.status === 'failed' || job.status === 'canceled') {
+                return reply.send({ success: true, status: job.status });
+            }
+
+            jobQueue.cancelJob(jobId);
+            const next = updateJob(db, jobId, { status: 'canceled', message: '任务已取消' });
+            return reply.send({ success: true, status: next.status });
+        } catch (e: any) {
+            req.log.error({ err: e, jobId }, 'cancel job failed');
+            return reply.code(500).send({ error: 'Operation failed' });
+        }
     });
 
     // POST /api/jobs/clear-completed - 清理已完成任务
@@ -123,13 +168,9 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
     // GET /jobs - 任务列表页面
     app.get('/jobs', async (req: FastifyRequest<{ Querystring: { page?: string } }>, reply: FastifyReply) => {
         try {
-            // 保留最近10个任务
-            const keepIds = db.prepare('SELECT id FROM jobs ORDER BY created_at DESC LIMIT 10').all() as { id: string }[];
-            if (keepIds.length > 0) {
-                const placeholders = keepIds.map(() => '?').join(',');
-                db.prepare(`DELETE FROM jobs WHERE id NOT IN (${placeholders})`).run(...keepIds.map(r => r.id));
-                db.prepare('DELETE FROM job_failures WHERE job_id NOT IN (SELECT id FROM jobs)').run();
-            }
+            // 保留所有运行中任务 + 最近10个已结束任务
+            pruneJobsToRecent(db, 10);
+            db.prepare('DELETE FROM job_failures WHERE job_id NOT IN (SELECT id FROM jobs)').run();
         } catch (e) {
             req.log.warn({ err: e }, 'prune jobs failed');
         }

@@ -2,6 +2,7 @@
  * Backup API Routes
  */
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
@@ -95,61 +96,107 @@ export const backupRoutes: FastifyPluginCallback<BackupRoutesOptions> = (app, op
 
     // POST /api/backups/restore - 还原备份
     app.post('/api/backups/restore', async (req: FastifyRequest, reply: FastifyReply) => {
-        const body: any = req.body || {};
-        const name = typeof body.name === 'string' ? body.name.trim() : '';
+        const restoreFromFile = (filePath: string): void => {
+            const backupDb = require('better-sqlite3')(filePath, { readonly: true });
+            try {
+                db.exec('BEGIN TRANSACTION');
 
-        if (!name || !/^(backup|manual)_\d{8}_\d{6}\.db$/i.test(name)) {
-            return reply.code(400).send({ error: '无效的备份名称' });
-        }
+                try {
+                    db.exec('DELETE FROM bookmarks');
+                    db.exec('DELETE FROM categories');
 
-        const filePath = path.join(backupDir, name);
-        if (!fs.existsSync(filePath)) {
-            return reply.code(404).send({ error: '备份不存在' });
-        }
+                    const categories = backupDb.prepare('SELECT * FROM categories').all();
+                    const bookmarks = backupDb.prepare('SELECT * FROM bookmarks').all();
+
+                    for (const cat of categories) {
+                        db.prepare('INSERT INTO categories (id, name, parent_id, sort_order, icon, color, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+                            cat.id, cat.name, cat.parent_id, cat.sort_order || 0, cat.icon, cat.color, cat.created_at || new Date().toISOString()
+                        );
+                    }
+
+                    for (const bm of bookmarks) {
+                        db.prepare('INSERT INTO bookmarks (id, url, canonical_url, title, category_id, created_at, check_status, last_checked_at, check_http_code, check_error, skip_check, is_starred, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+                            bm.id, bm.url, bm.canonical_url, bm.title, bm.category_id, bm.created_at || new Date().toISOString(),
+                            bm.check_status || 'not_checked', bm.last_checked_at, bm.check_http_code, bm.check_error,
+                            bm.skip_check || 0, bm.is_starred || 0, bm.description
+                        );
+                    }
+
+                    db.exec('COMMIT');
+                } catch (e) {
+                    db.exec('ROLLBACK');
+                    throw e;
+                }
+            } finally {
+                backupDb.close();
+            }
+        };
+
+        const isMultipart = typeof (req as any).isMultipart === 'function' && (req as any).isMultipart();
+        let uploadedFilePath: string | null = null;
+        let uploadedTempDir: string | null = null;
+        let sourceName = '';
 
         try {
-            // 读取备份并恢复
-            const backupDb = require('better-sqlite3')(filePath, { readonly: true });
+            if (isMultipart) {
+                const parts: any = (req as any).parts();
+                for await (const part of parts) {
+                    if (part?.type !== 'file') continue;
 
-            // 开始事务
-            db.exec('BEGIN TRANSACTION');
+                    if (uploadedFilePath) {
+                        await part.toBuffer();
+                        continue;
+                    }
 
-            try {
-                // 清空当前表
-                db.exec('DELETE FROM bookmarks');
-                db.exec('DELETE FROM categories');
+                    const filename = typeof part.filename === 'string' ? part.filename.trim() : '';
+                    if (!filename || !filename.toLowerCase().endsWith('.db')) {
+                        await part.toBuffer();
+                        return reply.code(400).send({ error: '请上传 .db 格式文件' });
+                    }
 
-                // 从备份恢复
-                const categories = backupDb.prepare('SELECT * FROM categories').all();
-                const bookmarks = backupDb.prepare('SELECT * FROM bookmarks').all();
+                    sourceName = filename;
+                    const buffer = await part.toBuffer();
+                    if (!buffer || buffer.length === 0) {
+                        return reply.code(400).send({ error: '上传文件为空' });
+                    }
 
-                for (const cat of categories) {
-                    db.prepare('INSERT INTO categories (id, name, parent_id, sort_order, icon, color) VALUES (?, ?, ?, ?, ?, ?)').run(
-                        cat.id, cat.name, cat.parent_id, cat.sort_order || 0, cat.icon, cat.color
-                    );
+                    uploadedTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bm-restore-'));
+                    uploadedFilePath = path.join(uploadedTempDir, 'restore.db');
+                    fs.writeFileSync(uploadedFilePath, buffer);
                 }
 
-                for (const bm of bookmarks) {
-                    db.prepare('INSERT INTO bookmarks (id, url, canonical_url, title, category_id, created_at, check_status, last_checked_at, check_http_code, check_error, skip_check, is_starred, description) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
-                        bm.id, bm.url, bm.canonical_url, bm.title, bm.category_id, bm.created_at,
-                        bm.check_status, bm.last_checked_at, bm.check_http_code, bm.check_error,
-                        bm.skip_check || 0, bm.is_starred || 0, bm.description
-                    );
+                if (!uploadedFilePath) {
+                    return reply.code(400).send({ error: '缺少上传文件' });
+                }
+            } else {
+                const body: any = req.body || {};
+                const name = typeof body.name === 'string' ? body.name.trim() : '';
+                if (!name || !/^(backup|manual)_\d{8}_\d{6}\.db$/i.test(name)) {
+                    return reply.code(400).send({ error: '无效的备份名称' });
                 }
 
-                db.exec('COMMIT');
-                backupDb.close();
+                const filePath = path.join(backupDir, name);
+                if (!fs.existsSync(filePath)) {
+                    return reply.code(404).send({ error: '备份不存在' });
+                }
 
-                req.log.info({ name }, 'backup restored');
-                return reply.send({ success: true, message: `已从 ${name} 还原` });
-            } catch (e) {
-                db.exec('ROLLBACK');
-                backupDb.close();
-                throw e;
+                sourceName = name;
+                uploadedFilePath = filePath;
             }
+
+            restoreFromFile(uploadedFilePath);
+            req.log.info({ sourceName, mode: isMultipart ? 'upload' : 'named_backup' }, 'backup restored');
+            return reply.send({ success: true, message: `已从 ${sourceName} 还原` });
         } catch (e: any) {
-            req.log.error({ err: e }, 'restore backup failed');
+            req.log.error({ err: e, sourceName, mode: isMultipart ? 'upload' : 'named_backup' }, 'restore backup failed');
             return reply.code(500).send({ error: '还原失败: ' + (e.message || '') });
+        } finally {
+            if (isMultipart && uploadedFilePath) {
+                try { fs.unlinkSync(uploadedFilePath); } catch { }
+            }
+            if (isMultipart && uploadedTempDir) {
+                try { fs.rmSync(uploadedTempDir, { recursive: true, force: true }); } catch { }
+            }
         }
     });
 

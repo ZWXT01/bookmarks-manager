@@ -1717,7 +1717,10 @@ function bookmarkApp() {
         const res = await fetch('/api/ai/suggestions?job_id=' + encodeURIComponent(this.aiClassifyJobId), { headers: { 'Accept': 'application/json' } });
         const data = await res.json().catch(() => null);
         if (res.ok && data && Array.isArray(data.suggestions)) {
-          this.aiSuggestions = data.suggestions;
+          this.aiSuggestions = data.suggestions.map((s) => ({
+            ...s,
+            suggested_category: s.suggested_category || s.category || '',
+          }));
         }
       } catch { }
     },

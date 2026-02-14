@@ -53,15 +53,23 @@ export async function runLevelSimplifyJob(
     options: SimplifyJobOptions,
     config: SimplifyConfig,
 ): Promise<void> {
+    const isCanceled = (): boolean => {
+        const current = getJob(db, jobId);
+        return !current || current.status === 'canceled';
+    };
+
     const job = getJob(db, jobId);
     if (!job) throw new Error('job not found');
+    if (job.status === 'canceled') return;
 
     const levelName = options.level === 1 ? '一级分类精简' : '二级分类精简';
     updateJob(db, jobId, { status: 'running', message: `正在获取${levelName}列表...` });
+    if (isCanceled()) return;
 
     // Ensure table exists
     ensureLevelSimplifyTable(db);
     db.prepare('DELETE FROM ai_level_simplify_suggestions WHERE job_id = ?').run(jobId);
+    if (isCanceled()) return;
 
     try {
         let result: SimplifyResult;
@@ -71,6 +79,7 @@ export async function runLevelSimplifyJob(
         } else {
             result = await simplifyLevel2(db, config, options.parentIds || []);
         }
+        if (isCanceled()) return;
 
         // Save suggestions
         const now = new Date().toISOString();
@@ -92,10 +101,12 @@ export async function runLevelSimplifyJob(
                 now
             );
         }
+        if (isCanceled()) return;
 
         // Auto-apply if enabled
         if (options.autoApply && result.merges.length > 0) {
             const applyResult = applyLevelMerges(db, result.merges, options.level);
+            if (isCanceled()) return;
             updateJob(db, jobId, {
                 status: applyResult.errors.length > 0 ? 'failed' : 'done',
                 processed: result.merges.length,
@@ -113,6 +124,7 @@ export async function runLevelSimplifyJob(
             });
         }
     } catch (error: any) {
+        if (isCanceled()) return;
         updateJob(db, jobId, {
             status: 'failed',
             message: `${levelName}失败: ${error.message || '未知错误'}`,

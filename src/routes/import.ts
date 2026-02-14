@@ -4,7 +4,7 @@
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import type { MultipartFile } from '@fastify/multipart';
-import { createJob, jobQueue, updateJob } from '../jobs';
+import { createJob, getJob, jobQueue, updateJob } from '../jobs';
 import { parseImportContent, runImportJob } from '../importer';
 import { toInt, decodeImportBuffer } from '../utils/helpers';
 
@@ -119,6 +119,12 @@ export const importRoutes: FastifyPluginCallback<ImportRoutesOptions> = (app, op
                     overrideCategory,
                     logger: log,
                 });
+
+                const current = getJob(db, job.id);
+                if (current?.status === 'canceled') {
+                    log.info({ durationMs: Date.now() - startedAt }, 'import job canceled');
+                    return;
+                }
 
                 log.info({ durationMs: Date.now() - startedAt, insertedCount: res.insertedIds.length }, 'import job done');
                 updateJob(db, job.id, { status: 'done' });

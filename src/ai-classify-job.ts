@@ -105,7 +105,7 @@ export async function runAIClassifyJob(
 
         // 自动应用模式下，实时应用每批分类
         if (options.autoApply && batchResult.results.length > 0) {
-          applyBatchClassifications(db, classifier, batchResult.results);
+          applyBatchClassifications(db, classifier, batchResult.results, jobId);
         }
 
         updateJob(db, jobId, {
@@ -213,7 +213,7 @@ function getBookmarksForClassification(db: Db, options: AIClassifyJobOptions): B
   }));
 }
 
-function applyClassifications(db: Db, classifier: AIClassifier, results: ClassificationResult[]): number {
+function applyClassifications(db: Db, classifier: AIClassifier, results: ClassificationResult[], jobId?: string): number {
   let applied = 0;
 
   for (const result of results) {
@@ -223,7 +223,7 @@ function applyClassifications(db: Db, classifier: AIClassifier, results: Classif
       if (categoryId) {
         db.prepare('UPDATE bookmarks SET category_id = ? WHERE id = ?').run(categoryId, result.bookmarkId);
         // 标记建议为已应用
-        markSuggestionApplied(db, result.bookmarkId);
+        markSuggestionApplied(db, result.bookmarkId, jobId);
         applied++;
       }
     } catch (error) {
@@ -234,7 +234,7 @@ function applyClassifications(db: Db, classifier: AIClassifier, results: Classif
   return applied;
 }
 
-function applyBatchClassifications(db: Db, classifier: AIClassifier, results: ClassificationResult[]): void {
+function applyBatchClassifications(db: Db, classifier: AIClassifier, results: ClassificationResult[], jobId: string): void {
   for (const result of results) {
     try {
       const normalizedCategory = normalizeCategoryPath(result.suggestedCategory);
@@ -242,7 +242,7 @@ function applyBatchClassifications(db: Db, classifier: AIClassifier, results: Cl
       if (categoryId) {
         db.prepare('UPDATE bookmarks SET category_id = ? WHERE id = ?').run(categoryId, result.bookmarkId);
         // 标记建议为已应用
-        markSuggestionApplied(db, result.bookmarkId);
+        markSuggestionApplied(db, result.bookmarkId, jobId);
       }
     } catch (error) {
       continue;
@@ -250,10 +250,11 @@ function applyBatchClassifications(db: Db, classifier: AIClassifier, results: Cl
   }
 }
 
-function markSuggestionApplied(db: Db, bookmarkId: number): void {
-  try {
-    db.exec('ALTER TABLE ai_classification_suggestions ADD COLUMN applied INTEGER DEFAULT 0');
-  } catch { }
+function markSuggestionApplied(db: Db, bookmarkId: number, jobId?: string): void {
+  if (jobId) {
+    db.prepare('UPDATE ai_classification_suggestions SET applied = 1 WHERE bookmark_id = ? AND job_id = ?').run(bookmarkId, jobId);
+    return;
+  }
   db.prepare('UPDATE ai_classification_suggestions SET applied = 1 WHERE bookmark_id = ?').run(bookmarkId);
 }
 
@@ -265,17 +266,21 @@ function ensureSuggestionsTable(db: Db): void {
       bookmark_id INTEGER NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
       suggested_category TEXT NOT NULL,
       confidence TEXT NOT NULL,
+      applied INTEGER DEFAULT 0,
       created_at TEXT NOT NULL
     );
     CREATE INDEX IF NOT EXISTS idx_ai_suggestions_bookmark ON ai_classification_suggestions(bookmark_id);
     CREATE INDEX IF NOT EXISTS idx_ai_suggestions_job_id ON ai_classification_suggestions(job_id);
   `);
 
-  // 迁移：添加 job_id 列（如果不存在）
+  // 迁移：补齐字段
   try {
     const columns = db.prepare("PRAGMA table_info(ai_classification_suggestions)").all() as Array<{ name: string }>;
     if (!columns.some(c => c.name === 'job_id')) {
       db.exec('ALTER TABLE ai_classification_suggestions ADD COLUMN job_id TEXT');
+    }
+    if (!columns.some(c => c.name === 'applied')) {
+      db.exec('ALTER TABLE ai_classification_suggestions ADD COLUMN applied INTEGER DEFAULT 0');
     }
   } catch { /* ignore */ }
 }

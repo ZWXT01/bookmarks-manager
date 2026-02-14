@@ -64,8 +64,12 @@ export function withFlash(url: string, key: 'msg' | 'err', value: string): strin
  * 安全获取重定向目标（只允许相对路径）
  */
 export function safeRedirectTarget(input: unknown, fallback: string): string {
-    if (typeof input === 'string' && input.startsWith('/')) return input;
-    return fallback;
+    if (typeof input !== 'string' || !input) return fallback;
+    const trimmed = input.trim();
+    if (!trimmed.startsWith('/')) return fallback;
+    if (trimmed.startsWith('//')) return fallback;
+    if (trimmed.includes('\r') || trimmed.includes('\n')) return fallback;
+    return trimmed;
 }
 
 /**

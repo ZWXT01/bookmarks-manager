@@ -22,21 +22,30 @@ export async function runAISimplifyJob(
   options: AISimplifyJobOptions,
   aiConfig: { baseUrl: string; apiKey: string; model: string },
 ): Promise<void> {
+  const isCanceled = (): boolean => {
+    const current = getJob(db, jobId);
+    return !current || current.status === 'canceled';
+  };
+
   const job = getJob(db, jobId);
   if (!job) throw new Error('job not found');
+  if (job.status === 'canceled') return;
 
   updateJob(db, jobId, { status: 'running', message: '正在获取分类列表...' });
+  if (isCanceled()) return;
 
   // 清除当前任务的旧建议（如果有）
   ensureSimplifyTable(db);
   db.prepare('DELETE FROM ai_simplify_suggestions WHERE job_id = ?').run(jobId);
+  if (isCanceled()) return;
 
   // 获取所有分类及其书签数量，构建完整路径
   const categories = db.prepare(`
     SELECT 
       c.id, 
       CASE 
-        WHEN p.name IS NOT NULL THEN p.name || '/' || c.name 
+        WHEN p.name IS NOT NULL AND c.name LIKE p.name || '/%' THEN c.name
+        WHEN p.name IS NOT NULL THEN p.name || '/' || c.name
         ELSE c.name 
       END as name, 
       COUNT(b.id) as bookmark_count
@@ -61,6 +70,7 @@ export async function runAISimplifyJob(
     total: categories.length,
     message: `准备精简 ${categories.length} 个分类...`,
   });
+  if (isCanceled()) return;
 
   // 计算并保存 Token 估算
   const estimatedInputTokens = 300 + categories.length * 30; // 系统提示 + 分类列表
@@ -83,6 +93,7 @@ export async function runAISimplifyJob(
 
   try {
     updateJob(db, jobId, { message: '正在使用 AI 分析分类...' });
+    if (isCanceled()) return;
 
     const openai = new OpenAI({
       apiKey: aiConfig.apiKey,
@@ -126,6 +137,7 @@ ${categoryList}
       temperature: 0.2,
       max_tokens: 8000,
     });
+    if (isCanceled()) return;
 
     const content = completion.choices?.[0]?.message?.content;
     if (!content) {
@@ -217,6 +229,7 @@ ${categoryList}
     }
 
     const mappings = allMappings;
+    if (isCanceled()) return;
 
     // 保存精简建议到数据库
     ensureSimplifyTable(db);
@@ -231,10 +244,13 @@ ${categoryList}
     for (const m of mappings) {
       stmt.run(jobId, m.oldCategoryId, m.oldCategoryName, m.newCategoryName, m.bookmarkCount, now);
     }
+    if (isCanceled()) return;
 
     if (options.autoApply) {
       updateJob(db, jobId, { message: '正在应用精简结果...' });
+      if (isCanceled()) return;
       const applied = applySimplifyMappings(db, mappings);
+      if (isCanceled()) return;
 
       updateJob(db, jobId, {
         status: 'done',
@@ -251,6 +267,7 @@ ${categoryList}
       });
     }
   } catch (error: any) {
+    if (isCanceled()) return;
     updateJob(db, jobId, {
       status: 'failed',
       message: `AI 精简失败: ${error.message || '未知错误'}`,

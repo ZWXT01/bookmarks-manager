@@ -96,10 +96,11 @@ export function getCategoryTree(db: Db): CategoryTreeNode[] {
             // 子分类的 name 已经是完整路径（如 "技术/编程"），直接使用
             // 同时提供简短名称用于 UI 显示
             const displayName = cat.name.includes('/') ? cat.name.split('/').pop()! : cat.name;
+            const fullPath = cat.name.includes('/') ? cat.name : `${parent.name}/${cat.name}`;
             parent.children.push({
                 ...cat,
                 children: [], // 强制 2 级，不会有更深的子分类
-                fullPath: cat.name,  // 使用存储的完整路径
+                fullPath,
                 displayName,         // 用于 UI 显示的简短名称
             });
         } else {
@@ -233,7 +234,12 @@ export function getCategoryFullPath(db: Db, categoryId: number): string | null {
         return cat.name;
     }
 
-    return `${parent.name}/${cat.name}`;
+    if (cat.name.startsWith(parent.name + '/')) {
+        return cat.name;
+    }
+
+    const simple = cat.name.includes('/') ? cat.name.split('/').pop()! : cat.name;
+    return `${parent.name}/${simple}`;
 }
 
 // ==================== 创建/修改函数 ====================
@@ -269,11 +275,33 @@ export function createSubCategory(db: Db, name: string, parentId: number, option
         throw new Error('不能在二级分类下创建子分类（最多支持 2 级）');
     }
 
+    const raw = name.trim();
+    if (!raw) {
+        throw new Error('分类名称不能为空');
+    }
+    const simpleName = raw.includes('/') ? raw.split('/').pop()!.trim() : raw;
+    if (!simpleName) {
+        throw new Error('分类名称不能为空');
+    }
+    const fullName = `${parent.name}/${simpleName}`;
+
+    // 兼容旧数据：子分类可能存为 simpleName 或 fullName
+    const existing = db.prepare(`
+    SELECT id FROM categories
+    WHERE parent_id = ? AND (name = ? OR name = ?)
+    LIMIT 1
+  `).get(parentId, fullName, simpleName) as { id: number } | undefined;
+    if (existing) {
+        // 规范化旧格式（simpleName -> fullName）
+        db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(fullName, existing.id);
+        return existing.id;
+    }
+
     const now = new Date().toISOString();
     const result = db.prepare(`
     INSERT INTO categories (name, parent_id, icon, color, sort_order, created_at)
     VALUES (?, ?, ?, ?, 0, ?)
-  `).run(name.trim(), parentId, options?.icon ?? null, options?.color ?? null, now);
+  `).run(fullName, parentId, options?.icon ?? null, options?.color ?? null, now);
     return Number(result.lastInsertRowid);
 }
 
@@ -317,29 +345,29 @@ export function getOrCreateCategoryByPath(db: Db, path: string): number {
     const subName = parts[1];
     const fullSubName = `${topName}/${subName}`;
 
-    let subCat = getCategoryByName(db, fullSubName);
-    if (!subCat) {
-        // 尝试只用 subName 查找（兼容新格式）
-        const existingSub = db.prepare(`
-      SELECT id, name, parent_id FROM categories 
-      WHERE name = ? AND parent_id = ?
-    `).get(subName, topCat.id) as CategoryRow | undefined;
-
-        if (existingSub) {
-            return existingSub.id;
+    // 优先按父分类定位，兼容旧数据（simpleName/fullSubName 两种存储）
+    const existingSub = db.prepare(`
+      SELECT id, name, parent_id FROM categories
+      WHERE parent_id = ? AND (name = ? OR name = ?)
+      LIMIT 1
+    `).get(topCat.id, fullSubName, subName) as CategoryRow | undefined;
+    if (existingSub) {
+        if (existingSub.name !== fullSubName) {
+            db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(fullSubName, existingSub.id);
         }
-
-        // 创建二级分类
-        const subId = createSubCategory(db, fullSubName, topCat.id);
-        return subId;
+        return existingSub.id;
     }
 
-    // 确保 parent_id 正确设置
-    if (subCat.parent_id !== topCat.id) {
-        db.prepare('UPDATE categories SET parent_id = ? WHERE id = ?').run(topCat.id, subCat.id);
+    // 兜底：按全路径查找并修正 parent_id
+    const subCat = getCategoryByName(db, fullSubName);
+    if (subCat) {
+        if (subCat.parent_id !== topCat.id) {
+            db.prepare('UPDATE categories SET parent_id = ? WHERE id = ?').run(topCat.id, subCat.id);
+        }
+        return subCat.id;
     }
 
-    return subCat.id;
+    return createSubCategory(db, subName, topCat.id);
 }
 
 /**

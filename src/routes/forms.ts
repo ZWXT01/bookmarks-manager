@@ -4,7 +4,7 @@
  */
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
-import { getOrCreateCategoryByPath, renameCategory } from '../category-service';
+import { deleteCategory as deleteCategoryService, getOrCreateCategoryByPath, renameCategory } from '../category-service';
 import { canonicalizeUrl } from '../url';
 import { toInt, validateStringLength, safeRedirectTarget, withFlash } from '../utils/helpers';
 
@@ -83,12 +83,8 @@ export const formsRoutes: FastifyPluginCallback<FormsRoutesOptions> = (app, opts
         }
 
         try {
-            db.prepare('UPDATE bookmarks SET category_id = NULL WHERE category_id = ?').run(categoryId);
-            const res = db.prepare('DELETE FROM categories WHERE id = ?').run(categoryId);
-            if (res.changes === 0) {
-                return reply.redirect(flash(redirectTo, 'err', '分类不存在'));
-            }
-            req.log.info({ categoryId }, 'category deleted');
+            const result = deleteCategoryService(db, categoryId);
+            req.log.info({ categoryId, movedBookmarks: result.movedBookmarks }, 'category deleted');
             return reply.redirect(flash(redirectTo, 'msg', '分类已删除'));
         } catch (e: any) {
             req.log.error({ err: e }, 'delete category failed');
@@ -116,11 +112,12 @@ export const formsRoutes: FastifyPluginCallback<FormsRoutesOptions> = (app, opts
         const title = titleInput || canon.normalizedUrl;
 
         try {
-            db.prepare('INSERT INTO bookmarks (url, canonical_url, title, category_id) VALUES (?, ?, ?, ?)').run(
+            db.prepare('INSERT INTO bookmarks (url, canonical_url, title, category_id, created_at) VALUES (?, ?, ?, ?, ?)').run(
                 canon.normalizedUrl,
                 canon.canonicalUrl,
                 title,
-                categoryId
+                categoryId,
+                new Date().toISOString()
             );
             req.log.info({ url: urlInput, title, categoryId }, 'bookmark created');
             return reply.redirect(flash(redirectTo, 'msg', '书签已添加'));

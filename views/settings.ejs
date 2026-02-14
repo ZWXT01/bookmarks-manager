@@ -138,20 +138,30 @@
           class="w-6 h-6 rounded-md bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs">🤖</span>
         AI 自动分类（OpenAI 兼容）
       </div>
-      <button id="ai-test-btn" type="button" class="btn-secondary btn-sm">测试连接</button>
+      <div class="flex items-center gap-2">
+        <select id="ai-preset-select" class="rounded border px-2 py-1 text-xs">
+          <option value="">— 快捷预设 —</option>
+          <option value="grok">Grok (grok2api)</option>
+          <option value="openai">OpenAI</option>
+        </select>
+        <button id="ai-test-btn" type="button" class="btn-secondary btn-sm">测试连接</button>
+      </div>
     </div>
     <div class="mt-3 space-y-3">
       <label class="block">
-        <div class="text-xs text-slate-600">Base URL（例如 https://api.openai.com）</div>
-        <input name="ai_base_url" value="<%- aiBaseUrl %>" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+        <div class="text-xs text-slate-600">Base URL</div>
+        <input name="ai_base_url" value="<%- aiBaseUrl %>"
+          placeholder="例如 https://api.openai.com/v1 或 https://grok2api.1018666.xyz/v1"
+          class="mt-1 w-full rounded border px-3 py-2 text-sm" />
       </label>
       <label class="block">
         <div class="text-xs text-slate-600">API Key</div>
         <input name="ai_api_key" value="<%- aiApiKey %>" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
       </label>
       <label class="block">
-        <div class="text-xs text-slate-600">Model（例如 gpt-4o-mini）</div>
-        <input name="ai_model" value="<%- aiModel %>" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+        <div class="text-xs text-slate-600">Model</div>
+        <input name="ai_model" value="<%- aiModel %>" placeholder="例如 gpt-4o-mini 或 grok-4"
+          class="mt-1 w-full rounded border px-3 py-2 text-sm" />
       </label>
       <label class="block">
         <div class="text-xs text-slate-600">每批分类数量</div>
@@ -417,6 +427,26 @@
             resetBtn.disabled = false;
             resetBtn.classList.remove('opacity-60');
           }
+        });
+      }
+
+      // AI 预设快捷填充
+      var aiPresetSelect = document.getElementById('ai-preset-select');
+      if (aiPresetSelect) {
+        var presets = {
+          grok: { base_url: 'https://grok2api.1018666.xyz/v1', model: 'grok-4' },
+          openai: { base_url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+        };
+        aiPresetSelect.addEventListener('change', function () {
+          var preset = presets[this.value];
+          if (!preset) return;
+          var presetName = this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '';
+          var urlInput = form.querySelector('input[name="ai_base_url"]');
+          var modelInput = form.querySelector('input[name="ai_model"]');
+          if (urlInput) urlInput.value = preset.base_url;
+          if (modelInput) modelInput.value = preset.model;
+          this.value = '';
+          showToast('已填充 ' + presetName + ' 预设，请填写 API Key 后保存', 'success');
         });
       }
 

@@ -670,6 +670,83 @@ async function main(): Promise<void> {
     },
   );
 
+  app.get(
+    '/export',
+    async (
+      req: FastifyRequest<{
+        Querystring: {
+          format?: string;
+          scope?: string;
+          category?: string;
+          categoryIds?: string;
+        }
+      }>,
+      reply: FastifyReply,
+    ) => {
+      const format = req.query.format === 'json' ? 'json' : 'html';
+      const scope = typeof req.query.scope === 'string' ? req.query.scope : 'all';
+      const category = typeof req.query.category === 'string' ? req.query.category : '';
+
+      let rows: Array<{ url: string; title: string; category_name: string | null; created_at: string }>;
+      if (scope === 'all' && !category) {
+        rows = queryExportRows(db);
+      } else {
+        let sql = `
+          SELECT
+            b.url AS url,
+            b.title AS title,
+            b.created_at AS created_at,
+            c.name AS category_name
+          FROM bookmarks b
+          LEFT JOIN categories c ON c.id = b.category_id
+        `;
+        const conditions: string[] = [];
+        const params: any[] = [];
+
+        if (scope === 'uncategorized' || category === 'uncategorized') {
+          conditions.push('b.category_id IS NULL');
+        } else if (scope === 'categories') {
+          const idsRaw = typeof req.query.categoryIds === 'string' ? req.query.categoryIds : '';
+          const ids = idsRaw
+            .split(',')
+            .map((x) => toInt(x.trim()))
+            .filter((x): x is number => x !== null);
+          if (ids.length === 0) {
+            return reply.code(400).send({ error: '无效的分类参数' });
+          }
+          conditions.push(`b.category_id IN (${ids.map(() => '?').join(',')})`);
+          params.push(...ids);
+        } else if (category) {
+          const categoryId = toInt(category);
+          if (categoryId === null) {
+            return reply.code(400).send({ error: '无效的分类参数' });
+          }
+          conditions.push('b.category_id = ?');
+          params.push(categoryId);
+        }
+
+        if (conditions.length > 0) {
+          sql += ' WHERE ' + conditions.join(' AND ');
+        }
+        sql += ' ORDER BY c.name, b.created_at DESC';
+        rows = db.prepare(sql).all(...params) as Array<{ url: string; title: string; category_name: string | null; created_at: string }>;
+      }
+
+      if (format === 'json') {
+        return reply
+          .header('Content-Disposition', 'attachment; filename="bookmarks.json"')
+          .type('application/json; charset=utf-8')
+          .send(rows);
+      }
+
+      const html = buildNetscapeHtml(rows);
+      return reply
+        .header('Content-Disposition', 'attachment; filename="bookmarks.html"')
+        .type('text/html; charset=utf-8')
+        .send(html);
+    },
+  );
+
   await app.listen({
     port,
     host: '0.0.0.0',

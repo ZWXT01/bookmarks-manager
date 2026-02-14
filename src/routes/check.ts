@@ -46,6 +46,7 @@ export const checkRoutes: FastifyPluginCallback<CheckRoutesOptions> = (app, opts
             if (job.status === 'done' || job.status === 'failed' || job.status === 'canceled') {
                 return reply.send({ success: true, status: job.status });
             }
+            jobQueue.cancelJob(jobId);
             const next = updateJob(db, jobId, { status: 'canceled', message: '已取消' });
             return reply.send({ success: true, status: next.status });
         } catch (e: any) {

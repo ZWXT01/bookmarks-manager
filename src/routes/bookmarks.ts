@@ -176,6 +176,47 @@ export const bookmarkRoutes: FastifyPluginCallback<BookmarkRoutesOptions> = (app
         }
     });
 
+    // POST /api/bookmarks/:id/update - 更新书签（JSON API）
+    app.post('/api/bookmarks/:id/update', async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
+        const bookmarkId = toInt(req.params.id);
+        const body: any = req.body || {};
+        if (typeof bookmarkId !== 'number') return reply.code(404).send({ error: '书签不存在' });
+
+        const urlInput = typeof body.url === 'string' ? body.url.trim() : '';
+        const titleInput = typeof body.title === 'string' ? body.title.trim() : '';
+        const rawCategory = body.category_id ?? body.categoryId;
+        const rawCategoryStr = typeof rawCategory === 'string' ? rawCategory.trim() : typeof rawCategory === 'number' ? String(rawCategory) : '';
+        const categoryId =
+            rawCategoryStr === '' || rawCategoryStr === 'uncategorized'
+                ? null
+                : toInt(rawCategoryStr);
+
+        if (!urlInput) return reply.code(400).send({ error: 'URL不能为空' });
+        if (rawCategoryStr !== '' && rawCategoryStr !== 'uncategorized' && categoryId === null) {
+            return reply.code(400).send({ error: '无效的分类' });
+        }
+
+        const canon = canonicalizeUrl(urlInput);
+        if (!canon.ok) return reply.code(400).send({ error: canon.reason });
+        const title = titleInput || canon.normalizedUrl;
+
+        try {
+            const res = db
+                .prepare('UPDATE bookmarks SET url = ?, canonical_url = ?, title = ?, category_id = ?, last_checked_at = NULL, check_status = \'not_checked\', check_http_code = NULL, check_error = NULL WHERE id = ?')
+                .run(canon.normalizedUrl, canon.canonicalUrl, title, categoryId, bookmarkId);
+
+            if (res.changes === 0) return reply.code(404).send({ error: '书签不存在' });
+            return reply.send({ success: true });
+        } catch (e: any) {
+            const message = typeof e?.message === 'string' ? e.message : '更新失败';
+            if (message.includes('UNIQUE')) {
+                return reply.code(409).send({ error: '该URL已存在（按规范化URL去重）' });
+            }
+            req.log.error({ err: e }, 'update bookmark failed');
+            return reply.code(500).send({ error: '更新失败' });
+        }
+    });
+
     // POST /api/bookmarks/delete-all - 删除所有书签
     app.post('/api/bookmarks/delete-all', async (_req: FastifyRequest, reply: FastifyReply) => {
         try {
@@ -204,22 +245,33 @@ export const bookmarkRoutes: FastifyPluginCallback<BookmarkRoutesOptions> = (app
     // POST /bookmarks/batch-delete - 批量删除书签
     app.post('/bookmarks/batch-delete', async (req: FastifyRequest, reply: FastifyReply) => {
         const body: any = req.body || {};
-        const ids = body.ids;
+        const raw = body['bookmark_ids[]'] ?? body.bookmark_ids ?? body.ids;
+        let ids: number[] = [];
 
-        if (!Array.isArray(ids) || ids.length === 0) {
+        if (Array.isArray(raw)) {
+            ids = raw
+                .map((x: any) => toInt(x))
+                .filter((n: number | null): n is number => n !== null);
+        } else if (typeof raw === 'string') {
+            ids = raw
+                .split(',')
+                .map((s) => toInt(s.trim()))
+                .filter((n: number | null): n is number => n !== null);
+        } else if (typeof raw === 'number') {
+            const n = toInt(raw);
+            if (n !== null) ids = [n];
+        }
+
+        const uniqueIds = Array.from(new Set(ids));
+
+        if (uniqueIds.length === 0) {
             return reply.code(400).send({ error: '缺少 ids 参数' });
         }
 
         try {
-            let deleted = 0;
-            for (const id of ids) {
-                const numId = Number(id);
-                if (!Number.isInteger(numId)) continue;
-
-                const res = db.prepare('DELETE FROM bookmarks WHERE id = ?').run(numId);
-                if (res.changes > 0) deleted++;
-            }
-            return reply.send({ success: true, deleted });
+            const placeholders = uniqueIds.map(() => '?').join(',');
+            const res = db.prepare(`DELETE FROM bookmarks WHERE id IN (${placeholders})`).run(...uniqueIds);
+            return reply.send({ success: true, deleted: res.changes });
         } catch (e: any) {
             req.log.error({ err: e }, 'batch delete bookmarks failed');
             return reply.code(500).send({ error: '批量删除失败' });

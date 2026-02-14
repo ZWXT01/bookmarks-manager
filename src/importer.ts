@@ -141,6 +141,8 @@ export function parseImportContent(text: string): ImportBookmarkItem[] {
 // 它会自动处理路径格式（如 "技术/编程"）并建立正确的父子关系
 
 export async function runImportJob(db: Db, jobId: string, items: ImportBookmarkItem[], options: ImportOptions): Promise<{ insertedIds: number[] }> {
+  const statusStmt = db.prepare('SELECT status FROM jobs WHERE id = ?');
+
   updateJob(db, jobId, {
     status: 'running',
     message: '正在导入',
@@ -165,10 +167,29 @@ export async function runImportJob(db: Db, jobId: string, items: ImportBookmarkI
   const skipDuplicates = options.skipDuplicates === true;
 
   for (let i = 0; i < items.length; i += batchSize) {
+    const st = statusStmt.get(jobId) as { status: string } | undefined;
+    if (!st || st.status === 'canceled') {
+      updateJob(db, jobId, {
+        status: 'canceled',
+        message: '已取消',
+        total: items.length,
+        processed,
+        inserted,
+        skipped,
+        failed,
+      });
+      return { insertedIds };
+    }
+
     const batch = items.slice(i, i + batchSize);
 
     const tx = db.transaction(() => {
       for (const item of batch) {
+        const cur = statusStmt.get(jobId) as { status: string } | undefined;
+        if (!cur || cur.status === 'canceled') {
+          return;
+        }
+
         processed += 1;
 
         const canon = canonicalizeUrl(item.url);
@@ -224,6 +245,11 @@ export async function runImportJob(db: Db, jobId: string, items: ImportBookmarkI
       skipped,
       failed,
     });
+  }
+
+  const finalStatus = statusStmt.get(jobId) as { status: string } | undefined;
+  if (!finalStatus || finalStatus.status === 'canceled') {
+    return { insertedIds };
   }
 
   updateJob(db, jobId, {
