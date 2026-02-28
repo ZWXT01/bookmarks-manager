@@ -47,10 +47,10 @@
         <div>
           <div class="flex items-center gap-2">
             <span class="text-lg">
-              <%= job.type==='ai_classify' ? '🤖' : job.type==='ai_simplify' ? '✨' : '🔍' %>
+              <%= job.type==='ai_organize' ? '🤖' : job.type==='ai_classify' ? '🤖' : job.type==='ai_simplify' ? '✨' : '🔍' %>
             </span>
             <span class="text-sm font-semibold text-slate-700">
-              <%= job.type==='ai_classify' ? 'AI 批量分类任务' : job.type==='ai_simplify' ? 'AI 类型精简任务' : '书签检查任务' %>
+              <%= job.type==='ai_organize' ? 'AI 整理任务' : job.type==='ai_classify' ? 'AI 批量分类任务' : job.type==='ai_simplify' ? 'AI 类型精简任务' : '书签检查任务' %>
             </span>
             <span id="job-status"
               class="text-xs px-2 py-0.5 rounded <%= job.status === 'running' ? 'bg-blue-100 text-blue-700' : job.status === 'done' ? 'bg-green-100 text-green-700' : job.status === 'failed' ? 'bg-rose-100 text-rose-700' : job.status === 'canceled' ? 'bg-slate-100 text-slate-600' : 'bg-slate-100 text-slate-600' %>">
@@ -709,7 +709,7 @@
         cancelBtn.textContent = '取消中...';
 
         var jobType = '<%= job.type %>';
-        var cancelUrl = (jobType === 'ai_classify' || jobType === 'ai_simplify') ? '/api/ai/cancel' : '/api/check/cancel';
+        var cancelUrl = jobType === 'check' ? '/api/check/cancel' : '/api/jobs/' + jobId + '/cancel';
 
         fetch(cancelUrl, {
           method: 'POST',

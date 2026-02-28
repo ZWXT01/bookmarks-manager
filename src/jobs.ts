@@ -14,7 +14,7 @@ export function setJobQueueLogger(logger: LoggerLike): void {
   jobQueueLogger = logger;
 }
 
-export type JobType = 'import' | 'check' | 'ai_classify' | 'ai_simplify';
+export type JobType = 'import' | 'check' | 'ai_classify' | 'ai_simplify' | 'ai_organize';
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'canceled';
 
 export type JobRow = {

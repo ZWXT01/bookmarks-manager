@@ -44,7 +44,7 @@
                             <div
                                 class="flex items-center gap-2 text-xs bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg px-3 py-2 border border-blue-200 shadow-sm animate-fade-in">
                                 <span class="animate-pulse"
-                                    x-text="currentJob.type === 'ai_classify' ? '🤖 AI分类' : currentJob.type === 'ai_simplify' ? '🗂️ AI精简' : currentJob.type === 'check' ? '🔍 检查' : currentJob.type === 'import' ? '📥 导入' : '任务'"></span>
+                                    x-text="currentJob.type === 'ai_organize' ? '🤖 AI整理' : currentJob.type === 'check' ? '🔍 检查' : currentJob.type === 'import' ? '📥 导入' : '任务'"></span>
                                 <span x-text="currentJob.processed + '/' + currentJob.total" class="font-medium"></span>
                                 <div class="w-20 h-2 progress-bar">
                                     <div class="progress-bar-fill"
@@ -119,10 +119,8 @@
                         <div class="space-y-2">
                             <button @click="openCheckModal()" class="btn-secondary w-full text-left justify-start">🔍
                                 批量检查</button>
-                            <button @click="openAIClassifyModal()"
-                                class="btn-secondary w-full text-left justify-start">🤖 AI 分类</button>
-                            <button @click="openAISimplifyModal()"
-                                class="btn-secondary w-full text-left justify-start">🗂️ AI 精简分类</button>
+                            <button @click="openAIOrganizeModal()"
+                                class="btn-secondary w-full text-left justify-start">🤖 AI 整理</button>
                         </div>
                     </div>
                     <!-- Categories - Scrollable -->
@@ -365,9 +363,9 @@
                                         移动</button>
                                     <button @click="openCheckModalForSelected()"
                                         class="rounded border px-2 py-1 text-xs hover:bg-slate-50">🔍 检查</button>
-                                    <button @click="aiClassifySelected()"
+                                    <button @click="openAIOrganizeModal()"
                                         class="rounded border px-2 py-1 text-xs hover:bg-slate-50">🤖
-                                        AI分类</button>
+                                        AI 整理</button>
                                     <button @click="batchDelete()"
                                         class="rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 hover:bg-rose-50">🗑️
                                         删除选中</button>
@@ -800,295 +798,287 @@
             </div>
         </div>
 
-        <!-- AI Classify Modal -->
-        <div x-cloak x-show="showAIClassifyModal"
+        <!-- AI Organize Modal -->
+        <div x-cloak x-show="showAIOrganizeModal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-            @click.self="closeAIClassifyModal()">
-            <div class="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl max-h-[90vh] overflow-y-auto">
+            @click.self="closeOrganizeModal()">
+            <div class="w-full max-w-2xl rounded-lg bg-white p-4 shadow-xl max-h-[90vh] overflow-y-auto">
                 <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-lg font-semibold">🤖 AI 分类</h3>
-                    <button @click="closeAIClassifyModal()"
+                    <h3 class="text-lg font-semibold">🤖 AI 整理</h3>
+                    <button @click="closeOrganizeModal()"
                         class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                 </div>
-                <template x-if="!aiClassifyJobId && !aiClassifyJobDone">
+
+                <!-- Phase: idle - Scope selection -->
+                <template x-if="organizePhase === 'idle'">
                     <div class="space-y-3">
+                        <p class="text-sm text-slate-500">AI 将分析书签特征，自动设计分类树，然后批量归类所有书签。</p>
                         <div>
-                            <label class="text-xs text-slate-600">分类级别</label>
-                            <select x-model="aiClassifyOptions.level"
-                                class="w-full rounded border px-3 py-2 text-sm mt-1">
-                                <option value="">自动（混合分类）</option>
-                                <option value="1">一级分类（大类）</option>
-                                <option value="2">二级分类（小类）</option>
-                            </select>
-                            <p class="text-xs text-slate-400 mt-1" x-show="aiClassifyOptions.level === '2'">
-                                注：无一级分类的书签将被跳过
-                            </p>
-                        </div>
-                        <div>
-                            <label class="text-xs text-slate-600">分类范围</label>
-                            <select x-model="aiClassifyOptions.scope"
-                                class="w-full rounded border px-3 py-2 text-sm mt-1">
-                                <option value="uncategorized">未分类书签</option>
+                            <label class="text-xs text-slate-600">整理范围</label>
+                            <select x-model="organizeScope" class="w-full rounded border px-3 py-2 text-sm mt-1">
                                 <option value="all">全部书签</option>
-                                <option value="selected">选中书签</option>
+                                <option value="uncategorized">未分类书签</option>
+                                <option value="category">指定分类</option>
                             </select>
                         </div>
-                        <div>
-                            <label class="text-xs text-slate-600">每批数量</label>
-                            <select x-model="aiClassifyOptions.batchSize"
-                                class="w-full rounded border px-3 py-2 text-sm mt-1">
-                                <option value="15">15</option>
-                                <option value="30">30</option>
-                                <option value="50">50</option>
-                            </select>
-                        </div>
-                        <label class="flex items-center gap-2 text-sm">
-                            <input type="checkbox" x-model="aiClassifyOptions.autoApply">
-                            自动应用分类建议
-                        </label>
-                        <div class="flex justify-end gap-2">
-                            <button @click="closeAIClassifyModal()"
-                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
-                            <button @click="startAIClassify()"
-                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">开始分类</button>
-                        </div>
-                    </div>
-                </template>
-                <template x-if="aiClassifyJobId && !aiClassifyJobDone">
-                    <div class="space-y-4">
-                        <!-- Progress Ring -->
-                        <div class="flex flex-col items-center gap-3">
-                            <div class="relative w-24 h-24">
-                                <svg class="w-24 h-24 transform -rotate-90">
-                                    <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
-                                    <circle cx="48" cy="48" r="40" stroke="#10b981" stroke-width="8" fill="none"
-                                        stroke-linecap="round" :stroke-dasharray="251.2"
-                                        :stroke-dashoffset="251.2 - (251.2 * aiClassifyProgress / 100)" />
-                                </svg>
-                                <div class="absolute inset-0 flex items-center justify-center">
-                                    <span class="text-xl font-bold text-emerald-600"
-                                        x-text="aiClassifyProgress + '%'"></span>
-                                </div>
-                            </div>
-                            <div class="text-center">
-                                <div class="text-sm font-medium text-slate-700"
-                                    x-text="'处理中 ' + aiClassifyStats.processed + ' / ' + aiClassifyStats.total"></div>
-                                <div class="text-xs text-slate-400 mt-1">正在进行AI分类...</div>
-                            </div>
-                        </div>
-                        <!-- Action Buttons -->
-                        <div class="flex justify-center gap-3 pt-2 border-t">
-                            <button @click="cancelAIClassify()"
-                                class="flex items-center gap-1 rounded-lg border border-rose-200 text-rose-600 px-4 py-2 text-sm hover:bg-rose-50 transition">
-                                <span>✕</span> 取消任务
-                            </button>
-                            <a :href="'/jobs/' + aiClassifyJobId"
-                                class="flex items-center gap-1 rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">
-                                <span>📋</span> 查看详情
-                            </a>
-                        </div>
-                    </div>
-                </template>
-                <template x-if="aiClassifyJobDone">
-                    <div class="space-y-4">
-                        <!-- 100% Progress Ring -->
-                        <div class="flex flex-col items-center gap-3">
-                            <div class="relative w-24 h-24">
-                                <svg class="w-24 h-24 transform -rotate-90">
-                                    <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
-                                    <circle cx="48" cy="48" r="40" stroke="#10b981" stroke-width="8" fill="none"
-                                        stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="0" />
-                                </svg>
-                                <div class="absolute inset-0 flex items-center justify-center">
-                                    <span class="text-xl font-bold text-emerald-600">100%</span>
-                                </div>
-                            </div>
-                            <div class="text-emerald-600 font-medium">✅ 分类完成</div>
-                        </div>
-                        <template x-if="aiSuggestions.length > 0">
+                        <template x-if="organizeScope === 'category'">
                             <div>
-                                <div class="flex items-center justify-between mb-2">
-                                    <span class="text-sm font-medium">待确认建议 (<span
-                                            x-text="aiSuggestions.length"></span>)</span>
-                                    <button @click="applyAllSuggestions()"
-                                        class="rounded bg-emerald-500 text-white px-3 py-1 text-xs hover:bg-emerald-600">全部应用</button>
-                                </div>
-                                <div class="max-h-60 overflow-y-auto space-y-2">
-                                    <template x-for="s in aiSuggestions" :key="s.bookmark_id">
-                                        <div class="flex items-center justify-between p-2 bg-slate-50 rounded text-sm">
-                                            <div class="flex-1 truncate" x-text="s.title"></div>
-                                            <div class="flex items-center gap-2">
-                                                <span class="text-emerald-600" x-text="s.suggested_category"></span>
-                                                <button @click="applySuggestion(s.bookmark_id, s.suggested_category)"
-                                                    class="text-xs text-blue-500 hover:underline">应用</button>
-                                            </div>
+                                <label class="text-xs text-slate-600">选择分类</label>
+                                <select x-model="organizeScopeCategoryId" class="w-full rounded border px-3 py-2 text-sm mt-1">
+                                    <template x-for="cat in categories" :key="cat.id">
+                                        <option :value="cat.id" x-text="cat.name"></option>
+                                    </template>
+                                </select>
+                            </div>
+                        </template>
+                        <div class="flex justify-end gap-2">
+                            <button @click="closeOrganizeModal()"
+                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                            <button @click="startOrganize()"
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">开始整理</button>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Phase: designing - AI generating tree -->
+                <template x-if="organizePhase === 'designing'">
+                    <div class="flex flex-col items-center gap-3 py-8">
+                        <div class="w-10 h-10 border-4 border-slate-200 border-t-blue-500 rounded-full animate-spin"></div>
+                        <div class="text-sm text-slate-600">AI 正在分析书签特征并设计分类树...</div>
+                    </div>
+                </template>
+
+                <!-- Phase: editing - Tree editor -->
+                <template x-if="organizePhase === 'editing'">
+                    <div class="space-y-3">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm font-medium">分类树草案</span>
+                            <button @click="addTreeNode()" class="text-xs text-blue-500 hover:underline">+ 添加一级分类</button>
+                        </div>
+                        <div class="max-h-80 overflow-y-auto border rounded p-2 space-y-2">
+                            <template x-for="(node, pi) in organizeTreeDraft" :key="pi">
+                                <div class="space-y-1">
+                                    <div class="flex items-center gap-2">
+                                        <input type="text" x-model="organizeTreeDraft[pi].name"
+                                            class="flex-1 rounded border px-2 py-1 text-sm">
+                                        <button @click="addTreeNode(pi)" class="text-xs text-blue-500 hover:underline">+ 子</button>
+                                        <button @click="removeTreeNode(pi)" class="text-xs text-rose-500 hover:underline">删除</button>
+                                    </div>
+                                    <template x-if="node.children && node.children.length > 0">
+                                        <div class="ml-6 space-y-1">
+                                            <template x-for="(child, ci) in node.children" :key="ci">
+                                                <div class="flex items-center gap-2">
+                                                    <input type="text" x-model="organizeTreeDraft[pi].children[ci].name"
+                                                        class="flex-1 rounded border px-2 py-1 text-sm">
+                                                    <button @click="removeTreeNode(pi, ci)" class="text-xs text-rose-500 hover:underline">删除</button>
+                                                </div>
+                                            </template>
                                         </div>
                                     </template>
                                 </div>
-                            </div>
-                        </template>
-                        <div class="flex justify-center gap-3 pt-2 border-t">
-                            <a :href="'/jobs/' + aiClassifyJobId"
-                                class="flex items-center gap-1 rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">
-                                <span>📋</span> 查看详情
-                            </a>
-                            <button @click="closeAIClassifyModal()"
-                                class="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">关闭</button>
-                        </div>
-                    </div>
-                </template>
-            </div>
-        </div>
-
-        <!-- AI Suggestion Modal (Single) -->
-        <div x-cloak x-show="showAISuggestionModal"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-            @click.self="closeAISuggestionModal()">
-            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
-                <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-lg font-semibold">🤖 AI 分类建议</h3>
-                    <button @click="closeAISuggestionModal()"
-                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
-                </div>
-                <template x-if="aiSuggestionBookmark">
-                    <div>
-                        <div class="text-sm font-medium truncate mb-1" x-text="aiSuggestionBookmark.title"></div>
-                        <div class="text-xs text-slate-400 truncate mb-3" x-text="aiSuggestionBookmark.url"></div>
-                        <div class="text-center py-4">
-                            <template x-if="aiSuggestionLoading">
-                                <div class="text-slate-500">正在分析中...</div>
-                            </template>
-                            <template x-if="!aiSuggestionLoading">
-                                <div class="text-lg text-emerald-600 font-medium" x-text="aiSuggestionCategory"></div>
                             </template>
                         </div>
-                    </div>
-                </template>
-                <div class="flex justify-end gap-2 mt-4">
-                    <button @click="closeAISuggestionModal()"
-                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
-                    <button @click="applyAISuggestion()" :disabled="aiSuggestionLoading"
-                        class="rounded bg-emerald-500 text-white px-4 py-2 text-sm hover:bg-emerald-600 disabled:opacity-50">应用此分类</button>
-                </div>
-            </div>
-        </div>
-
-        <!-- AI Simplify Modal -->
-        <div x-cloak x-show="showAISimplifyModal"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-            @click.self="closeAISimplifyModal()">
-            <div class="w-full max-w-lg rounded-lg bg-white p-4 shadow-xl">
-                <div class="flex items-center justify-between mb-3">
-                    <h3 class="text-lg font-semibold">🗂️ AI 精简分类</h3>
-                    <button @click="closeAISimplifyModal()"
-                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
-                </div>
-                <p class="text-sm text-slate-500 mb-4">AI 会分析现有分类结构，合并相似分类，简化层级。</p>
-                <template x-if="!aiSimplifyJobId && !aiSimplifyJobDone">
-                    <div class="space-y-3">
-                        <div>
-                            <label class="text-xs text-slate-600">精简级别</label>
-                            <select x-model="aiSimplifyOptions.level"
-                                class="w-full rounded border px-3 py-2 text-sm mt-1">
-                                <option value="">自动（全部精简）</option>
-                                <option value="1">一级分类精简（大类合并）</option>
-                                <option value="2">二级分类精简（小类合并）</option>
-                            </select>
-                        </div>
-                        <template x-if="aiSimplifyOptions.level === '2'">
-                            <div>
-                                <label class="text-xs text-slate-600 mb-2 block">选择要精简的大类</label>
-                                <div class="max-h-40 overflow-y-auto border rounded p-2 space-y-1">
-                                    <template x-for="cat in topLevelCategories" :key="cat.id">
-                                        <label class="flex items-center gap-2 text-sm hover:bg-slate-50 p-1 rounded">
-                                            <input type="checkbox" :value="cat.id"
-                                                x-model="aiSimplifyOptions.parentIds">
-                                            <span x-text="cat.name"></span>
-                                            <span class="text-xs text-slate-400" x-text="'(' + cat.count + '条)'"></span>
-                                        </label>
-                                    </template>
-                                </div>
-                                <p class="text-xs text-slate-400 mt-1">不选择则精简全部大类的二级分类</p>
-                            </div>
-                        </template>
-                        <label class="flex items-center gap-2 text-sm">
-                            <input type="checkbox" x-model="aiSimplifyOptions.autoApply">
-                            自动应用精简建议
-                        </label>
                         <div class="flex justify-end gap-2">
-                            <button @click="closeAISimplifyModal()"
-                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
-                            <button @click="startAISimplify()"
-                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">开始精简</button>
+                            <button @click="cancelOrganize()"
+                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃</button>
+                            <button @click="confirmTree()"
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">确认并开始归类</button>
                         </div>
                     </div>
                 </template>
-                <template x-if="aiSimplifyJobId && !aiSimplifyJobDone">
+
+                <!-- Phase: assigning - Progress -->
+                <template x-if="organizePhase === 'assigning'">
                     <div class="space-y-4">
-                        <!-- Progress Ring -->
                         <div class="flex flex-col items-center gap-3">
                             <div class="relative w-24 h-24">
                                 <svg class="w-24 h-24 transform -rotate-90">
                                     <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
                                     <circle cx="48" cy="48" r="40" stroke="#8b5cf6" stroke-width="8" fill="none"
                                         stroke-linecap="round" :stroke-dasharray="251.2"
-                                        :stroke-dashoffset="251.2 - (251.2 * aiSimplifyProgress / 100)" />
+                                        :stroke-dashoffset="251.2 - (organizeProgress.batches_total > 0 ? 251.2 * organizeProgress.batches_done / organizeProgress.batches_total : 0)" />
                                 </svg>
                                 <div class="absolute inset-0 flex items-center justify-center">
                                     <span class="text-xl font-bold text-purple-600"
-                                        x-text="aiSimplifyProgress + '%'"></span>
+                                        x-text="organizeProgress.batches_total > 0 ? Math.floor(organizeProgress.batches_done / organizeProgress.batches_total * 100) + '%' : '...'"></span>
                                 </div>
                             </div>
                             <div class="text-center">
                                 <div class="text-sm font-medium text-slate-700"
-                                    x-text="'处理中 ' + aiSimplifyStats.processed + ' / ' + aiSimplifyStats.total"></div>
-                                <div class="text-xs text-slate-400 mt-1">正在分析分类结构...</div>
+                                    x-text="'批次 ' + organizeProgress.batches_done + ' / ' + organizeProgress.batches_total"></div>
+                                <div class="text-xs text-slate-400 mt-1">AI 正在批量归类书签...</div>
                             </div>
                         </div>
-                        <!-- Action Buttons -->
-                        <div class="flex justify-center gap-3 pt-2 border-t">
-                            <button @click="cancelAISimplify()"
+                        <div class="flex justify-center pt-2 border-t">
+                            <button @click="cancelOrganize()"
                                 class="flex items-center gap-1 rounded-lg border border-rose-200 text-rose-600 px-4 py-2 text-sm hover:bg-rose-50 transition">
-                                <span>✕</span> 取消任务
+                                <span>✕</span> 取消
                             </button>
-                            <a :href="'/jobs/' + aiSimplifyJobId"
-                                class="flex items-center gap-1 rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">
-                                <span>📋</span> 查看详情
-                            </a>
                         </div>
                     </div>
                 </template>
-                <template x-if="aiSimplifyJobDone">
-                    <div class="space-y-4">
-                        <!-- 100% Progress Ring -->
-                        <div class="flex flex-col items-center gap-3">
-                            <div class="relative w-24 h-24">
-                                <svg class="w-24 h-24 transform -rotate-90">
-                                    <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
-                                    <circle cx="48" cy="48" r="40" stroke="#10b981" stroke-width="8" fill="none"
-                                        stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="0" />
-                                </svg>
-                                <div class="absolute inset-0 flex items-center justify-center">
-                                    <span class="text-xl font-bold text-emerald-600">100%</span>
+
+                <!-- Phase: preview - Diff preview -->
+                <template x-if="organizePhase === 'preview' && !organizeResolving">
+                    <div class="space-y-3">
+                        <div class="text-sm font-medium">Diff 预览</div>
+                        <!-- Summary -->
+                        <template x-if="organizeDiff && organizeDiff.summary">
+                            <div class="grid grid-cols-4 gap-2 text-center text-xs">
+                                <div class="bg-green-50 rounded p-2">
+                                    <div class="text-lg font-bold text-green-600" x-text="organizeDiff.summary.new_count"></div>
+                                    <div class="text-slate-500">新增分类</div>
+                                </div>
+                                <div class="bg-blue-50 rounded p-2">
+                                    <div class="text-lg font-bold text-blue-600" x-text="organizeDiff.summary.move_count"></div>
+                                    <div class="text-slate-500">移动书签</div>
+                                </div>
+                                <div class="bg-amber-50 rounded p-2">
+                                    <div class="text-lg font-bold text-amber-600" x-text="organizeDiff.summary.empty_count"></div>
+                                    <div class="text-slate-500">空分类</div>
+                                </div>
+                                <div class="bg-purple-50 rounded p-2">
+                                    <div class="text-lg font-bold text-purple-600" x-text="organizeDiff.summary.needs_review"></div>
+                                    <div class="text-slate-500">待审核</div>
                                 </div>
                             </div>
-                            <div class="text-emerald-600 font-medium">✅ 精简完成</div>
+                        </template>
+                        <!-- Moves by category (drilldown) -->
+                        <div class="max-h-60 overflow-y-auto border rounded">
+                            <template x-for="group in getDiffMovesByCategory()" :key="group.category">
+                                <div class="border-b last:border-b-0">
+                                    <button @click="toggleDiffCategory(group.category)"
+                                        class="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-slate-50 text-left">
+                                        <span class="font-medium" x-text="group.category"></span>
+                                        <span class="text-xs text-slate-400" x-text="group.bookmarks.length + ' 个书签'"></span>
+                                    </button>
+                                    <template x-if="organizeDiffExpanded[group.category]">
+                                        <div class="px-3 pb-2 space-y-1">
+                                            <template x-for="bm in group.bookmarks" :key="bm.bookmark_id">
+                                                <div class="flex items-center gap-2 text-xs text-slate-600 py-0.5">
+                                                    <span class="truncate flex-1" x-text="bm.from_category || '未分类'"></span>
+                                                    <span class="text-slate-300">→</span>
+                                                    <span class="truncate flex-1 text-blue-600" x-text="bm.to_category"></span>
+                                                </div>
+                                            </template>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
                         </div>
-                        <!-- Action Buttons -->
-                        <div class="flex justify-center gap-3 pt-2 border-t">
-                            <a :href="'/jobs/' + aiSimplifyJobId"
-                                class="flex items-center gap-1 rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">
-                                <span>📋</span> 查看详情
-                            </a>
-                            <button @click="closeAISimplifyModal()"
-                                class="rounded-lg border px-4 py-2 text-sm hover:bg-slate-50 transition">关闭</button>
+                        <!-- Needs review -->
+                        <template x-if="getNeedsReviewBookmarks().length > 0">
+                            <div>
+                                <div class="text-xs font-medium text-amber-600 mb-1">待审核书签 (<span x-text="getNeedsReviewBookmarks().length"></span>)</div>
+                                <div class="max-h-32 overflow-y-auto border border-amber-200 rounded p-2 space-y-1">
+                                    <template x-for="nr in getNeedsReviewBookmarks()" :key="nr.bookmark_id">
+                                        <div class="text-xs text-slate-600 truncate" x-text="'#' + nr.bookmark_id"></div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                        <!-- Actions -->
+                        <div class="flex justify-end gap-2 pt-2 border-t">
+                            <button @click="cancelOrganize()"
+                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃</button>
+                            <button @click="applyOrganizePlan()"
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">应用整理</button>
                         </div>
                     </div>
                 </template>
+
+                <!-- Phase: preview - Conflict resolution -->
+                <template x-if="organizePhase === 'preview' && organizeResolving">
+                    <div class="space-y-3">
+                        <div class="text-sm font-medium">冲突解决</div>
+                        <!-- Conflicts -->
+                        <template x-if="organizeConflicts.length > 0">
+                            <div>
+                                <div class="text-xs text-slate-500 mb-2">以下书签在整理期间被修改，请选择处理方式：</div>
+                                <div class="max-h-48 overflow-y-auto border rounded divide-y">
+                                    <template x-for="(c, ci) in organizeConflicts" :key="c.bookmark_id">
+                                        <div class="px-3 py-2 flex items-center gap-2">
+                                            <div class="flex-1 min-w-0">
+                                                <div class="text-sm truncate" x-text="c.title || c.url"></div>
+                                                <div class="text-xs text-slate-400 truncate" x-text="c.url"></div>
+                                            </div>
+                                            <select x-model="organizeConflicts[ci].action" class="rounded border px-2 py-1 text-xs">
+                                                <option value="skip">跳过</option>
+                                                <option value="override">覆盖</option>
+                                            </select>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                        <!-- Empty categories -->
+                        <template x-if="organizeEmptyCategories.length > 0">
+                            <div>
+                                <div class="text-xs text-slate-500 mb-2">以下分类将变为空分类：</div>
+                                <div class="max-h-32 overflow-y-auto border rounded divide-y">
+                                    <template x-for="(ec, ei) in organizeEmptyCategories" :key="ec.id">
+                                        <div class="px-3 py-2 flex items-center gap-2">
+                                            <span class="text-sm flex-1" x-text="ec.name"></span>
+                                            <select x-model="organizeEmptyCategories[ei].action" class="rounded border px-2 py-1 text-xs">
+                                                <option value="keep">保留</option>
+                                                <option value="delete">删除</option>
+                                            </select>
+                                        </div>
+                                    </template>
+                                </div>
+                            </div>
+                        </template>
+                        <div class="flex justify-end gap-2 pt-2 border-t">
+                            <button @click="organizeResolving = false"
+                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">返回</button>
+                            <button @click="resolveAndApply()"
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">确认并应用</button>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Phase: applied -->
+                <template x-if="organizePhase === 'applied'">
+                    <div class="space-y-3">
+                        <div class="flex flex-col items-center gap-2 py-4">
+                            <div class="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center text-2xl">✓</div>
+                            <div class="text-sm font-medium text-green-700">整理已应用</div>
+                        </div>
+                        <div class="flex justify-center gap-2 pt-2 border-t">
+                            <template x-if="canRollback()">
+                                <button @click="rollbackOrganize()"
+                                    class="rounded border border-amber-300 text-amber-600 px-4 py-2 text-sm hover:bg-amber-50">回滚 (24h 内)</button>
+                            </template>
+                            <button @click="closeOrganizeModal()"
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">关闭</button>
+                        </div>
+                    </div>
+                </template>
+
+                <!-- Phase: failed -->
+                <template x-if="organizePhase === 'failed'">
+                    <div class="space-y-3">
+                        <div class="flex flex-col items-center gap-2 py-4">
+                            <div class="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-2xl">✕</div>
+                            <div class="text-sm font-medium text-rose-700">归类失败</div>
+                            <div class="text-xs text-slate-500 text-center" x-text="organizePlan?.message || '连续多个批次失败，请检查 AI 配置后重试'"></div>
+                        </div>
+                        <template x-if="organizeProgress.failed_batch_ids && organizeProgress.failed_batch_ids.length > 0">
+                            <div class="text-xs text-slate-400 text-center">
+                                失败批次: <span x-text="organizeProgress.failed_batch_ids.join(', ')"></span>
+                            </div>
+                        </template>
+                        <div class="flex justify-center gap-2 pt-2 border-t">
+                            <button @click="cancelOrganize()"
+                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃</button>
+                            <button @click="retryOrganize()"
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">重试</button>
+                        </div>
+                    </div>
+                </template>
+
             </div>
         </div>
-
-        <!-- Import Progress Modal -->
         <div x-cloak x-show="showImportProgressModal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">

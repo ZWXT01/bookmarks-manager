@@ -66,19 +66,6 @@ export function openDb(dbPath: string): Db {
       value TEXT NOT NULL
     );
 
-    CREATE TABLE IF NOT EXISTS ai_classification_suggestions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      job_id TEXT,
-      bookmark_id INTEGER NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
-      suggested_category TEXT NOT NULL,
-      confidence TEXT NOT NULL,
-      applied INTEGER DEFAULT 0,
-      created_at TEXT NOT NULL
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_ai_suggestions_bookmark_id ON ai_classification_suggestions(bookmark_id);
-    CREATE INDEX IF NOT EXISTS idx_ai_suggestions_job_id ON ai_classification_suggestions(job_id);
-    
     -- 性能优化索引
     CREATE INDEX IF NOT EXISTS idx_bookmarks_check_status ON bookmarks(check_status);
     CREATE INDEX IF NOT EXISTS idx_bookmarks_created_at ON bookmarks(created_at);
@@ -98,6 +85,27 @@ export function openDb(dbPath: string): Db {
     );
 
     CREATE INDEX IF NOT EXISTS idx_api_tokens_token_hash ON api_tokens(token_hash);
+
+    -- AI 整理计划表
+    CREATE TABLE IF NOT EXISTS ai_organize_plans (
+      id TEXT PRIMARY KEY,
+      job_id TEXT,
+      status TEXT NOT NULL DEFAULT 'designing',
+      scope TEXT NOT NULL DEFAULT 'all',
+      target_tree TEXT,
+      assignments TEXT,
+      diff_summary TEXT,
+      backup_snapshot TEXT,
+      phase TEXT,
+      batches_done INTEGER NOT NULL DEFAULT 0,
+      batches_total INTEGER NOT NULL DEFAULT 0,
+      failed_batch_ids TEXT,
+      needs_review_count INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      applied_at TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_organize_plans_status ON ai_organize_plans(status);
   `);
 
   // 迁移：添加skip_check字段（如果不存在）
@@ -138,66 +146,24 @@ export function openDb(dbPath: string): Db {
     db.exec(`ALTER TABLE jobs ADD COLUMN extra TEXT`);
   }
 
-  // 迁移：统一 ai_classification_suggestions 为 suggested_category 结构
-  const sugColumns = db.prepare("PRAGMA table_info(ai_classification_suggestions)").all() as Array<{ name: string }>;
-  const hasSuggestedCategory = sugColumns.some(col => col.name === 'suggested_category');
-  const hasParentCategory = sugColumns.some(col => col.name === 'parent_category');
-  const hasChildCategory = sugColumns.some(col => col.name === 'child_category');
-  const hasApplied = sugColumns.some(col => col.name === 'applied');
-  const hasJobId = sugColumns.some(col => col.name === 'job_id');
-
-  // 旧结构：parent_category + child_category
-  if (!hasSuggestedCategory && (hasParentCategory || hasChildCategory)) {
-    db.exec(`ALTER TABLE ai_classification_suggestions RENAME TO ai_classification_suggestions_legacy`);
-    db.exec(`
-      CREATE TABLE ai_classification_suggestions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        job_id TEXT,
-        bookmark_id INTEGER NOT NULL REFERENCES bookmarks(id) ON DELETE CASCADE,
-        suggested_category TEXT NOT NULL,
-        confidence TEXT NOT NULL,
-        applied INTEGER DEFAULT 0,
-        created_at TEXT NOT NULL
-      );
-      INSERT INTO ai_classification_suggestions (id, job_id, bookmark_id, suggested_category, confidence, applied, created_at)
-      SELECT
-        id,
-        job_id,
-        bookmark_id,
-        TRIM(
-          CASE
-            WHEN COALESCE(parent_category, '') = '' THEN COALESCE(child_category, '')
-            WHEN COALESCE(child_category, '') = '' THEN parent_category
-            ELSE parent_category || '/' || child_category
-          END
-        ) AS suggested_category,
-        confidence,
-        COALESCE(applied, 0),
-        created_at
-      FROM ai_classification_suggestions_legacy;
-      DROP TABLE ai_classification_suggestions_legacy;
-      CREATE INDEX IF NOT EXISTS idx_ai_suggestions_bookmark_id ON ai_classification_suggestions(bookmark_id);
-      CREATE INDEX IF NOT EXISTS idx_ai_suggestions_job_id ON ai_classification_suggestions(job_id);
-    `);
-  } else {
-    // 兜底迁移：补齐列
-    if (!hasSuggestedCategory) {
-      db.exec(`ALTER TABLE ai_classification_suggestions ADD COLUMN suggested_category TEXT`);
-      db.exec(`UPDATE ai_classification_suggestions SET suggested_category = '' WHERE suggested_category IS NULL`);
-    }
-    if (!hasApplied) {
-      db.exec(`ALTER TABLE ai_classification_suggestions ADD COLUMN applied INTEGER DEFAULT 0`);
-    }
-    if (!hasJobId) {
-      db.exec(`ALTER TABLE ai_classification_suggestions ADD COLUMN job_id TEXT`);
-    }
-  }
-
   // 迁移：添加分类 sort_order 字段（用于同级排序）
   const hasSortOrder = catColumns.some(col => col.name === 'sort_order');
   if (!hasSortOrder) {
     db.exec(`ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 0`);
   }
+
+  // 迁移：添加 bookmarks.updated_at 字段（冲突检测依赖）
+  const hasUpdatedAt = columns.some(col => col.name === 'updated_at');
+  if (!hasUpdatedAt) {
+    db.exec(`ALTER TABLE bookmarks ADD COLUMN updated_at TEXT`);
+    db.exec(`UPDATE bookmarks SET updated_at = created_at WHERE updated_at IS NULL`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_bookmarks_updated_at ON bookmarks(updated_at)`);
+  }
+
+  // 迁移：删除旧 AI 建议表
+  db.exec(`DROP TABLE IF EXISTS ai_classification_suggestions`);
+  db.exec(`DROP TABLE IF EXISTS ai_simplify_suggestions`);
+  db.exec(`DROP TABLE IF EXISTS ai_level_simplify_suggestions`);
 
   // 创建 parent_id 索引（用于树状查询）
   db.exec(`CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON categories(parent_id)`);
