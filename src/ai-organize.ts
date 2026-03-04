@@ -11,7 +11,7 @@ export interface AIConfig {
 }
 
 export interface RetryConfig {
-  timeout?: number;       // per-call timeout ms, default 60000
+  timeout?: number;       // per-call timeout ms, default 300000
   maxRetries?: number;    // per-batch retries, default 2
   failThreshold?: number; // consecutive failures → failed, default 5
 }
@@ -45,7 +45,7 @@ export function extractFeatures(db: Db): FeatureSummary {
     .map(([domain, count]) => ({ domain, count }));
 
   // keyword TOP 100
-  const titleRows = db.prepare('SELECT title FROM bookmarks WHERE title IS NOT NULL AND title != ""').all() as { title: string }[];
+  const titleRows = db.prepare("SELECT title FROM bookmarks WHERE title IS NOT NULL AND title != ''").all() as { title: string }[];
   const kwCounts = new Map<string, number>();
   const stopWords = new Set(['the', 'a', 'an', 'is', 'are', 'was', 'were', 'in', 'on', 'at', 'to', 'for', 'of', 'and', 'or', 'with', 'by', 'from', 'as', 'it', 'this', 'that', 'be', 'has', 'have', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'not', 'no', 'but', 'if', 'so', 'up', 'out', 'about', 'into', 'over', 'after', 'all', 'also', 'new', 'one', 'two', 'just', 'more', 'how', 'what', 'when', 'who', 'which', 'where', 'why', 'than', 'then', 'now', 'only', 'very', 'its', 'my', 'your', 'our', 'their', 'his', 'her', 'we', 'you', 'they', 'he', 'she', 'me', 'us', 'him', 'them', '的', '了', '在', '是', '和', '与', '及', '等', '个', '中', '为', '上', '下', '大', '小', '有', '无', '不', '也', '都', '就', '还', '又', '被', '把', '让', '给', '从', '到', '对', '向', '以', '用', '于', '而', '但', '却', '如', '若', '虽', '然', '因', '所', '这', '那', '些', '每', '各', '该', '其', '之', '者', '来', '去', '过', '着', '得', '地', '会', '能', '可', '要', '想', '应', '该']);
   for (const r of titleRows) {
@@ -75,7 +75,10 @@ export async function designCategoryTree(db: Db, config: AIConfig, scope: string
   const features = extractFeatures(db);
   const existingList = features.existingCategories.map(c => c.name).join('、');
 
-  const prompt = `你是书签分类体系设计专家。根据以下书签统计特征，设计一个二级分类树。
+  const sampleUrls = db.prepare(`SELECT url FROM bookmarks WHERE url IS NOT NULL ORDER BY RANDOM() LIMIT 30`).all() as { url: string }[];
+  const urlSample = sampleUrls.map(r => r.url).join('\n');
+
+  const prompt = `你是书签分类体系设计专家。请联网访问下方的代表性URL，了解这些网站的实际内容后，设计一个二级分类树。
 
 规则：
 1. 一级分类 3-20 个，总分类数 ≤ 200
@@ -86,6 +89,9 @@ export async function designCategoryTree(db: Db, config: AIConfig, scope: string
 
 书签总数: ${features.totalBookmarks}
 整理范围: ${scope}
+
+代表性URL（请联网访问了解内容）:
+${urlSample}
 
 域名 TOP 50:
 ${features.topDomains.slice(0, 50).map(d => `${d.domain} (${d.count})`).join(', ')}
@@ -98,11 +104,11 @@ ${existingList ? `已有分类: ${existingList}` : ''}
 严格返回 JSON，格式：
 [{"name":"一级分类","children":[{"name":"二级分类"}]}]`;
 
-  const openai = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseUrl.replace(/\/+$/, ''), timeout: 60000 });
+  const openai = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseUrl.replace(/\/+$/, ''), timeout: 120000, defaultHeaders: { 'User-Agent': 'bookmarks-manager/1.0' } });
   const completion = await openai.chat.completions.create({
     model: config.model,
     messages: [
-      { role: 'system', content: '只返回 JSON 数组，不要解释。' },
+      { role: 'system', content: '你具备联网能力。请先联网访问用户提供的URL了解网站内容，再设计分类树。只返回 JSON 数组，不要解释。' },
       { role: 'user', content: prompt },
     ],
     temperature: 0.3,
@@ -143,7 +149,7 @@ function buildValidPaths(tree: CategoryNode[]): Set<string> {
 export async function assignBookmarks(
   db: Db, planId: string, config: AIConfig, retryConfig: RetryConfig = {},
 ): Promise<void> {
-  const timeout = retryConfig.timeout ?? 60000;
+  const timeout = retryConfig.timeout ?? 300000;
   const maxRetries = retryConfig.maxRetries ?? 2;
   const failThreshold = retryConfig.failThreshold ?? 5;
 
@@ -179,7 +185,7 @@ export async function assignBookmarks(
   const failedBatchIds: number[] = [];
 
   const treePaths = [...validPaths].join('\n');
-  const openai = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseUrl.replace(/\/+$/, ''), timeout });
+  const openai = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseUrl.replace(/\/+$/, ''), timeout, defaultHeaders: { 'User-Agent': 'bookmarks-manager/1.0' } });
 
   for (let bi = 0; bi < batches.length; bi++) {
     if (jobQueue.isCanceled(plan.job_id ?? '')) {
@@ -196,8 +202,8 @@ export async function assignBookmarks(
         const completion = await openai.chat.completions.create({
           model: config.model,
           messages: [
-            { role: 'system', content: `你是书签分类助手。从以下分类中选择最匹配的分类，不能创建新分类。\n\n可选分类:\n${treePaths}\n\n严格返回 JSON: {"assignments":[{"index":1,"category":"分类路径"}]}` },
-            { role: 'user', content: `对以下 ${batch.length} 个书签分类:\n${batchList}` },
+            { role: 'system', content: `你是书签分类助手，具备联网能力。请联网访问每个书签的URL，了解网页实际内容后再分类。从以下分类中选择最匹配的分类，不能创建新分类。\n\n可选分类:\n${treePaths}\n\n严格返回 JSON: {"assignments":[{"index":1,"category":"分类路径"}]}` },
+            { role: 'user', content: `请联网访问以下每个书签的URL，了解内容后分类:\n${batchList}` },
           ],
           temperature: 0.2,
         });

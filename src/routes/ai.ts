@@ -38,7 +38,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             (title ? '标题: ' + title + '\n' : '') + (url ? '网址: ' + url + '\n' : '');
 
         try {
-            const openai = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseUrl.replace(/\/+$/, ''), timeout: 60000 });
+            const openai = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseUrl.replace(/\/+$/, ''), timeout: 60000, defaultHeaders: { 'User-Agent': 'bookmarks-manager/1.0' } });
             const completion = await openai.chat.completions.create({
                 model: config.model,
                 messages: [{ role: 'system', content: '只输出分类路径（最多2级），不要解释。' }, { role: 'user', content: prompt }],
@@ -63,7 +63,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         if (!baseUrl || !apiKey || !model) return reply.code(400).send({ error: '请填写完整的 AI 配置' });
 
         try {
-            const openai = new OpenAI({ apiKey, baseURL: baseUrl.replace(/\/+$/, ''), timeout: 30000 });
+            const openai = new OpenAI({ apiKey, baseURL: baseUrl.replace(/\/+$/, ''), timeout: 30000, defaultHeaders: { 'User-Agent': 'bookmarks-manager/1.0' } });
             await openai.chat.completions.create({ model, messages: [{ role: 'user', content: '你好，请回复"OK"' }], max_tokens: 10 });
             return reply.send({ success: true, message: 'AI 配置测试成功' });
         } catch (e: any) {
@@ -95,13 +95,39 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                 const tree = await designCategoryTree(db, config, scope);
                 updatePlan(db, plan.id, { target_tree: JSON.stringify(tree) });
             } catch (e: any) {
-                return reply.send({ success: true, planId: plan.id, mode: 'manual', message: 'AI 设计分类树失败，请手动编辑' });
+                req.log.error({ err: e }, 'ai design category tree failed');
+                return reply.send({ success: true, planId: plan.id, treeReady: false, message: e.message });
             }
 
-            return reply.send({ success: true, planId: plan.id });
+            return reply.send({ success: true, planId: plan.id, treeReady: true });
         } catch (e: any) {
             req.log.error({ err: e }, 'organize start failed');
-            return reply.code(e.statusCode || 500).send({ error: e.message });
+            const body: Record<string, unknown> = { error: e.message };
+            if (e.statusCode === 409 && e.activePlanId) body.activePlanId = e.activePlanId;
+            return reply.code(e.statusCode || 500).send(body);
+        }
+    });
+
+    // GET /api/ai/organize/active - 获取当前活跃 Plan
+    app.get('/api/ai/organize/active', async (_req: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const { getActivePlan, computeDiff } = await import('../ai-organize-plan');
+            const plan = getActivePlan(db);
+            if (!plan) return reply.send({ active: null });
+
+            const result: any = { ...plan };
+            if (plan.target_tree) result.target_tree = JSON.parse(plan.target_tree);
+            if (plan.assignments) result.assignments = JSON.parse(plan.assignments);
+            if (plan.failed_batch_ids) result.failed_batch_ids = JSON.parse(plan.failed_batch_ids);
+            delete result.backup_snapshot;
+
+            if (plan.status === 'preview' && plan.assignments) {
+                result.diff = computeDiff(db, plan);
+            }
+
+            return reply.send(result);
+        } catch (e: any) {
+            return reply.code(500).send({ error: e.message });
         }
     });
 
