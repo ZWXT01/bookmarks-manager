@@ -60,6 +60,7 @@ export interface BookmarkEditRow {
 export function toInt(val: unknown): number | null {
     if (typeof val === 'number' && Number.isInteger(val)) return val;
     if (typeof val === 'string') {
+        if (val.trim() === '') return null;
         const num = Number(val);
         if (Number.isInteger(num)) return num;
     }
@@ -76,18 +77,4 @@ export function validateStringLength(str: string, maxLen: number, fieldName: str
     if (str.length > maxLen) {
         throw new Error(`${fieldName}长度不能超过 ${maxLen} 字符`);
     }
-}
-
-export function safeRedirectTarget(rawTarget: unknown, defaultPath: string): string {
-    if (typeof rawTarget !== 'string' || !rawTarget) return defaultPath;
-    const trimmed = rawTarget.trim();
-    if (!trimmed.startsWith('/')) return defaultPath;
-    // prevent double slash, protocol injection
-    if (trimmed.startsWith('//')) return defaultPath;
-    return trimmed;
-}
-
-export function withFlash(url: string, key: string, value: string): string {
-    const sep = url.includes('?') ? '&' : '?';
-    return url + sep + key + '=' + encodeURIComponent(value);
 }

@@ -7,6 +7,7 @@
     <title>书签管理器</title>
     <script src="/public/lib/tailwind.js"></script>
     <link rel="stylesheet" href="/public/app.css">
+    <script src="/public/dialog.js"></script>
     <script src="/public/app.js"></script>
     <style>
         [x-cloak] {
@@ -55,11 +56,11 @@
                                     class="text-slate-600"></span>
                                 <a :href="'/jobs/' + currentJob.id"
                                     class="text-blue-600 hover:text-blue-700 font-medium">详情</a>
-                                <button @click="cancelCurrentJob()"
+                                <button @click="cancelCurrentJob()" aria-label="取消任务"
                                     class="text-rose-500 hover:text-rose-700 hover:scale-110 transition-transform">✕</button>
                             </div>
                         </template>
-                        <button @click="toggleTheme()" class="btn-secondary btn-sm"
+                        <button @click="toggleTheme()" class="btn-secondary btn-sm" aria-label="切换主题"
                             x-text="theme === 'dark' ? '☀️' : '🌙'"></button>
                         <button @click="openBackupModal()" class="btn-secondary btn-sm">💾 备份</button>
                         <button @click="openExportModal()" class="btn-secondary btn-sm">📤 导出</button>
@@ -121,6 +122,34 @@
                                 批量检查</button>
                             <button @click="openAIOrganizeModal()"
                                 class="btn-secondary w-full text-left justify-start">🤖 AI 整理</button>
+                        </div>
+                    </div>
+                    <!-- Template Management -->
+                    <div class="card p-4 flex-shrink-0">
+                        <h2 class="text-sm font-bold text-slate-700 mb-2 flex items-center gap-2">
+                            <span
+                                class="w-6 h-6 rounded-md bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center text-white text-xs">🗂️</span>
+                            分类模板
+                        </h2>
+                        <template x-if="activeTemplate">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-sm text-slate-600 truncate" x-text="activeTemplate.name"></span>
+                                <button @click="showTemplateSelectModal = true"
+                                    class="text-xs text-blue-500 hover:text-blue-700 whitespace-nowrap">切换模板</button>
+                            </div>
+                        </template>
+                        <template x-if="!activeTemplate">
+                            <div class="flex items-center justify-between gap-2">
+                                <span class="text-xs text-slate-400">请先选择分类模板</span>
+                                <button @click="showTemplateSelectModal = true"
+                                    class="text-xs text-blue-500 hover:text-blue-700 whitespace-nowrap">选择模板</button>
+                            </div>
+                        </template>
+                        <div class="flex gap-1 mt-2">
+                            <button @click="showToast('该功能正在开发中，敬请期待', 'info')"
+                                class="flex-1 text-xs px-2 py-1 rounded border border-dashed border-slate-300 text-slate-400 hover:text-slate-600 hover:border-slate-400">AI 设计模板 <span class="text-[10px] bg-amber-100 text-amber-600 px-1 rounded">Beta</span></button>
+                            <button @click="showToast('该功能正在开发中，敬请期待', 'info')"
+                                class="flex-1 text-xs px-2 py-1 rounded border border-dashed border-slate-300 text-slate-400 hover:text-slate-600 hover:border-slate-400">AI 改造模板 <span class="text-[10px] bg-amber-100 text-amber-600 px-1 rounded">Beta</span></button>
                         </div>
                     </div>
                     <!-- Categories - Scrollable -->
@@ -190,7 +219,7 @@
                                                 <span class="text-xs text-slate-500" x-text="cat.count"></span>
                                             </div>
                                             <div class="hidden group-hover:flex gap-0.5">
-                                                <button @click.stop="createSubCategory(cat.id)"
+                                                <button @click.stop="openCreateCategoryModal(cat.id)"
                                                     class="text-xs text-slate-400 hover:text-blue-500"
                                                     title="添加子分类">+</button>
                                                 <button @click.stop="openCategoryStyleModal(cat)"
@@ -250,12 +279,8 @@
                                     </button>
                                 </div>
                             </template>
-                            <div class="flex gap-2">
-                                <input type="text" x-model="newCategoryName" placeholder="新分类名称"
-                                    class="flex-1 rounded border px-2 py-1.5 text-xs" @keyup.enter="createCategory()">
-                                <button @click="createCategory()"
-                                    class="rounded bg-slate-900 text-white px-3 py-1.5 text-xs hover:bg-slate-800">创建</button>
-                            </div>
+                            <button @click="openCreateCategoryModal(null)"
+                                class="w-full rounded border border-dashed border-slate-300 px-3 py-1.5 text-xs text-slate-500 hover:border-slate-400 hover:text-slate-700">+ 添加分类</button>
                         </div>
                     </div>
 
@@ -286,12 +311,7 @@
                             </div>
                             <button @click="addBookmark()"
                                 class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">添加</button>
-                            <button @click="aiSuggestNewBookmark()"
-                                class="rounded border px-3 py-2 text-sm hover:bg-slate-50">🤖 AI
-                                建议</button>
                         </div>
-                        <div x-cloak x-show="aiSuggestion" class="mt-2 text-sm text-emerald-600"
-                            x-text="'建议分类: ' + aiSuggestion"></div>
                     </div>
 
                     <!-- Search & Filters -->
@@ -363,20 +383,24 @@
                                         移动</button>
                                     <button @click="openCheckModalForSelected()"
                                         class="rounded border px-2 py-1 text-xs hover:bg-slate-50">🔍 检查</button>
-                                    <button @click="openAIOrganizeModal()"
-                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-50">🤖
-                                        AI 整理</button>
+                                    <button @click="promptClassifyBatch([...selectedBookmarks])"
+                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-50">🤖 AI 分类</button>
                                     <button @click="batchDelete()"
                                         class="rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 hover:bg-rose-50">🗑️
                                         删除选中</button>
                                 </div>
                             </template>
-                            <!-- Delete All / Current Page -->
-                            <div class="flex gap-1 ml-2">
-                                <button @click="deleteCurrentPage()"
-                                    class="rounded border border-rose-200 px-2 py-1 text-xs text-rose-500 hover:bg-rose-50">删除本页</button>
-                                <button @click="deleteAllBookmarks()"
-                                    class="rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 hover:bg-rose-50">删除全部</button>
+                            <!-- More dropdown -->
+                            <div class="relative ml-2" x-data="{ showMoreMenu: false }">
+                                <button @click="showMoreMenu = !showMoreMenu"
+                                    class="rounded border px-2 py-1 text-xs hover:bg-slate-50">更多 ▼</button>
+                                <div x-show="showMoreMenu" @click.away="showMoreMenu = false"
+                                    class="absolute left-0 top-full mt-1 z-50 w-28 rounded-lg border bg-white shadow-lg py-1 text-left">
+                                    <button @click="deleteCurrentPage(); showMoreMenu = false"
+                                        class="block w-full px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 text-left">删除本页</button>
+                                    <button @click="deleteAllBookmarks(); showMoreMenu = false"
+                                        class="block w-full px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50 text-left">删除全部</button>
+                                </div>
                             </div>
                         </div>
                         <div class="flex items-center gap-2">
@@ -470,9 +494,9 @@
                                                     <button @click="startCheckOne(bookmark.id); closeAllDropdowns()"
                                                         class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">🔍
                                                         检查</button>
-                                                    <button @click="aiClassifyOne(bookmark); closeAllDropdowns()"
+                                                    <button @click="promptClassifyBatch([bookmark.id]); closeAllDropdowns()"
                                                         class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">🤖
-                                                        AI分类</button>
+                                                        AI 分类</button>
                                                     <hr class="my-1">
                                                     <button
                                                         @click="updateBookmarkStatus(bookmark.id, 'ok'); closeAllDropdowns()"
@@ -542,9 +566,6 @@
                                                         <button @click="startCheckOne(bookmark.id); closeAllDropdowns()"
                                                             class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">�
                                                             检查</button>
-                                                        <button @click="aiClassifyOne(bookmark); closeAllDropdowns()"
-                                                            class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">🤖
-                                                            AI分类</button>
                                                         <hr class="my-1">
                                                         <button
                                                             @click="updateBookmarkStatus(bookmark.id, 'ok'); closeAllDropdowns()"
@@ -686,6 +707,53 @@
             </div>
         </div>
 
+        <!-- Create Category Modal -->
+        <div x-cloak x-show="showCreateCategoryModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeCreateCategoryModal()">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+                <h3 class="text-lg font-semibold mb-3" x-text="createCategoryParentId ? '添加子分类' : '添加分类'"></h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs text-slate-600">名称</label>
+                        <input type="text" x-model="createCategoryName" placeholder="分类名称"
+                            class="w-full rounded border px-3 py-2 text-sm mt-1" @keyup.enter="confirmCreateCategory()">
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-600">图标</label>
+                        <div class="flex flex-wrap gap-2 mt-1">
+                            <template
+                                x-for="icon in ['📁', '📂', '📄', '📝', '📚', '🔖', '⭐', '❤️', '🎮', '🎵', '🎬', '📷', '💻', '🌐', '🛠️', '📱']">
+                                <button @click="createCategoryIcon = createCategoryIcon === icon ? '' : icon"
+                                    class="w-8 h-8 rounded border hover:bg-slate-50 flex items-center justify-center"
+                                    :class="createCategoryIcon === icon ? 'border-blue-500 bg-blue-50' : ''"
+                                    x-text="icon"></button>
+                            </template>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-600">颜色</label>
+                        <div class="flex flex-wrap gap-2 mt-1">
+                            <template
+                                x-for="color in ['', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899']">
+                                <button @click="createCategoryColor = color" class="w-8 h-8 rounded border hover:opacity-80"
+                                    :class="createCategoryColor === color ? 'ring-2 ring-blue-500' : ''"
+                                    :style="color ? 'background-color:' + color : ''"
+                                    x-text="color ? '' : '✕'"></button>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button @click="closeCreateCategoryModal()"
+                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                    <button @click="confirmCreateCategory()"
+                        :disabled="!createCategoryName.trim()"
+                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">确认</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Check Modal -->
         <div x-cloak x-show="showCheckModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
             @click.self="closeCheckModal()">
@@ -798,6 +866,196 @@
             </div>
         </div>
 
+        <!-- Template Select Modal -->
+        <div x-cloak x-show="showTemplateSelectModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="showTemplateSelectModal = false">
+            <div class="w-full max-w-3xl rounded-lg bg-white p-4 shadow-xl max-h-[80vh] flex flex-col">
+                <div class="flex items-center justify-between mb-3 flex-shrink-0">
+                    <h3 class="text-lg font-semibold">🗂️ 选择分类模板</h3>
+                    <button @click="showTemplateSelectModal = false"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <div class="flex-1 overflow-y-auto space-y-4 min-h-0">
+                    <!-- 预置模板 -->
+                    <template x-if="presetTemplates.length > 0">
+                        <div>
+                            <div class="text-xs font-medium text-slate-500 mb-1.5">预置模板</div>
+                            <div class="space-y-2">
+                                <template x-for="tpl in presetTemplates" :key="tpl.id">
+                                    <div class="flex items-center justify-between border rounded-lg px-3 py-2 hover:bg-slate-50"
+                                        :class="tpl.is_active === 1 ? 'border-blue-300 bg-blue-50' : ''">
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex items-center gap-2">
+                                                <span class="text-sm font-medium truncate" x-text="tpl.name"></span>
+                                                <span class="text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-600">预置</span>
+                                                <template x-if="tpl.is_active === 1">
+                                                    <span class="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">当前</span>
+                                                </template>
+                                            </div>
+                                            <div class="text-xs text-slate-400 mt-0.5" x-text="tpl.top_level_count + ' 个一级分类'"></div>
+                                        </div>
+                                        <div class="flex items-center gap-1 ml-2 flex-shrink-0">
+                                            <button @click="resetPresetTemplate(tpl.id)"
+                                                class="text-xs px-2 py-1 rounded border border-amber-300 text-amber-600 hover:bg-amber-50">重置</button>
+                                            <template x-if="tpl.is_active !== 1">
+                                                <button @click="if(await AppDialog.confirm('应用模板将替换当前所有分类，所有书签将变为未分类。如果该模板曾使用过，书签分布将自动恢复。\n\n确定应用此模板？')) { applyTemplate(tpl.id); showTemplateSelectModal = false; }"
+                                                    class="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600"
+                                                    :disabled="templateApplying">应用</button>
+                                            </template>
+                                        </div>
+                                    </div>
+                                </template>
+                            </div>
+                        </div>
+                    </template>
+                    <!-- 自定义模板 -->
+                    <div>
+                        <div class="text-xs font-medium text-slate-500 mb-1.5">自定义模板</div>
+                        <div class="space-y-2">
+                            <template x-for="tpl in customTemplates" :key="tpl.id">
+                                <div class="flex items-center justify-between border rounded-lg px-3 py-2 hover:bg-slate-50"
+                                    :class="tpl.is_active === 1 ? 'border-blue-300 bg-blue-50' : ''">
+                                    <div class="flex-1 min-w-0">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-sm font-medium truncate" x-text="tpl.name"></span>
+                                            <span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">自定义</span>
+                                            <template x-if="tpl.is_active === 1">
+                                                <span class="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">当前</span>
+                                            </template>
+                                        </div>
+                                        <div class="text-xs text-slate-400 mt-0.5" x-text="tpl.top_level_count + ' 个一级分类'"></div>
+                                    </div>
+                                    <div class="flex items-center gap-1 ml-2 flex-shrink-0">
+                                        <button @click="openTemplateEditor(tpl.id)"
+                                            class="text-xs px-2 py-1 rounded border hover:bg-slate-100">编辑</button>
+                                        <template x-if="tpl.is_active !== 1">
+                                            <button @click="if(await AppDialog.confirm('确定删除此模板？')) deleteTemplate(tpl.id)"
+                                                class="text-xs px-2 py-1 rounded border border-rose-200 text-rose-500 hover:bg-rose-50">删除</button>
+                                        </template>
+                                        <template x-if="tpl.is_active !== 1">
+                                            <button @click="if(await AppDialog.confirm('应用模板将替换当前所有分类，所有书签将变为未分类。如果该模板曾使用过，书签分布将自动恢复。\n\n确定应用此模板？')) { applyTemplate(tpl.id); showTemplateSelectModal = false; }"
+                                                class="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600"
+                                                :disabled="templateApplying">应用</button>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                            <template x-if="customTemplates.length === 0">
+                                <div class="text-xs text-slate-400 text-center py-3">暂无自定义模板</div>
+                            </template>
+                        </div>
+                    </div>
+                </div>
+                <!-- New Template Button -->
+                <button @click="openNewTemplateEditor()"
+                    class="w-full mt-2 rounded border border-dashed border-slate-300 px-3 py-1.5 text-xs text-slate-500 hover:border-slate-400 hover:text-slate-700 flex-shrink-0">+ 新建自定义模板</button>
+            </div>
+        </div>
+
+        <!-- Batch Size Selector Modal -->
+        <div x-cloak x-show="showBatchSizeModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="showBatchSizeModal = false">
+            <div class="w-full max-w-xs rounded-lg bg-white p-4 shadow-xl">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">🤖 AI 分类</h3>
+                    <button @click="showBatchSizeModal = false"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <p class="text-sm text-slate-500 mb-3">将对 <span class="font-medium text-slate-700" x-text="classifyBatchIds.length"></span> 个书签进行 AI 分类</p>
+                <template x-if="!activeTemplate">
+                    <div class="mb-3 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">请先在左侧「分类模板」中选择并应用一个模板，AI 分类依赖模板中的分类结构。</div>
+                </template>
+                <div class="mb-4">
+                    <label class="text-xs text-slate-600">每批处理数量</label>
+                    <select x-model.number="classifyBatchSize" class="w-full rounded border px-3 py-2 text-sm mt-1">
+                        <option value="10">10</option>
+                        <option value="20">20（推荐）</option>
+                        <option value="30">30</option>
+                    </select>
+                </div>
+                <div class="flex justify-end gap-2">
+                    <button @click="showBatchSizeModal = false"
+                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                    <button @click="startClassifyBatch(classifyBatchIds, classifyBatchSize)"
+                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">开始分类</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Template Edit Modal -->
+        <div x-cloak x-show="showTemplateEditModal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @keydown.escape.window="if(showTemplateEditModal) { if(hasUnsavedTemplateChanges()) { if(await AppDialog.confirm('有未保存的修改，确定要关闭吗？')) showTemplateEditModal = false; } else { showTemplateEditModal = false; } }">
+            <div class="w-full max-w-3xl rounded-lg bg-white p-4 shadow-xl max-h-[85vh] flex flex-col">
+                <div class="flex items-center justify-between mb-3 flex-shrink-0">
+                    <h3 class="text-lg font-semibold" x-text="templateEditTarget ? '编辑模板' : '新建自定义模板'"></h3>
+                    <button @click="if(hasUnsavedTemplateChanges()) { if(await AppDialog.confirm('有未保存的修改，确定要关闭吗？')) showTemplateEditModal = false; } else { showTemplateEditModal = false; }"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <template x-if="!templateEditTarget">
+                    <div class="mb-3 flex-shrink-0">
+                        <label class="text-xs text-slate-600">基于</label>
+                        <select x-model="templateEditSourceId"
+                            @change="loadPresetTreeForEdit(templateEditSourceId)"
+                            class="w-full rounded border px-3 py-2 text-sm mt-1">
+                            <option :value="null">空白模板</option>
+                            <template x-for="tpl in presetTemplates" :key="tpl.id">
+                                <option :value="tpl.id" x-text="tpl.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                </template>
+                <div class="mb-3 flex-shrink-0">
+                    <label class="text-xs text-slate-600">模板名称</label>
+                    <input type="text" x-model="templateEditName"
+                        class="w-full rounded border px-3 py-2 text-sm mt-1" placeholder="输入模板名称">
+                </div>
+                <div class="flex items-center justify-between mb-2 flex-shrink-0">
+                    <span class="text-xs text-slate-600">分类树</span>
+                    <button @click="addTemplateTreeNode()"
+                        class="text-xs text-blue-500 hover:underline">+ 添加一级分类</button>
+                </div>
+                <div class="flex-1 overflow-y-auto border rounded p-2 space-y-2 min-h-0">
+                    <template x-for="(node, pi) in templateEditTree" :key="pi">
+                        <div class="space-y-1">
+                            <div class="flex items-center gap-2">
+                                <input type="text" x-model="templateEditTree[pi].name"
+                                    class="flex-1 rounded border px-2 py-1 text-sm">
+                                <button @click="addTemplateTreeNode(pi)"
+                                    class="text-xs text-blue-500 hover:underline">+ 子分类</button>
+                                <button @click="removeTemplateTreeNode(pi)"
+                                    class="text-xs text-rose-500 hover:underline">删除</button>
+                            </div>
+                            <template x-if="node.children && node.children.length > 0">
+                                <div class="ml-6 space-y-1">
+                                    <template x-for="(child, ci) in node.children" :key="ci">
+                                        <div class="flex items-center gap-2">
+                                            <input type="text"
+                                                x-model="templateEditTree[pi].children[ci].name"
+                                                class="flex-1 rounded border px-2 py-1 text-sm">
+                                            <button @click="removeTemplateTreeNode(pi, ci)"
+                                                class="text-xs text-rose-500 hover:underline">删除</button>
+                                        </div>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </template>
+                    <template x-if="templateEditTree.length === 0">
+                        <div class="text-xs text-slate-400 text-center py-4">暂无分类，点击上方按钮添加</div>
+                    </template>
+                </div>
+                <div class="flex justify-end gap-2 mt-3 pt-3 border-t flex-shrink-0">
+                    <button @click="if(hasUnsavedTemplateChanges()) { if(await AppDialog.confirm('有未保存的修改，确定要关闭吗？')) showTemplateEditModal = false; } else { showTemplateEditModal = false; }"
+                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                    <button @click="saveTemplateEdit()"
+                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">保存</button>
+                </div>
+            </div>
+        </div>
+
         <!-- AI Organize Modal -->
         <div x-cloak x-show="showAIOrganizeModal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
@@ -812,7 +1070,10 @@
                 <!-- Phase: idle - Scope selection -->
                 <template x-if="organizePhase === 'idle'">
                     <div class="space-y-3">
-                        <p class="text-sm text-slate-500">AI 将分析书签特征，自动设计分类树，然后批量归类所有书签。</p>
+                        <p class="text-sm text-slate-500">AI 将基于当前分类模板，批量匹配书签到最合适的分类。</p>
+                        <template x-if="!activeTemplate">
+                            <div class="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">请先在左侧「分类模板」中选择并应用一个模板，AI 整理依赖模板中的分类结构。</div>
+                        </template>
                         <div>
                             <label class="text-xs text-slate-600">整理范围</label>
                             <select x-model="organizeScope" class="w-full rounded border px-3 py-2 text-sm mt-1">
@@ -840,57 +1101,11 @@
                     </div>
                 </template>
 
-                <!-- Phase: designing - AI generating tree -->
-                <template x-if="organizePhase === 'designing'">
-                    <div class="flex flex-col items-center gap-3 py-8">
-                        <div class="w-10 h-10 border-4 border-slate-200 border-t-blue-500 rounded-full animate-spin"></div>
-                        <div class="text-sm text-slate-600">AI 正在分析书签特征并设计分类树...</div>
-                    </div>
-                </template>
-
-                <!-- Phase: editing - Tree editor -->
-                <template x-if="organizePhase === 'editing'">
-                    <div class="space-y-3">
-                        <div class="flex items-center justify-between">
-                            <span class="text-sm font-medium">分类树草案</span>
-                            <button @click="addTreeNode()" class="text-xs text-blue-500 hover:underline">+ 添加一级分类</button>
-                        </div>
-                        <div class="max-h-80 overflow-y-auto border rounded p-2 space-y-2">
-                            <template x-for="(node, pi) in organizeTreeDraft" :key="pi">
-                                <div class="space-y-1">
-                                    <div class="flex items-center gap-2">
-                                        <input type="text" x-model="organizeTreeDraft[pi].name"
-                                            class="flex-1 rounded border px-2 py-1 text-sm">
-                                        <button @click="addTreeNode(pi)" class="text-xs text-blue-500 hover:underline">+ 子</button>
-                                        <button @click="removeTreeNode(pi)" class="text-xs text-rose-500 hover:underline">删除</button>
-                                    </div>
-                                    <template x-if="node.children && node.children.length > 0">
-                                        <div class="ml-6 space-y-1">
-                                            <template x-for="(child, ci) in node.children" :key="ci">
-                                                <div class="flex items-center gap-2">
-                                                    <input type="text" x-model="organizeTreeDraft[pi].children[ci].name"
-                                                        class="flex-1 rounded border px-2 py-1 text-sm">
-                                                    <button @click="removeTreeNode(pi, ci)" class="text-xs text-rose-500 hover:underline">删除</button>
-                                                </div>
-                                            </template>
-                                        </div>
-                                    </template>
-                                </div>
-                            </template>
-                        </div>
-                        <div class="flex justify-end gap-2">
-                            <button @click="cancelOrganize()"
-                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃</button>
-                            <button @click="confirmTree()"
-                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">确认并开始归类</button>
-                        </div>
-                    </div>
-                </template>
-
                 <!-- Phase: assigning - Progress -->
                 <template x-if="organizePhase === 'assigning'">
                     <div class="space-y-4">
                         <div class="flex flex-col items-center gap-3">
+                            <div class="text-xs text-slate-400">批量归类中</div>
                             <div class="relative w-24 h-24">
                                 <svg class="w-24 h-24 transform -rotate-90">
                                     <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
@@ -900,7 +1115,7 @@
                                 </svg>
                                 <div class="absolute inset-0 flex items-center justify-center">
                                     <span class="text-xl font-bold text-purple-600"
-                                        x-text="organizeProgress.batches_total > 0 ? Math.floor(organizeProgress.batches_done / organizeProgress.batches_total * 100) + '%' : '...'"></span>
+                                        x-text="organizeProgress.batches_total > 0 ? Math.floor(organizeProgress.batches_done / organizeProgress.batches_total * 100) + '%' : '准备中...'"></span>
                                 </div>
                             </div>
                             <div class="text-center">
@@ -909,148 +1124,15 @@
                                 <div class="text-xs text-slate-400 mt-1">AI 正在批量归类书签...</div>
                             </div>
                         </div>
-                        <div class="flex justify-center pt-2 border-t">
+                        <div class="flex justify-center gap-2 pt-2 border-t">
                             <button @click="cancelOrganize()"
                                 class="flex items-center gap-1 rounded-lg border border-rose-200 text-rose-600 px-4 py-2 text-sm hover:bg-rose-50 transition">
                                 <span>✕</span> 取消
                             </button>
-                        </div>
-                    </div>
-                </template>
-
-                <!-- Phase: preview - Diff preview -->
-                <template x-if="organizePhase === 'preview' && !organizeResolving">
-                    <div class="space-y-3">
-                        <div class="text-sm font-medium">Diff 预览</div>
-                        <!-- Summary -->
-                        <template x-if="organizeDiff && organizeDiff.summary">
-                            <div class="grid grid-cols-4 gap-2 text-center text-xs">
-                                <div class="bg-green-50 rounded p-2">
-                                    <div class="text-lg font-bold text-green-600" x-text="organizeDiff.summary.new_count"></div>
-                                    <div class="text-slate-500">新增分类</div>
-                                </div>
-                                <div class="bg-blue-50 rounded p-2">
-                                    <div class="text-lg font-bold text-blue-600" x-text="organizeDiff.summary.move_count"></div>
-                                    <div class="text-slate-500">移动书签</div>
-                                </div>
-                                <div class="bg-amber-50 rounded p-2">
-                                    <div class="text-lg font-bold text-amber-600" x-text="organizeDiff.summary.empty_count"></div>
-                                    <div class="text-slate-500">空分类</div>
-                                </div>
-                                <div class="bg-purple-50 rounded p-2">
-                                    <div class="text-lg font-bold text-purple-600" x-text="organizeDiff.summary.needs_review"></div>
-                                    <div class="text-slate-500">待审核</div>
-                                </div>
-                            </div>
-                        </template>
-                        <!-- Moves by category (drilldown) -->
-                        <div class="max-h-60 overflow-y-auto border rounded">
-                            <template x-for="group in getDiffMovesByCategory()" :key="group.category">
-                                <div class="border-b last:border-b-0">
-                                    <button @click="toggleDiffCategory(group.category)"
-                                        class="w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-slate-50 text-left">
-                                        <span class="font-medium" x-text="group.category"></span>
-                                        <span class="text-xs text-slate-400" x-text="group.bookmarks.length + ' 个书签'"></span>
-                                    </button>
-                                    <template x-if="organizeDiffExpanded[group.category]">
-                                        <div class="px-3 pb-2 space-y-1">
-                                            <template x-for="bm in group.bookmarks" :key="bm.bookmark_id">
-                                                <div class="flex items-center gap-2 text-xs text-slate-600 py-0.5">
-                                                    <span class="truncate flex-1" x-text="bm.from_category || '未分类'"></span>
-                                                    <span class="text-slate-300">→</span>
-                                                    <span class="truncate flex-1 text-blue-600" x-text="bm.to_category"></span>
-                                                </div>
-                                            </template>
-                                        </div>
-                                    </template>
-                                </div>
-                            </template>
-                        </div>
-                        <!-- Needs review -->
-                        <template x-if="getNeedsReviewBookmarks().length > 0">
-                            <div>
-                                <div class="text-xs font-medium text-amber-600 mb-1">待审核书签 (<span x-text="getNeedsReviewBookmarks().length"></span>)</div>
-                                <div class="max-h-32 overflow-y-auto border border-amber-200 rounded p-2 space-y-1">
-                                    <template x-for="nr in getNeedsReviewBookmarks()" :key="nr.bookmark_id">
-                                        <div class="text-xs text-slate-600 truncate" x-text="'#' + nr.bookmark_id"></div>
-                                    </template>
-                                </div>
-                            </div>
-                        </template>
-                        <!-- Actions -->
-                        <div class="flex justify-end gap-2 pt-2 border-t">
-                            <button @click="cancelOrganize()"
-                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃</button>
-                            <button @click="applyOrganizePlan()"
-                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">应用整理</button>
-                        </div>
-                    </div>
-                </template>
-
-                <!-- Phase: preview - Conflict resolution -->
-                <template x-if="organizePhase === 'preview' && organizeResolving">
-                    <div class="space-y-3">
-                        <div class="text-sm font-medium">冲突解决</div>
-                        <!-- Conflicts -->
-                        <template x-if="organizeConflicts.length > 0">
-                            <div>
-                                <div class="text-xs text-slate-500 mb-2">以下书签在整理期间被修改，请选择处理方式：</div>
-                                <div class="max-h-48 overflow-y-auto border rounded divide-y">
-                                    <template x-for="(c, ci) in organizeConflicts" :key="c.bookmark_id">
-                                        <div class="px-3 py-2 flex items-center gap-2">
-                                            <div class="flex-1 min-w-0">
-                                                <div class="text-sm truncate" x-text="c.title || c.url"></div>
-                                                <div class="text-xs text-slate-400 truncate" x-text="c.url"></div>
-                                            </div>
-                                            <select x-model="organizeConflicts[ci].action" class="rounded border px-2 py-1 text-xs">
-                                                <option value="skip">跳过</option>
-                                                <option value="override">覆盖</option>
-                                            </select>
-                                        </div>
-                                    </template>
-                                </div>
-                            </div>
-                        </template>
-                        <!-- Empty categories -->
-                        <template x-if="organizeEmptyCategories.length > 0">
-                            <div>
-                                <div class="text-xs text-slate-500 mb-2">以下分类将变为空分类：</div>
-                                <div class="max-h-32 overflow-y-auto border rounded divide-y">
-                                    <template x-for="(ec, ei) in organizeEmptyCategories" :key="ec.id">
-                                        <div class="px-3 py-2 flex items-center gap-2">
-                                            <span class="text-sm flex-1" x-text="ec.name"></span>
-                                            <select x-model="organizeEmptyCategories[ei].action" class="rounded border px-2 py-1 text-xs">
-                                                <option value="keep">保留</option>
-                                                <option value="delete">删除</option>
-                                            </select>
-                                        </div>
-                                    </template>
-                                </div>
-                            </div>
-                        </template>
-                        <div class="flex justify-end gap-2 pt-2 border-t">
-                            <button @click="organizeResolving = false"
-                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">返回</button>
-                            <button @click="resolveAndApply()"
-                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">确认并应用</button>
-                        </div>
-                    </div>
-                </template>
-
-                <!-- Phase: applied -->
-                <template x-if="organizePhase === 'applied'">
-                    <div class="space-y-3">
-                        <div class="flex flex-col items-center gap-2 py-4">
-                            <div class="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center text-2xl">✓</div>
-                            <div class="text-sm font-medium text-green-700">整理已应用</div>
-                        </div>
-                        <div class="flex justify-center gap-2 pt-2 border-t">
-                            <template x-if="canRollback()">
-                                <button @click="rollbackOrganize()"
-                                    class="rounded border border-amber-300 text-amber-600 px-4 py-2 text-sm hover:bg-amber-50">回滚 (24h 内)</button>
-                            </template>
-                            <button @click="closeOrganizeModal()"
-                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">关闭</button>
+                            <a x-show="organizePlan?.job_id" :href="'/jobs/' + organizePlan?.job_id"
+                                class="flex items-center gap-1 rounded-lg border border-slate-200 text-slate-600 px-4 py-2 text-sm hover:bg-slate-50 transition">
+                                查看任务详情
+                            </a>
                         </div>
                     </div>
                 </template>

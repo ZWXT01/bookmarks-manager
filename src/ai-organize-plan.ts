@@ -2,10 +2,11 @@ import { randomUUID } from 'crypto';
 import type { Db } from './db';
 import { getOrCreateCategoryByPath, getCategoryTree, getCategoryById, getCategoryByName } from './category-service';
 import { createJob, updateJob, getJob, jobQueue } from './jobs';
+import { getActiveTemplate } from './template-service';
 
 // ==================== Types ====================
 
-export type PlanStatus = 'designing' | 'assigning' | 'preview' | 'applied' | 'canceled' | 'rolled_back' | 'failed' | 'error';
+export type PlanStatus = 'assigning' | 'preview' | 'applied' | 'canceled' | 'rolled_back' | 'failed' | 'error';
 
 export interface PlanRow {
   id: string; job_id: string | null; status: PlanStatus; scope: string;
@@ -13,6 +14,7 @@ export interface PlanRow {
   backup_snapshot: string | null; phase: string | null;
   batches_done: number; batches_total: number;
   failed_batch_ids: string | null; needs_review_count: number;
+  template_id: number | null;
   created_at: string; applied_at: string | null;
 }
 
@@ -20,10 +22,9 @@ export interface CategoryNode { name: string; children: { name: string }[] }
 export interface Assignment { bookmark_id: number; category_path: string; status: 'assigned' | 'needs_review' }
 
 export interface DiffSummary {
-  new_categories: string[];
   empty_categories: { id: number; name: string }[];
   moves: { bookmark_id: number; from_category: string | null; to_category: string }[];
-  summary: { new_count: number; move_count: number; empty_count: number; needs_review: number };
+  summary: { move_count: number; empty_count: number; needs_review: number };
 }
 
 export interface ConflictItem { bookmark_id: number; title: string; url: string; updated_at: string }
@@ -45,9 +46,14 @@ export class PlanError extends Error {
 
 // ==================== Constants ====================
 
-const ACTIVE_STATUSES: PlanStatus[] = ['designing', 'assigning', 'preview'];
+const ACTIVE_STATUSES: PlanStatus[] = ['assigning'];
 const TERMINAL_STATUSES = new Set<PlanStatus>(['applied', 'canceled', 'rolled_back', 'error']);
 const SNAPSHOT_TTL_MS = 24 * 60 * 60 * 1000;
+const PLAN_TIMEOUT_MS = 7_200_000;
+const DEFAULT_REASONS: Record<string, string> = {
+  canceled: 'user_cancel', applied: 'user_apply', rolled_back: 'user_rollback',
+  assigning: 'plan_created', preview: 'assignment_complete', failed: 'assignment_failed', error: 'assignment_failed',
+};
 
 // ==================== Helpers ====================
 const nowIso = () => new Date().toISOString();
@@ -159,7 +165,6 @@ function canTransition(from: PlanStatus, to: PlanStatus): boolean {
   if (from === to) return true;
   if (to === 'canceled' && !TERMINAL_STATUSES.has(from)) return true;
   const allowed: Record<string, PlanStatus[]> = {
-    designing: ['assigning'],
     assigning: ['preview', 'failed', 'error'],
     preview: ['applied'],
     failed: ['assigning'],
@@ -168,19 +173,40 @@ function canTransition(from: PlanStatus, to: PlanStatus): boolean {
   return (allowed[from] ?? []).includes(to);
 }
 
+function logStateChange(db: Db, planId: string, from: string | null, to: string, reason: string): void {
+  db.prepare('INSERT INTO plan_state_logs (plan_id, from_status, to_status, reason, created_at) VALUES (?, ?, ?, ?, ?)').run(planId, from, to, reason, nowIso());
+}
+
 // ==================== CRUD ====================
 
 export function createPlan(db: Db, scope: string): PlanRow {
   return db.transaction(() => {
     cleanupExpiredSnapshots(db);
-    const ph = ACTIVE_STATUSES.map(() => '?').join(',');
-    const active = db.prepare(`SELECT id FROM ai_organize_plans WHERE status IN (${ph}) LIMIT 1`).get(...ACTIVE_STATUSES);
-    if (active) throw new PlanError(409, 'active plan already exists');
+    const active = db.prepare(`SELECT * FROM ai_organize_plans WHERE status = 'assigning' ORDER BY created_at DESC LIMIT 1`).get() as PlanRow | undefined;
 
+    if (active) {
+      const createdMs = Date.parse(active.created_at);
+      const age = Number.isFinite(createdMs) ? Date.now() - createdMs : Infinity;
+      if (age > PLAN_TIMEOUT_MS) {
+        updatePlan(db, active.id, { status: 'error' as PlanStatus, phase: null });
+        logStateChange(db, active.id, active.status, 'error', 'timeout');
+        if (active.job_id) {
+          jobQueue.cancelJob(active.job_id);
+          if (getJob(db, active.job_id)) updateJob(db, active.job_id, { status: 'failed', message: 'plan timeout' });
+        }
+      } else {
+        const err = new PlanError(409, 'active plan already exists');
+        (err as any).activePlanId = active.id;
+        throw err;
+      }
+    }
+
+    const activeTpl = getActiveTemplate(db);
     const id = randomUUID();
     const now = nowIso();
-    db.prepare(`INSERT INTO ai_organize_plans (id, status, scope, phase, batches_done, batches_total, needs_review_count, created_at)
-      VALUES (?, 'designing', ?, 'designing', 0, 0, 0, ?)`).run(id, scope.trim() || 'all', now);
+    db.prepare(`INSERT INTO ai_organize_plans (id, status, scope, phase, template_id, batches_done, batches_total, needs_review_count, created_at)
+      VALUES (?, 'assigning', ?, 'assigning', ?, 0, 0, 0, ?)`).run(id, scope.trim() || 'all', activeTpl?.id ?? null, now);
+    logStateChange(db, id, null, 'assigning', 'plan_created');
 
     // cleanup: keep 5 most recent non-applied
     const stale = db.prepare(`SELECT id FROM ai_organize_plans WHERE status <> 'applied' ORDER BY created_at DESC LIMIT -1 OFFSET 5`).all() as { id: string }[];
@@ -215,7 +241,7 @@ export function deletePlan(db: Db, planId: string): boolean {
 
 // ==================== State Machine ====================
 
-export function transitionStatus(db: Db, planId: string, target: PlanStatus): PlanRow {
+export function transitionStatus(db: Db, planId: string, target: PlanStatus, reason?: string): PlanRow {
   return db.transaction(() => {
     const plan = getPlan(db, planId);
     if (!plan) throw new Error('plan not found');
@@ -239,6 +265,7 @@ export function transitionStatus(db: Db, planId: string, target: PlanStatus): Pl
     }
 
     const next = updatePlan(db, planId, patch);
+    logStateChange(db, planId, plan.status, target, reason ?? DEFAULT_REASONS[target] ?? target);
 
     // sync job status
     if (next.job_id) {
@@ -251,6 +278,11 @@ export function transitionStatus(db: Db, planId: string, target: PlanStatus): Pl
     }
     return next;
   })();
+}
+
+export function getActivePlan(db: Db): PlanRow | null {
+  const ph = ACTIVE_STATUSES.map(() => '?').join(',');
+  return (db.prepare(`SELECT * FROM ai_organize_plans WHERE status IN (${ph}) ORDER BY created_at DESC LIMIT 1`).get(...ACTIVE_STATUSES) as PlanRow | undefined) ?? null;
 }
 
 // ==================== Tree Validation ====================
@@ -295,26 +327,11 @@ export function validateTree(tree: CategoryNode[]): { valid: boolean; errors: st
   return { valid: errors.length === 0, errors };
 }
 
-export function updatePlanTree(db: Db, planId: string, tree: CategoryNode[], confirm = false): PlanRow {
-  return db.transaction(() => {
-    const plan = getPlan(db, planId);
-    if (!plan || plan.status !== 'designing') throw new Error('tree can only be updated in designing status');
-    const v = validateTree(tree);
-    if (!v.valid) throw new Error(`invalid tree: ${v.errors.join('; ')}`);
-    updatePlan(db, planId, { target_tree: JSON.stringify(tree) });
-    if (confirm) transitionStatus(db, planId, 'assigning');
-    return getPlan(db, planId)!;
-  })();
-}
-
 // ==================== Diff ====================
 
 export function computeDiff(db: Db, plan: PlanRow): DiffSummary {
   const assignments = parseAssignments(plan.assignments);
   const lookup = buildPathLookup(db);
-  const targetPaths = collectTargetPaths(plan, assignments);
-
-  const newCategories = targetPaths.filter(p => !lookup.has(casefold(normalizePath(p))));
   const bookmarks = getBookmarkMap(db);
   const moves: DiffSummary['moves'] = [];
   let needsReview = 0;
@@ -330,7 +347,6 @@ export function computeDiff(db: Db, plan: PlanRow): DiffSummary {
     moves.push({ bookmark_id: a.bookmark_id, from_category: from, to_category: tp });
   }
 
-  // predict empty categories
   const usage = getCatUsage(db);
   const counts = new Map(usage.map(u => [u.id, u.bookmark_count]));
   for (const m of moves) {
@@ -342,8 +358,8 @@ export function computeDiff(db: Db, plan: PlanRow): DiffSummary {
     .map(u => ({ id: u.id, name: u.name }));
 
   return {
-    new_categories: newCategories, empty_categories: emptyCategories, moves,
-    summary: { new_count: newCategories.length, move_count: moves.length, empty_count: emptyCategories.length, needs_review: needsReview },
+    empty_categories: emptyCategories, moves,
+    summary: { move_count: moves.length, empty_count: emptyCategories.length, needs_review: needsReview },
   };
 }
 
@@ -359,21 +375,38 @@ export function applyPlan(db: Db, planId: string): ApplyResult {
   return db.transaction(() => {
     const plan = getPlan(db, planId);
     if (!plan || plan.status !== 'preview') throw new Error('plan can only be applied in preview status');
-    const assignments = parseAssignments(plan.assignments);
 
+    // Snapshot BEFORE any mutations (template switch, bookmark moves)
     if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
+
+    // Note: do NOT switch template here — applyPlan should only move bookmarks
+    // into categories that already exist under the current active template.
+
+    const assignments = parseAssignments(plan.assignments);
 
     const lookup = buildPathLookup(db);
     for (const p of collectTargetPaths(plan, assignments)) resolveCategory(db, p, lookup);
 
     const bookmarks = getBookmarkMap(db);
     const moveStmt = db.prepare('UPDATE bookmarks SET category_id = ?, updated_at = ? WHERE id = ?');
+    const nullStmt = db.prepare('UPDATE bookmarks SET category_id = NULL, updated_at = ? WHERE id = ?');
     const conflicts: ConflictItem[] = [];
     let applied = 0;
     const now = nowIso();
 
+    const sourceCatIds = new Set<number>();
+
     for (const a of assignments) {
-      if (a.status !== 'assigned') continue;
+      // 4.7: needs_review bookmarks → category_id = NULL
+      if (a.status === 'needs_review') {
+        const bm = bookmarks.get(a.bookmark_id);
+        if (bm && bm.category_id != null) {
+          sourceCatIds.add(bm.category_id);
+          nullStmt.run(now, bm.id);
+        }
+        continue;
+      }
+
       const tp = normalizePath(a.category_path);
       if (!tp) continue;
       const bm = bookmarks.get(a.bookmark_id);
@@ -388,15 +421,21 @@ export function applyPlan(db: Db, planId: string): ApplyResult {
 
       const catId = resolveCategory(db, tp, lookup);
       if (bm.category_id === catId) continue;
+      if (bm.category_id != null) sourceCatIds.add(bm.category_id);
       applied += moveStmt.run(catId, now, bm.id).changes;
     }
 
-    const empty = db.prepare(`
-      SELECT c.id, c.name FROM categories c
-      LEFT JOIN bookmarks b ON b.category_id = c.id
-      WHERE NOT EXISTS (SELECT 1 FROM categories ch WHERE ch.parent_id = c.id)
-      GROUP BY c.id HAVING COUNT(b.id) = 0
-    `).all() as { id: number; name: string }[];
+    let empty: { id: number; name: string }[] = [];
+    if (sourceCatIds.size > 0) {
+      const ph = [...sourceCatIds].map(() => '?').join(',');
+      empty = db.prepare(`
+        SELECT c.id, c.name FROM categories c
+        LEFT JOIN bookmarks b ON b.category_id = c.id
+        WHERE c.id IN (${ph})
+          AND NOT EXISTS (SELECT 1 FROM categories ch WHERE ch.parent_id = c.id)
+        GROUP BY c.id HAVING COUNT(b.id) = 0
+      `).all(...sourceCatIds) as { id: number; name: string }[];
+    }
 
     return { conflicts, empty_categories: empty, applied_count: applied };
   })();
@@ -418,6 +457,7 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
     const bookmarks = getBookmarkMap(db);
     const moveStmt = db.prepare('UPDATE bookmarks SET category_id = ?, updated_at = ? WHERE id = ?');
     const skipped: ConflictItem[] = [];
+    const sourceCatIds = new Set<number>();
     let applied = 0;
     const now = nowIso();
 
@@ -439,6 +479,7 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
 
       const catId = resolveCategory(db, tp, lookup);
       if (bm.category_id === catId) continue;
+      if (bm.category_id != null) sourceCatIds.add(bm.category_id);
       applied += moveStmt.run(catId, now, bm.id).changes;
     }
 
@@ -448,12 +489,17 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
 
     transitionStatus(db, planId, 'applied');
 
-    const remaining = db.prepare(`
-      SELECT c.id, c.name FROM categories c
-      LEFT JOIN bookmarks b ON b.category_id = c.id
-      WHERE NOT EXISTS (SELECT 1 FROM categories ch WHERE ch.parent_id = c.id)
-      GROUP BY c.id HAVING COUNT(b.id) = 0
-    `).all() as { id: number; name: string }[];
+    let remaining: { id: number; name: string }[] = [];
+    if (sourceCatIds.size > 0) {
+      const ph = [...sourceCatIds].map(() => '?').join(',');
+      remaining = db.prepare(`
+        SELECT c.id, c.name FROM categories c
+        LEFT JOIN bookmarks b ON b.category_id = c.id
+        WHERE c.id IN (${ph})
+          AND NOT EXISTS (SELECT 1 FROM categories ch WHERE ch.parent_id = c.id)
+        GROUP BY c.id HAVING COUNT(b.id) = 0
+      `).all(...sourceCatIds) as { id: number; name: string }[];
+    }
 
     return { conflicts: skipped, empty_categories: remaining, applied_count: applied };
   })();
@@ -509,4 +555,58 @@ export function cleanupExpiredSnapshots(db: Db): number {
     if (Number.isFinite(ms) && Date.now() - ms > SNAPSHOT_TTL_MS) count += clear.run(r.id).changes;
   }
   return count;
+}
+
+// ==================== Startup Recovery ====================
+
+export function recoverStalePlans(db: Db): number {
+  const stale = db.prepare(`SELECT * FROM ai_organize_plans WHERE status = 'assigning'`).all() as PlanRow[];
+  for (const plan of stale) {
+    updatePlan(db, plan.id, { status: 'error' as PlanStatus, phase: null });
+    logStateChange(db, plan.id, plan.status, 'error', 'server_restart');
+    if (plan.job_id) {
+      const job = getJob(db, plan.job_id);
+      if (job && (job.status === 'queued' || job.status === 'running')) {
+        updateJob(db, plan.job_id, { status: 'failed', message: 'server restart' });
+      }
+    }
+  }
+  return stale.length;
+}
+
+// ==================== Confirm Empty ====================
+
+export function confirmEmpty(db: Db, planId: string, decisions: { id: number; action: 'delete' | 'keep' }[]): { deleted: number; kept: number } {
+  return db.transaction(() => {
+    const plan = getPlan(db, planId);
+    if (!plan || plan.status !== 'preview') throw new Error('plan must be in preview status');
+
+    const decisionMap = new Map(decisions.map(d => [d.id, d.action]));
+
+    // re-verify which categories are actually still empty leaf nodes
+    const currentEmpty = db.prepare(`
+      SELECT c.id, c.name FROM categories c
+      LEFT JOIN bookmarks b ON b.category_id = c.id
+      WHERE NOT EXISTS (SELECT 1 FROM categories ch WHERE ch.parent_id = c.id)
+      GROUP BY c.id HAVING COUNT(b.id) = 0
+    `).all() as { id: number; name: string }[];
+    const emptyIds = new Set(currentEmpty.map(c => c.id));
+
+    const delStmt = db.prepare('DELETE FROM categories WHERE id = ?');
+    let deleted = 0;
+    let kept = 0;
+
+    for (const c of currentEmpty) {
+      const action = decisionMap.get(c.id) ?? 'keep';
+      if (action === 'delete' && emptyIds.has(c.id)) {
+        delStmt.run(c.id);
+        deleted++;
+      } else {
+        kept++;
+      }
+    }
+
+    transitionStatus(db, planId, 'applied');
+    return { deleted, kept };
+  })();
 }

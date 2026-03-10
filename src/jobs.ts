@@ -39,8 +39,10 @@ export type JobFailureRow = {
 };
 
 type Subscriber = (job: JobRow) => void;
+type EventSubscriber = (eventName: string, data: any) => void;
 
 const subscribers = new Map<string, Set<Subscriber>>();
+const eventSubscribers = new Map<string, Set<EventSubscriber>>();
 
 export function subscribeJob(jobId: string, fn: Subscriber): () => void {
   const set = subscribers.get(jobId) ?? new Set<Subscriber>();
@@ -53,6 +55,24 @@ export function subscribeJob(jobId: string, fn: Subscriber): () => void {
     cur.delete(fn);
     if (cur.size === 0) subscribers.delete(jobId);
   };
+}
+
+export function subscribeJobEvent(jobId: string, fn: EventSubscriber): () => void {
+  const set = eventSubscribers.get(jobId) ?? new Set<EventSubscriber>();
+  set.add(fn);
+  eventSubscribers.set(jobId, set);
+  return () => {
+    const cur = eventSubscribers.get(jobId);
+    if (!cur) return;
+    cur.delete(fn);
+    if (cur.size === 0) eventSubscribers.delete(jobId);
+  };
+}
+
+export function publishJobEvent(jobId: string, eventName: string, data: any): void {
+  const set = eventSubscribers.get(jobId);
+  if (!set) return;
+  for (const fn of set) fn(eventName, data);
 }
 
 function publish(job: JobRow): void {

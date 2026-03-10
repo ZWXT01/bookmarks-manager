@@ -53,6 +53,8 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
     const body: any = req.body || {};
     const name = typeof body.name === 'string' ? body.name.trim() : '';
     const parentId = toInt(body.parent_id);
+    const icon = typeof body.icon === 'string' ? body.icon.trim() || null : null;
+    const color = typeof body.color === 'string' ? body.color.trim() || null : null;
 
     if (!name) {
       return reply.code(400).send({ error: '分类名称不能为空' });
@@ -63,14 +65,11 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
 
       let categoryId: number;
       if (name.includes('/')) {
-        // 路径格式，如 "技术/编程"
         categoryId = getOrCreateCategoryByPath(db, name);
       } else if (parentId !== null) {
-        // 创建子分类
-        categoryId = createSubCategory(db, name, parentId);
+        categoryId = createSubCategory(db, name, parentId, { icon, color });
       } else {
-        // 创建一级分类
-        categoryId = createTopCategory(db, name);
+        categoryId = createTopCategory(db, name, { icon, color });
       }
 
       const cat = getCategoryById(db, categoryId);

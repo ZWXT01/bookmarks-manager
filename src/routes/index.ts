@@ -15,4 +15,5 @@ export { checkRoutes, type CheckRoutesOptions } from './check';
 export { importRoutes, type ImportRoutesOptions } from './import';
 export { pagesRoutes, type PagesRoutesOptions } from './pages';
 export { formsRoutes, type FormsRoutesOptions } from './forms';
+export { templateRoutes, type TemplateRoutesOptions } from './templates';
 export * from './types';

@@ -3,7 +3,7 @@
  */
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
-import { getJob, jobQueue, pruneJobsToRecent, subscribeJob, updateJob } from '../jobs';
+import { getJob, jobQueue, pruneJobsToRecent, subscribeJob, subscribeJobEvent, updateJob } from '../jobs';
 import { toInt } from '../utils/helpers';
 
 export interface JobsRoutesOptions {
@@ -52,17 +52,22 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
         }
     });
 
-    // GET /api/jobs/:id/failures - 获取任务失败项
+    // GET /api/jobs/:id/failures - 获取任务失败项（支持 page/page_size 分页）
     app.get('/api/jobs/:id/failures', async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
         const jobId = req.params.id;
         const q: any = (req as any).query || {};
-        const limit = toInt(q.limit) || 20;
-        const offset = toInt(q.offset) || 0;
+        const page = Math.max(1, toInt(q.page) || 1);
+        const pageSize = Math.min(200, Math.max(1, toInt(q.page_size) || toInt(q.limit) || 20));
 
         try {
-            const failures = db.prepare('SELECT * FROM job_failures WHERE job_id = ? ORDER BY id DESC LIMIT ? OFFSET ?').all(jobId, limit, offset) as Array<{ id: number; job_id: string; input: string; reason: string }>;
             const totalRow = db.prepare('SELECT COUNT(*) as count FROM job_failures WHERE job_id = ?').get(jobId) as { count: number };
-            return reply.send({ failures, total: totalRow?.count || 0 });
+            const total = totalRow?.count || 0;
+            const totalPages = Math.max(1, Math.ceil(total / pageSize));
+            const pageClamped = Math.min(page, totalPages);
+            const offset = (pageClamped - 1) * pageSize;
+
+            const failures = db.prepare('SELECT * FROM job_failures WHERE job_id = ? ORDER BY id DESC LIMIT ? OFFSET ?').all(jobId, pageSize, offset) as Array<{ id: number; job_id: string; input: string; reason: string }>;
+            return reply.send({ failures, total, page: pageClamped, totalPages, pageSize });
         } catch (e: any) {
             return reply.code(500).send({ error: e.message });
         }
@@ -89,8 +94,13 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
             reply.raw.write('data: ' + JSON.stringify(next) + '\n\n');
         });
 
+        const unsubEvent = subscribeJobEvent(jobId, (eventName, data) => {
+            reply.raw.write('event: ' + eventName + '\ndata: ' + JSON.stringify(data) + '\n\n');
+        });
+
         req.raw.on('close', () => {
             unsubscribe();
+            unsubEvent();
             req.log.info({ jobId }, 'sse disconnected');
             reply.raw.end();
         });
@@ -189,7 +199,7 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
             .prepare('SELECT * FROM jobs ORDER BY created_at DESC LIMIT ? OFFSET ?')
             .all(pageSize, offset) as JobListRow[];
 
-        return reply.view('jobs.ejs', { jobs, page: pageClamped, totalPages, total, pageSize });
+        return reply.view('jobs.ejs', { jobs, page: pageClamped, totalPages, total, pageSize, pageUrlPrefix: '/jobs?page=' });
     });
 
     // GET /api/jobs - 任务列表 API

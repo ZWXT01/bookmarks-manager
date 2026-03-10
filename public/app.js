@@ -14,7 +14,6 @@ function bookmarkApp() {
     categorySearch: '',
     totalCount: 0,
     uncategorizedCount: 0,
-    newCategoryName: '',
     newBookmark: { url: '', title: '', category_id: '' },
     aiSuggestion: '',
     moveTargetCategory: '',
@@ -47,6 +46,12 @@ function bookmarkApp() {
     categoryIcon: '',
     categoryColor: '',
 
+    showCreateCategoryModal: false,
+    createCategoryParentId: null,
+    createCategoryName: '',
+    createCategoryIcon: '',
+    createCategoryColor: '',
+
     // 视图模式
     viewMode: localStorage.getItem('viewMode') || 'table', // 'table' or 'card'
 
@@ -71,7 +76,7 @@ function bookmarkApp() {
     organizeScope: 'all',
     organizeScopeCategoryId: '',
     organizePlan: null,
-    organizePhase: 'idle', // idle, designing, editing, assigning, preview, applied, failed
+    organizePhase: 'idle', // idle, assigning, preview, applied, failed
     organizeProgress: { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 },
     organizePollTimer: null,
     organizeDiff: null,
@@ -80,8 +85,7 @@ function bookmarkApp() {
     organizeResolving: false,
     organizeAppliedCount: 0,
     organizeDiffExpanded: {},
-    organizeTreeDraft: [],
-    organizeEditNode: null,
+    pendingPlans: [],
     backups: [],
     selectedManualBackup: '',
     selectedAutoBackup: '',
@@ -100,11 +104,32 @@ function bookmarkApp() {
     currentJob: null,
     currentJobPollTimer: null,
 
+    // 模板管理
+    templates: [],
+    activeTemplate: null,
+    showTemplateSelectModal: false,
+    showTemplateEditModal: false,
+    templateEditTarget: null,
+    templateEditName: '',
+    templateEditTree: [],
+    templateApplying: false,
+    templateEditSnapshot: null,
+    templateEditSourceId: null,
+
+    get presetTemplates() { return this.templates.filter(t => t.type === 'preset'); },
+    get customTemplates() { return this.templates.filter(t => t.type === 'custom'); },
+
+    // 多入口 AI 分类
+    showBatchSizeModal: false,
+    classifyBatchIds: [],
+    classifyBatchSize: 20,
+
     async init() {
       this.initTheme();
       await this.loadCategories();
       await this.loadBookmarks();
       await this.loadSettings();
+      await this.loadTemplates();
       this.restoreLastJob();
       this.pollCurrentJob();
     },
@@ -365,19 +390,14 @@ function bookmarkApp() {
         });
 
         if (res.ok) {
-          // Update local category data
-          const cat = this.categories.find(c => c.id === id);
-          if (cat) {
-            cat.icon = this.categoryIcon;
-            cat.color = this.categoryColor;
-          }
+          await this.loadCategories();
           this.closeCategoryStyleModal();
         } else {
           const data = await res.json();
-          alert(data.error || '保存失败');
+          await AppDialog.alert(data.error || '保存失败');
         }
       } catch (e) {
-        alert('保存失败: ' + e.message);
+        await AppDialog.alert('保存失败: ' + e.message);
       }
     },
 
@@ -458,7 +478,7 @@ function bookmarkApp() {
 
     async cancelCheckJob() {
       if (!this.checkJobId) return;
-      if (!confirm('确认取消当前检查任务？')) return;
+      if (!await AppDialog.confirm('确认取消当前检查任务？')) return;
       try {
         const params = new URLSearchParams();
         params.append('jobId', String(this.checkJobId));
@@ -713,7 +733,7 @@ function bookmarkApp() {
     },
 
     async deleteBackup(name) {
-      if (!confirm(`确定要删除备份 ${name} 吗？`)) return;
+      if (!await AppDialog.confirm(`确定要删除备份 ${name} 吗？`)) return;
       try {
         const res = await fetch(`/api/backups/${encodeURIComponent(name)}`, { method: 'DELETE', headers: { 'Accept': 'application/json' } });
         const data = await res.json().catch(() => null);
@@ -731,7 +751,7 @@ function bookmarkApp() {
     },
 
     async restoreBackup(name) {
-      if (!confirm(`确定要从 ${name} 还原数据库吗？还原后需要刷新页面。`)) return;
+      if (!await AppDialog.confirm(`确定要从 ${name} 还原数据库吗？还原后需要刷新页面。`)) return;
       try {
         const res = await fetch('/api/backups/restore', {
           method: 'POST',
@@ -740,7 +760,7 @@ function bookmarkApp() {
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data && data.success) {
-          alert(data.message || '数据库已还原，页面将刷新');
+          await AppDialog.alert(data.message || '数据库已还原，页面将刷新');
           window.location.reload();
         } else {
           this.showToast((data && data.error) || '还原失败', 'error');
@@ -762,7 +782,7 @@ function bookmarkApp() {
         this.showToast('请选择 .db 格式的数据库文件', 'error');
         return;
       }
-      if (!confirm(`确定要从上传的文件还原数据库吗？还原后需要刷新页面。`)) return;
+      if (!await AppDialog.confirm(`确定要从上传的文件还原数据库吗？还原后需要刷新页面。`)) return;
 
       try {
         const formData = new FormData();
@@ -774,7 +794,7 @@ function bookmarkApp() {
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data && data.success) {
-          alert(data.message || '数据库已还原，页面将刷新');
+          await AppDialog.alert(data.message || '数据库已还原，页面将刷新');
           window.location.reload();
         } else {
           this.showToast((data && data.error) || '还原失败', 'error');
@@ -945,72 +965,50 @@ function bookmarkApp() {
       }, 300);
     },
 
-    async createCategory(parentId = null) {
-      if (!this.newCategoryName.trim()) return;
+    openCreateCategoryModal(parentId = null) {
+      this.createCategoryParentId = parentId;
+      this.createCategoryName = '';
+      this.createCategoryIcon = '';
+      this.createCategoryColor = '';
+      this.showCreateCategoryModal = true;
+    },
 
+    closeCreateCategoryModal() {
+      this.showCreateCategoryModal = false;
+    },
+
+    async confirmCreateCategory() {
+      if (!this.createCategoryName.trim()) return;
       try {
-        const body = { name: this.newCategoryName.trim() };
-        if (parentId !== null) {
-          body.parent_id = parentId;
-        }
+        const body = { name: this.createCategoryName.trim() };
+        if (this.createCategoryParentId !== null) body.parent_id = this.createCategoryParentId;
+        if (this.createCategoryIcon) body.icon = this.createCategoryIcon;
+        if (this.createCategoryColor) body.color = this.createCategoryColor;
         const response = await fetch('/api/categories', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify(body),
         });
         const data = await response.json();
-        if (response.ok && data && data.category) {
-          this.showToast('分类已创建', 'success');
-          this.newCategoryName = '';
-          this.newCategoryParentId = null;
+        if (response.ok && data?.category) {
+          this.showToast(this.createCategoryParentId ? '子分类已创建' : '分类已创建', 'success');
+          this.closeCreateCategoryModal();
           await this.loadCategories();
-          // 如果创建了子分类，展开父分类
-          if (parentId !== null) {
-            this.expandedCategories.add(parentId);
+          if (this.createCategoryParentId !== null) {
+            this.expandedCategories.add(this.createCategoryParentId);
             this.expandedCategories = new Set(this.expandedCategories);
           }
         } else {
-          this.showToast((data && data.error) ? data.error : '创建分类失败', 'error');
+          this.showToast(data?.error || '创建分类失败', 'error');
         }
-      } catch (error) {
+      } catch {
         this.showToast('创建分类失败', 'error');
-      }
-    },
-
-    // 创建子分类
-    async createSubCategory(parentId) {
-      const name = prompt('请输入二级分类名称:');
-      if (!name || !name.trim()) return;
-
-      try {
-        const response = await fetch('/api/categories', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify({ name: name.trim(), parent_id: parentId }),
-        });
-        const data = await response.json();
-        if (response.ok && data && data.category) {
-          this.showToast('子分类已创建', 'success');
-          await this.loadCategories();
-          this.expandedCategories.add(parentId);
-          this.expandedCategories = new Set(this.expandedCategories);
-        } else {
-          this.showToast((data && data.error) ? data.error : '创建子分类失败', 'error');
-        }
-      } catch (error) {
-        this.showToast('创建子分类失败', 'error');
       }
     },
 
     // 删除分类
     async deleteCategory(categoryId) {
-      if (!confirm('确认删除此分类？分类下的书签将移到未分类。')) return;
+      if (!await AppDialog.confirm('确认删除此分类？分类下的书签将移到未分类。')) return;
 
       try {
         const response = await fetch(`/api/categories/${categoryId}`, {
@@ -1035,7 +1033,7 @@ function bookmarkApp() {
 
     async batchDeleteCategories() {
       if (this.selectedCategories.length === 0) return;
-      if (!confirm(`确认删除选中的 ${this.selectedCategories.length} 个分类？\n注意：分类删除后，所属书签将变为未分类。`)) return;
+      if (!await AppDialog.confirm(`确认删除选中的 ${this.selectedCategories.length} 个分类？\n注意：分类删除后，所属书签将变为未分类。`)) return;
       try {
         const params = new URLSearchParams();
         this.selectedCategories.forEach((id) => params.append('category_ids[]', String(id)));
@@ -1126,7 +1124,7 @@ function bookmarkApp() {
         const params = new URLSearchParams();
         params.append('url', this.newBookmark.url);
         params.append('title', this.newBookmark.title);
-        params.append('category_id', this.newBookmark.category_id);
+        if (this.newBookmark.category_id) params.append('category_id', this.newBookmark.category_id);
         const response = await fetch('/api/bookmarks', {
           method: 'POST',
           headers: {
@@ -1152,7 +1150,7 @@ function bookmarkApp() {
     },
 
     async deleteBookmark(id) {
-      if (!confirm('确认删除该书签？')) return;
+      if (!await AppDialog.confirm('确认删除该书签？')) return;
       try {
         const formData = new FormData();
         formData.append('redirect', '/');
@@ -1179,7 +1177,7 @@ function bookmarkApp() {
       const idsToDelete = Array.isArray(arguments[0]) ? arguments[0] : this.selectedBookmarks;
       const confirmMsg = typeof arguments[1] === 'string' ? arguments[1] : `确认删除选中的 ${idsToDelete.length} 个书签？`;
       if (idsToDelete.length === 0) return;
-      if (!confirm(confirmMsg)) return;
+      if (!await AppDialog.confirm(confirmMsg)) return;
 
       try {
         const params = new URLSearchParams();
@@ -1214,7 +1212,7 @@ function bookmarkApp() {
     },
 
     async deleteAllBookmarks() {
-      if (!confirm('确认删除全部书签？该操作不可恢复。')) return;
+      if (!await AppDialog.confirm('确认删除全部书签？该操作不可恢复。')) return;
       try {
         const res = await fetch('/api/bookmarks/delete-all', { method: 'POST', headers: { 'Accept': 'application/json' } });
         const data = await res.json();
@@ -1529,6 +1527,268 @@ function bookmarkApp() {
       this.openCheckModalForSelected();
     },
 
+    async loadTemplates() {
+      try {
+        const res = await fetch('/api/templates', { headers: { 'Accept': 'application/json' } });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data) return;
+        this.templates = data.templates || [];
+        this.activeTemplate = this.templates.find(t => t.is_active === 1) || null;
+      } catch { }
+    },
+
+    async applyTemplate(id) {
+      if (this.templateApplying) return;
+      this.templateApplying = true;
+      try {
+        const res = await fetch(`/api/templates/${id}/apply`, {
+          method: 'POST', headers: { 'Accept': 'application/json' },
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.success) {
+          this.showToast(data?.error || '应用模板失败', 'error');
+          return;
+        }
+        await this.loadTemplates();
+        await this.loadCategories();
+        await this.loadBookmarks();
+        this.showToast('模板已应用', 'success');
+      } catch {
+        this.showToast('应用模板失败', 'error');
+      } finally {
+        this.templateApplying = false;
+      }
+    },
+
+    async createTemplate(name, tree) {
+      try {
+        const res = await fetch('/api/templates', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, tree }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data) {
+          this.showToast(data?.error || '创建模板失败', 'error');
+          return null;
+        }
+        await this.loadTemplates();
+        this.showToast('模板已创建', 'success');
+        return data.template || null;
+      } catch {
+        this.showToast('创建模板失败', 'error');
+        return null;
+      }
+    },
+
+    async updateTemplate(id, patch) {
+      try {
+        const res = await fetch(`/api/templates/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(patch),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data) {
+          this.showToast(data?.error || '更新模板失败', 'error');
+          return null;
+        }
+        await this.loadTemplates();
+        this.showToast('模板已更新', 'success');
+        return data.template || null;
+      } catch {
+        this.showToast('更新模板失败', 'error');
+        return null;
+      }
+    },
+
+    async deleteTemplate(id) {
+      try {
+        const res = await fetch(`/api/templates/${id}`, {
+          method: 'DELETE', headers: { 'Accept': 'application/json' },
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.success) {
+          this.showToast(data?.error || '删除模板失败', 'error');
+          return;
+        }
+        await this.loadTemplates();
+        this.showToast('模板已删除', 'success');
+      } catch {
+        this.showToast('删除模板失败', 'error');
+      }
+    },
+
+    async resetPresetTemplate(id) {
+      if (!await AppDialog.confirm('确定要重置此预置模板？所有书签将变为未分类，分类树将恢复为模板默认状态。')) return;
+      try {
+        const res = await fetch(`/api/templates/${id}/reset`, {
+          method: 'POST',
+          headers: { 'Accept': 'application/json' },
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.success) {
+          this.showToast(data?.error || '重置模板失败', 'error');
+          return;
+        }
+        await this.loadTemplates();
+        await this.loadCategories();
+        await this.loadBookmarks();
+        this.showToast('模板已重置', 'success');
+      } catch {
+        this.showToast('重置模板失败', 'error');
+      }
+    },
+
+    async openTemplateEditor(tplId) {
+      try {
+        const res = await fetch(`/api/templates/${tplId}`, { headers: { 'Accept': 'application/json' } });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.template) {
+          this.showToast('加载模板详情失败', 'error');
+          return;
+        }
+        this.templateEditTarget = data.template;
+        this.templateEditName = data.template.name;
+        this.templateEditTree = (data.template.tree || []).map(n => ({
+          name: n.name,
+          children: (n.children || []).map(c => ({ name: c.name })),
+        }));
+        this.templateEditSourceId = null;
+        this.templateEditSnapshot = JSON.stringify({ name: this.templateEditName, tree: this.templateEditTree });
+        this.showTemplateEditModal = true;
+      } catch {
+        this.showToast('加载模板详情失败', 'error');
+      }
+    },
+
+    async copyTemplateAsCustom(tplId) {
+      try {
+        const res = await fetch(`/api/templates/${tplId}`, { headers: { 'Accept': 'application/json' } });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.template) {
+          this.showToast('加载模板详情失败', 'error');
+          return;
+        }
+        this.templateEditTarget = null;
+        this.templateEditName = data.template.name + ' (自定义)';
+        this.templateEditTree = (data.template.tree || []).map(n => ({
+          name: n.name,
+          children: (n.children || []).map(c => ({ name: c.name })),
+        }));
+        this.showTemplateEditModal = true;
+      } catch {
+        this.showToast('加载模板详情失败', 'error');
+      }
+    },
+
+    openNewTemplateEditor() {
+      this.templateEditTarget = null;
+      this.templateEditName = '';
+      this.templateEditTree = [];
+      this.templateEditSourceId = null;
+      this.templateEditSnapshot = JSON.stringify({ name: '', tree: [] });
+      this.showTemplateEditModal = true;
+    },
+
+    hasUnsavedTemplateChanges() {
+      if (!this.templateEditSnapshot) return false;
+      return JSON.stringify({ name: this.templateEditName, tree: this.templateEditTree }) !== this.templateEditSnapshot;
+    },
+
+    async loadPresetTreeForEdit(sourceId) {
+      if (!sourceId) {
+        this.templateEditTree = [];
+        return;
+      }
+      try {
+        const res = await fetch(`/api/templates/${sourceId}`, { headers: { 'Accept': 'application/json' } });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.template?.tree) {
+          this.templateEditTree = data.template.tree.map(n => ({
+            name: n.name,
+            children: (n.children || []).map(c => ({ name: c.name })),
+          }));
+        }
+      } catch {
+        this.showToast('加载预置模板失败', 'error');
+      }
+    },
+
+    addTemplateTreeNode(parentIndex) {
+      if (parentIndex === undefined) {
+        this.templateEditTree.push({ name: '新分类', children: [] });
+      } else {
+        if (!this.templateEditTree[parentIndex].children) this.templateEditTree[parentIndex].children = [];
+        this.templateEditTree[parentIndex].children.push({ name: '新子分类' });
+      }
+    },
+
+    removeTemplateTreeNode(parentIndex, childIndex) {
+      if (childIndex === undefined) {
+        this.templateEditTree.splice(parentIndex, 1);
+      } else {
+        this.templateEditTree[parentIndex].children.splice(childIndex, 1);
+      }
+    },
+
+    async saveTemplateEdit() {
+      const name = this.templateEditName.trim();
+      if (!name) { this.showToast('模板名称不能为空', 'error'); return; }
+      if (this.templateEditTarget) {
+        await this.updateTemplate(this.templateEditTarget.id, { name, tree: this.templateEditTree });
+      } else {
+        await this.createTemplate(name, this.templateEditTree);
+      }
+      this.showTemplateEditModal = false;
+    },
+
+    promptClassifyBatch(bookmarkIds) {
+      if (!this.isAIConfigured()) {
+        this.showToast('请先在设置页配置 AI（Base URL、API Key、Model）', 'error');
+        return;
+      }
+      if (!this.activeTemplate) {
+        this.showToast('请先选择分类模板', 'error');
+        return;
+      }
+      if (!bookmarkIds || bookmarkIds.length === 0) {
+        this.showToast('没有可分类的书签', 'error');
+        return;
+      }
+      this.classifyBatchIds = bookmarkIds;
+      this.classifyBatchSize = 20;
+      this.showBatchSizeModal = true;
+    },
+
+    async startClassifyBatch(bookmarkIds, batchSize) {
+      this.showBatchSizeModal = false;
+      try {
+        const res = await fetch('/api/ai/classify-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bookmark_ids: bookmarkIds, batch_size: batchSize }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.success) {
+          if (res.status === 409) {
+            this.showToast('有正在执行的 AI 分类任务，请等待完成后再试', 'error');
+            return;
+          }
+          this.showToast(data?.error || '启动 AI 分类失败', 'error');
+          return;
+        }
+        this.organizePlan = { id: data.planId, job_id: data.jobId };
+        this.organizePhase = 'assigning';
+        this.organizeProgress = { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 };
+        this.showAIOrganizeModal = true;
+        this.pollOrganizeProgress();
+        this.showToast(`AI 分类已启动 (${bookmarkIds.length} 个书签)`, 'info');
+      } catch {
+        this.showToast('启动 AI 分类失败', 'error');
+      }
+    },
+
     openAIOrganizeModal() {
       if (!this.isAIConfigured()) {
         this.showToast('请先在设置页配置 AI（Base URL、API Key、Model）', 'error');
@@ -1538,11 +1798,11 @@ function bookmarkApp() {
       this.organizeScopeCategoryId = '';
       this.organizePlan = null;
       this.organizePhase = 'idle';
-      this.organizeTreeDraft = [];
       this.organizeDiff = null;
       this.organizeConflicts = [];
       this.organizeEmptyCategories = [];
       this.organizeAppliedCount = 0;
+      this.loadPendingPlans();
       this.showAIOrganizeModal = true;
     },
 
@@ -1607,25 +1867,79 @@ function bookmarkApp() {
         return;
       }
       try {
-        this.organizePhase = 'designing';
+        this.organizePhase = 'assigning';
         const scope = this.organizeScope === 'category' ? 'category:' + this.organizeScopeCategoryId : this.organizeScope;
         const res = await fetch('/api/ai/organize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scope })
+          body: JSON.stringify({ scope, batch_size: this.classifyBatchSize || 20 })
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.success) {
+          if (res.status === 409 && data?.activePlanId) {
+            await this.recoverActivePlan(data.activePlanId);
+            return;
+          }
           this.showToast(data?.error || '启动整理失败', 'error');
           this.organizePhase = 'idle';
           return;
         }
-        this.organizePlan = { id: data.planId };
-        await this.loadOrganizePlan();
-        this.organizePhase = 'editing';
+        this.organizePlan = { id: data.planId, job_id: data.jobId };
+        this.organizeProgress = { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 };
+        this.pollOrganizeProgress();
       } catch {
         this.showToast('启动整理失败', 'error');
         this.organizePhase = 'idle';
+      }
+    },
+
+    async recoverActivePlan(planId) {
+      try {
+        let res = await fetch(planId ? ('/api/ai/organize/' + encodeURIComponent(planId)) : '/api/ai/organize/active');
+        let data = await res.json().catch(() => null);
+        if (planId && (!res.ok || !data)) {
+          res = await fetch('/api/ai/organize/active');
+          data = await res.json().catch(() => null);
+        }
+        if (!res.ok || !data || data.active === null) {
+          this.showToast('未找到活跃计划', 'error');
+          this.organizePhase = 'idle';
+          return;
+        }
+        this.organizePlan = data;
+        this.organizeProgress = {
+          batches_done: data.batches_done || 0,
+          batches_total: data.batches_total || 0,
+          failed_batch_ids: data.failed_batch_ids || [],
+          needs_review_count: data.needs_review_count || 0,
+        };
+        this.organizeDiff = data.diff || null;
+        this.showToast('已有进行中的整理计划', 'info');
+        if (data.status === 'assigning') { this.organizePhase = 'assigning'; this.pollOrganizeProgress(); }
+        else if (data.status === 'preview') { this.organizePhase = 'preview'; }
+        else if (data.status === 'applied') { this.organizePhase = 'applied'; }
+        else if (data.status === 'failed') this.organizePhase = 'failed';
+      } catch {
+        this.showToast('恢复计划失败', 'error');
+        this.organizePhase = 'idle';
+      }
+    },
+
+    async cancelAndRestart() {
+      if (!this.organizePlan?.id) return;
+      try {
+        const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/cancel', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }
+        });
+        if (res.ok) {
+          this.organizePlan = null;
+          this.organizePhase = 'idle';
+          await this.startOrganize();
+        } else {
+          this.showToast('取消计划失败', 'error');
+        }
+      } catch {
+        this.showToast('取消计划失败', 'error');
       }
     },
 
@@ -1636,41 +1950,27 @@ function bookmarkApp() {
         const data = await res.json().catch(() => null);
         if (res.ok && data) {
           this.organizePlan = data;
-          this.organizeTreeDraft = data.target_tree || [];
           this.organizeProgress = {
             batches_done: data.batches_done || 0,
             batches_total: data.batches_total || 0,
             failed_batch_ids: data.failed_batch_ids || [],
             needs_review_count: data.needs_review_count || 0,
           };
-          if (data.diff) this.organizeDiff = data.diff;
-          if (data.status === 'preview') this.organizePhase = 'preview';
-          else if (data.status === 'assigning') this.organizePhase = 'assigning';
-          else if (data.status === 'applied') this.organizePhase = 'applied';
-          else if (data.status === 'failed') this.organizePhase = 'failed';
-          else if (data.status === 'designing') this.organizePhase = 'editing';
+          if (data.diff) {
+            if (data.diff.empty_categories) data.diff.empty_categories = data.diff.empty_categories.map(e => ({ ...e, action: e.action || 'keep' }));
+            this.organizeDiff = data.diff;
+          }
+          if (data.status === 'preview') {
+            this.organizePhase = 'preview';
+          } else if (data.status === 'applied') {
+            this.organizePhase = 'applied';
+          } else if (data.status === 'assigning') {
+            this.organizePhase = 'assigning';
+          } else if (data.status === 'failed') {
+            this.organizePhase = 'failed';
+          }
         }
       } catch { }
-    },
-
-    async confirmTree() {
-      if (!this.organizePlan?.id) return;
-      try {
-        const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/tree', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tree: this.organizeTreeDraft, confirm: true })
-        });
-        const data = await res.json().catch(() => null);
-        if (res.ok && data?.success) {
-          this.organizePhase = 'assigning';
-          this.pollOrganizeProgress();
-        } else {
-          this.showToast(data?.error || '确认分类树失败', 'error');
-        }
-      } catch {
-        this.showToast('确认分类树失败', 'error');
-      }
     },
 
     pollOrganizeProgress() {
@@ -1688,7 +1988,7 @@ function bookmarkApp() {
       if (!this.organizePlan?.id) return;
       try {
         const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/apply', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data?.success) {
@@ -1698,7 +1998,10 @@ function bookmarkApp() {
           if (this.organizeConflicts.length > 0 || this.organizeEmptyCategories.length > 0) {
             this.organizeResolving = true;
           } else {
-            await this.resolveAndApply();
+            this.organizePhase = 'applied';
+            this.showToast('整理已应用，共移动 ' + (data.applied_count || 0) + ' 个书签', 'success');
+            this.loadBookmarks();
+            this.loadCategories();
           }
         } else {
           this.showToast(data?.error || '应用失败', 'error');
@@ -1819,41 +2122,17 @@ function bookmarkApp() {
       return (Date.now() - appliedAt) < 24 * 60 * 60 * 1000;
     },
 
-    addTreeNode(parentIndex) {
-      if (parentIndex === undefined) {
-        this.organizeTreeDraft.push({ name: '新分类', children: [] });
-      } else {
-        this.organizeTreeDraft[parentIndex].children.push({ name: '新子分类' });
-      }
-    },
-
-    removeTreeNode(parentIndex, childIndex) {
-      if (childIndex === undefined) {
-        this.organizeTreeDraft.splice(parentIndex, 1);
-      } else {
-        this.organizeTreeDraft[parentIndex].children.splice(childIndex, 1);
-      }
-    },
-
-    async aiClassifyOne(bookmark) {
-      if (!this.isAIConfigured()) {
-        this.showToast('请先在设置页配置 AI', 'error');
-        return;
-      }
+    async loadPendingPlans() {
       try {
-        const res = await fetch('/api/ai/classify', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ title: bookmark.title, url: bookmark.url })
-        });
+        const res = await fetch('/api/ai/organize/pending');
         const data = await res.json().catch(() => null);
-        if (res.ok && data?.category) {
-          this.showToast('建议分类: ' + data.category, 'success');
-        } else {
-          this.showToast(data?.error || 'AI 分类失败', 'error');
-        }
-      } catch {
-        this.showToast('AI 分类失败', 'error');
+        this.pendingPlans = (data?.plans || []);
+      } catch { this.pendingPlans = []; }
+    },
+
+    viewPendingPlan(plan) {
+      if (plan.job_id) {
+        window.location.href = '/jobs/' + plan.job_id;
       }
     },
 

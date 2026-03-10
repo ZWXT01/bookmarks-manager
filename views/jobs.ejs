@@ -7,6 +7,7 @@
   <title>任务列表 - 书签管理器</title>
   <script src="/public/lib/tailwind.js"></script>
   <link rel="stylesheet" href="/public/app.css" />
+  <script src="/public/dialog.js"></script>
   <script>
     (function () {
       var theme = localStorage.getItem('theme');
@@ -30,7 +31,7 @@
           <div class="text-xs text-slate-500">导入/检查任务历史（共 <%= total %> 条）</div>
         </div>
         <div class="flex items-center gap-2">
-          <button id="theme-toggle" class="btn-secondary btn-sm">🌙</button>
+          <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
           <button id="clear-completed-btn" class="btn-secondary btn-sm">清理已完成</button>
           <button id="clear-all-btn" class="btn-danger btn-sm">清空全部</button>
           <a class="btn-secondary btn-sm" href="/">← 返回</a>
@@ -176,35 +177,35 @@
 
       // 清理已完成任务
       document.getElementById('clear-completed-btn').addEventListener('click', async function () {
-        if (!confirm('确定要清理所有已完成的任务吗？')) return;
+        if (!await AppDialog.confirm('确定要清理所有已完成的任务吗？')) return;
         try {
           var res = await fetch('/api/jobs/clear-completed', { method: 'POST' });
           var data = await res.json();
           if (res.ok && data.success) {
-            alert('已清理 ' + data.deleted + ' 条已完成任务');
+            await AppDialog.alert('已清理 ' + data.deleted + ' 条已完成任务');
             location.reload();
           } else {
-            alert('清理失败：' + (data.error || '未知错误'));
+            await AppDialog.alert('清理失败：' + (data.error || '未知错误'));
           }
         } catch {
-          alert('清理失败');
+          await AppDialog.alert('清理失败');
         }
       });
 
       // 清空全部任务
       document.getElementById('clear-all-btn').addEventListener('click', async function () {
-        if (!confirm('确定要清空所有任务记录吗？此操作不可恢复！')) return;
+        if (!await AppDialog.confirm('确定要清空所有任务记录吗？此操作不可恢复！')) return;
         try {
           var res = await fetch('/api/jobs/clear-all', { method: 'POST' });
           var data = await res.json();
           if (res.ok && data.success) {
-            alert('已清空 ' + data.deleted + ' 条任务记录');
+            await AppDialog.alert('已清空 ' + data.deleted + ' 条任务记录');
             location.reload();
           } else {
-            alert('清空失败：' + (data.error || '未知错误'));
+            await AppDialog.alert('清空失败：' + (data.error || '未知错误'));
           }
         } catch {
-          alert('清空失败');
+          await AppDialog.alert('清空失败');
         }
       });
 

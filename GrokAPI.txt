@@ -1,2 +1,0 @@
-GrokApiUrl:https://grok2api.1018666.xyz/v1/chat/completions
-APIKey:sk-Dmy3B0yAvAFv4vuJkuZxOELG

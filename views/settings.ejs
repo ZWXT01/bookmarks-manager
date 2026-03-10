@@ -7,6 +7,7 @@
   <title>设置 - 书签管理器</title>
   <script src="/public/lib/tailwind.js"></script>
   <link rel="stylesheet" href="/public/app.css" />
+  <script src="/public/dialog.js"></script>
   <script>
     // 初始化主题
     (function () {
@@ -30,7 +31,7 @@
           <div class="text-xs text-slate-500">说明：如同时配置了环境变量，则以环境变量为准（本应用启动时也会读取 .env）。</div>
         </div>
         <div class="flex items-center gap-2">
-          <button id="theme-toggle" class="btn-secondary btn-sm">🌙</button>
+          <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
           <a class="btn-secondary btn-sm inline-flex items-center" href="/">← 返回</a>
         </div>
       </div>
@@ -162,15 +163,6 @@
         <div class="text-xs text-slate-600">Model</div>
         <input name="ai_model" value="<%- aiModel %>" placeholder="例如 gpt-4o-mini 或 grok-4"
           class="mt-1 w-full rounded border px-3 py-2 text-sm" />
-      </label>
-      <label class="block">
-        <div class="text-xs text-slate-600">每批分类数量</div>
-        <select name="ai_batch_size" class="mt-1 w-full rounded border px-3 py-2 text-sm">
-          <option value="15" <%- aiBatchSize==='15' ? 'selected' : '' %>>15</option>
-          <option value="30" <%- aiBatchSize==='30' || !aiBatchSize ? 'selected' : '' %>>30（默认）</option>
-          <option value="50" <%- aiBatchSize==='50' ? 'selected' : '' %>>50</option>
-          <option value="100" <%- aiBatchSize==='100' ? 'selected' : '' %>>100</option>
-        </select>
       </label>
     </div>
     <div class="mt-3 text-xs text-slate-500">配置后可调用 /api/ai/classify 获取分类建议（先输出分类路径）。</div>
@@ -390,7 +382,7 @@
       var resetBtn = document.getElementById('settings-reset');
       if (resetBtn) {
         resetBtn.addEventListener('click', async function () {
-          if (!confirm('确定要恢复默认设置吗？这将清空 AI 配置并重置所有参数为默认值。')) return;
+          if (!await AppDialog.confirm('确定要恢复默认设置吗？这将清空 AI 配置并重置所有参数为默认值。')) return;
           resetBtn.disabled = true;
           resetBtn.classList.add('opacity-60');
           try {
@@ -445,7 +437,6 @@
           var modelInput = form.querySelector('input[name="ai_model"]');
           if (urlInput) urlInput.value = preset.base_url;
           if (modelInput) modelInput.value = preset.model;
-          this.value = '';
           showToast('已填充 ' + presetName + ' 预设，请填写 API Key 后保存', 'success');
         });
       }
@@ -590,7 +581,7 @@
             deleteBtns.forEach(function (btn) {
               btn.addEventListener('click', async function () {
                 var tokenId = this.getAttribute('data-token-id');
-                if (!confirm('确定要删除此 Token 吗？删除后使用此 Token 的应用将无法访问 API。')) return;
+                if (!await AppDialog.confirm('确定要删除此 Token 吗？删除后使用此 Token 的应用将无法访问 API。')) return;
                 try {
                   var res = await fetch('/api/tokens/' + tokenId, { method: 'DELETE' });
                   if (res.ok) {

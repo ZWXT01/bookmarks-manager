@@ -54,7 +54,7 @@ import {
 } from './category-service';
 
 // 路由模块
-import { bookmarkRoutes, categoryRoutes, snapshotRoutes, backupRoutes, aiRoutes, authRoutes, settingsRoutes, jobsRoutes, checkRoutes, importRoutes, pagesRoutes, formsRoutes, type CategoryRow, type CategoryEditRow, type BookmarkRow, type BookmarkEditRow } from './routes';
+import { bookmarkRoutes, categoryRoutes, snapshotRoutes, backupRoutes, aiRoutes, authRoutes, settingsRoutes, jobsRoutes, checkRoutes, importRoutes, pagesRoutes, formsRoutes, templateRoutes, type CategoryRow, type CategoryEditRow, type BookmarkRow, type BookmarkEditRow } from './routes';
 
 
 
@@ -149,6 +149,11 @@ async function main(): Promise<void> {
 
   // 初始化用户表
   initUserTable(db);
+
+  // 清理重启前残留的 assigning Plan
+  const { recoverStalePlans } = await import('./ai-organize-plan');
+  const recovered = recoverStalePlans(db);
+  if (recovered > 0) console.log(`recovered ${recovered} stale plan(s)`);
 
   function getSetting(key: string): string | null {
     try {
@@ -367,6 +372,7 @@ async function main(): Promise<void> {
   await app.register(importRoutes, { db });
   await app.register(pagesRoutes, { db, toIntClamp });
   await app.register(formsRoutes, { db, safeRedirectTarget, withFlash });
+  await app.register(templateRoutes, { db });
 
   // API Token 认证 + Session 认证（在 session 插件注册之后）
   app.addHook('preHandler', async (req, reply) => {
@@ -411,6 +417,22 @@ async function main(): Promise<void> {
     // 非 API 请求走正常的 session 认证（重定向到登录页）
     if (!req.session?.authenticated) {
       return reply.redirect('/login');
+    }
+
+    // CSRF: 对 session 认证的写操作校验 Origin/Referer
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && !(req as any).apiTokenAuth) {
+      const origin = req.headers.origin;
+      const referer = req.headers.referer;
+      const host = req.headers.host;
+      if (host) {
+        let source = origin || null;
+        if (!source && referer) {
+          try { source = new URL(referer).origin; } catch { /* malformed referer */ }
+        }
+        if (!source || (source !== 'http://' + host && source !== 'https://' + host)) {
+          return reply.code(403).send({ error: 'CSRF validation failed' });
+        }
+      }
     }
   });
 

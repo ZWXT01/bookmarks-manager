@@ -72,60 +72,127 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         }
     });
 
-    // ==================== AI Organize Routes ====================
-
-    // POST /api/ai/organize - 启动整理
-    app.post('/api/ai/organize', async (req: FastifyRequest, reply: FastifyReply) => {
+    // POST /api/ai/classify-batch - 多入口批量 AI 分类
+    app.post('/api/ai/classify-batch', async (req: FastifyRequest, reply: FastifyReply) => {
         const body: any = req.body || {};
-        const scope = typeof body.scope === 'string' ? body.scope.trim() : 'all';
+        const rawIds = body.bookmark_ids;
+        const batchSize = body.batch_size ?? 20;
+
+        if (!Array.isArray(rawIds) || rawIds.length === 0) {
+            return reply.code(400).send({ error: '请提供书签 ID 列表' });
+        }
+        const ids = [...new Set(rawIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isInteger(id) && id > 0))];
+        if (ids.length === 0) return reply.code(400).send({ error: '无有效的书签 ID' });
+
+        if (![10, 20, 30].includes(batchSize)) {
+            return reply.code(400).send({ error: 'batch_size 必须为 10、20 或 30' });
+        }
+
         const config = getAIConfig(getSetting);
         if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
 
         try {
-            const { createPlan } = await import('../ai-organize-plan');
-            const { designCategoryTree, assignBookmarks } = await import('../ai-organize');
-            const { jobQueue, updateJob } = await import('../jobs');
+            const { getActiveTemplate } = await import('../template-service');
+            if (!getActiveTemplate(db)) return reply.code(400).send({ error: '请先应用一个分类模板' });
 
-            const plan = createPlan(db, scope);
+            const { createPlan, updatePlan } = await import('../ai-organize-plan');
+            const { assignBookmarks } = await import('../ai-organize');
+            const { createJob, jobQueue, updateJob } = await import('../jobs');
 
-            // auto mode: AI designs tree, then starts assignment
-            const { getPlan, updatePlan, updatePlanTree, transitionStatus } = await import('../ai-organize-plan');
+            const plan = createPlan(db, 'ids:' + ids.join(','));
+            const job = createJob(db, 'ai_organize', `AI 批量分类 (${ids.length} 个书签)`, ids.length);
+            updatePlan(db, plan.id, { job_id: job.id });
 
-            try {
-                const tree = await designCategoryTree(db, config, scope);
-                updatePlan(db, plan.id, { target_tree: JSON.stringify(tree) });
-            } catch (e: any) {
-                req.log.error({ err: e }, 'ai design category tree failed');
-                return reply.send({ success: true, planId: plan.id, treeReady: false, message: e.message });
-            }
+            jobQueue.enqueue(job.id, async () => {
+                try {
+                    await assignBookmarks(db, plan.id, config, {}, batchSize);
+                } catch (e: any) {
+                    updateJob(db, job.id, { status: 'failed', message: e.message });
+                }
+            });
 
-            return reply.send({ success: true, planId: plan.id, treeReady: true });
+            return reply.send({ success: true, planId: plan.id, jobId: job.id });
         } catch (e: any) {
-            req.log.error({ err: e }, 'organize start failed');
-            const body: Record<string, unknown> = { error: e.message };
-            if (e.statusCode === 409 && e.activePlanId) body.activePlanId = e.activePlanId;
-            return reply.code(e.statusCode || 500).send(body);
+            req.log.error({ err: e }, 'classify-batch failed');
+            const resp: Record<string, unknown> = { error: e.message };
+            if (e.statusCode === 409 && e.activePlanId) resp.activePlanId = e.activePlanId;
+            return reply.code(e.statusCode || 500).send(resp);
         }
     });
 
-    // GET /api/ai/organize/active - 获取当前活跃 Plan
+    // ==================== AI Organize Routes ====================
+
+    // POST /api/ai/organize - 启动整理（直接进入 assigning）
+    app.post('/api/ai/organize', async (req: FastifyRequest, reply: FastifyReply) => {
+        const body: any = req.body || {};
+        const scope = typeof body.scope === 'string' ? body.scope.trim() : 'all';
+        const batchSize = body.batch_size ?? 20;
+        const config = getAIConfig(getSetting);
+        if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
+
+        if (![10, 20, 30].includes(batchSize)) {
+            return reply.code(400).send({ error: 'batch_size 必须为 10、20 或 30' });
+        }
+
+        try {
+            const { getActiveTemplate } = await import('../template-service');
+            if (!getActiveTemplate(db)) return reply.code(400).send({ error: '请先应用一个分类模板' });
+
+            const { createPlan, updatePlan } = await import('../ai-organize-plan');
+            const { assignBookmarks } = await import('../ai-organize');
+            const { createJob, jobQueue, updateJob } = await import('../jobs');
+
+            const plan = createPlan(db, scope);
+            const job = createJob(db, 'ai_organize', `AI 整理 (${scope})`, 0);
+            updatePlan(db, plan.id, { job_id: job.id });
+
+            jobQueue.enqueue(job.id, async () => {
+                try {
+                    await assignBookmarks(db, plan.id, config, {}, batchSize);
+                } catch (e: any) {
+                    updateJob(db, job.id, { status: 'failed', message: e.message });
+                }
+            });
+
+            return reply.send({ success: true, planId: plan.id, jobId: job.id });
+        } catch (e: any) {
+            req.log.error({ err: e }, 'organize start failed');
+            const resp: Record<string, unknown> = { error: e.message };
+            if (e.statusCode === 409 && e.activePlanId) resp.activePlanId = e.activePlanId;
+            return reply.code(e.statusCode || 500).send(resp);
+        }
+    });
+
+    // GET /api/ai/organize/active - 仅返回 assigning 状态的 Plan
     app.get('/api/ai/organize/active', async (_req: FastifyRequest, reply: FastifyReply) => {
         try {
-            const { getActivePlan, computeDiff } = await import('../ai-organize-plan');
+            const { getActivePlan } = await import('../ai-organize-plan');
             const plan = getActivePlan(db);
             if (!plan) return reply.send({ active: null });
 
             const result: any = { ...plan };
-            if (plan.target_tree) result.target_tree = JSON.parse(plan.target_tree);
             if (plan.assignments) result.assignments = JSON.parse(plan.assignments);
             if (plan.failed_batch_ids) result.failed_batch_ids = JSON.parse(plan.failed_batch_ids);
             delete result.backup_snapshot;
 
-            if (plan.status === 'preview' && plan.assignments) {
-                result.diff = computeDiff(db, plan);
-            }
-
             return reply.send(result);
+        } catch (e: any) {
+            return reply.code(500).send({ error: e.message });
+        }
+    });
+
+    // GET /api/ai/organize/pending - 返回所有 preview 状态的 Plan
+    app.get('/api/ai/organize/pending', async (_req: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const rows = db.prepare(`SELECT * FROM ai_organize_plans WHERE status = 'preview' ORDER BY created_at DESC`).all() as any[];
+            const plans = rows.map(p => {
+                const r: any = { ...p };
+                if (p.assignments) r.assignments = JSON.parse(p.assignments);
+                if (p.failed_batch_ids) r.failed_batch_ids = JSON.parse(p.failed_batch_ids);
+                delete r.backup_snapshot;
+                return r;
+            });
+            return reply.send({ plans });
         } catch (e: any) {
             return reply.code(500).send({ error: e.message });
         }
@@ -145,7 +212,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             if (plan.failed_batch_ids) result.failed_batch_ids = JSON.parse(plan.failed_batch_ids);
             delete result.backup_snapshot; // don't send snapshot to client
 
-            if (plan.status === 'preview' && plan.assignments) {
+            if ((plan.status === 'preview' || plan.status === 'assigning') && plan.assignments) {
                 result.diff = computeDiff(db, plan);
             }
 
@@ -155,48 +222,62 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         }
     });
 
-    // PUT /api/ai/organize/:planId/tree - 编辑分类树
-    app.put('/api/ai/organize/:planId/tree', async (req: FastifyRequest, reply: FastifyReply) => {
+    // GET /api/ai/organize/:planId/assignments - 分页获取 enriched assignments
+    app.get('/api/ai/organize/:planId/assignments', async (req: FastifyRequest, reply: FastifyReply) => {
         const { planId } = req.params as { planId: string };
-        const body: any = req.body || {};
-        const tree = body.tree;
-        const confirm = body.confirm === true;
-
-        if (!Array.isArray(tree)) return reply.code(400).send({ error: '请提供分类树数组' });
+        const q: any = (req as any).query || {};
+        const page = Math.max(1, parseInt(q.page, 10) || 1);
+        const pageSize = Math.min(200, Math.max(1, parseInt(q.page_size, 10) || 20));
 
         try {
-            const { updatePlanTree, getPlan } = await import('../ai-organize-plan');
-            const plan = updatePlanTree(db, planId, tree, confirm);
+            const { getPlan } = await import('../ai-organize-plan');
+            const plan = getPlan(db, planId);
+            if (!plan) return reply.code(404).send({ error: 'Plan 不存在' });
 
-            // if confirmed, start assignment job
-            if (confirm && plan.status === 'assigning' && plan.job_id) {
-                const config = getAIConfig(getSetting);
-                if (config) {
-                    const { assignBookmarks } = await import('../ai-organize');
-                    const { jobQueue, updateJob } = await import('../jobs');
-                    jobQueue.enqueue(plan.job_id, async () => {
-                        try {
-                            await assignBookmarks(db, planId, config, body.retryConfig);
-                        } catch (e: any) {
-                            updateJob(db, plan.job_id!, { status: 'failed', message: e.message });
-                        }
-                    });
-                }
+            const all: { bookmark_id: number; category_path: string; status: string }[] = plan.assignments ? JSON.parse(plan.assignments) : [];
+            const total = all.length;
+            const totalPages = Math.max(1, Math.ceil(total / pageSize));
+            const pageClamped = Math.min(page, totalPages);
+            const offset = (pageClamped - 1) * pageSize;
+            const slice = all.slice(offset, offset + pageSize);
+
+            const bmIds = slice.map(a => a.bookmark_id);
+            const bmMap = new Map<number, { title: string; url: string }>();
+            if (bmIds.length) {
+                const rows = db.prepare(`SELECT id, title, url FROM bookmarks WHERE id IN (${bmIds.map(() => '?').join(',')})`).all(...bmIds) as { id: number; title: string; url: string }[];
+                for (const r of rows) bmMap.set(r.id, { title: r.title, url: r.url });
             }
 
-            return reply.send({ success: true, plan: { ...plan, backup_snapshot: undefined } });
+            const assignments = slice.map(a => ({
+                bookmark_id: a.bookmark_id,
+                category_path: a.category_path,
+                status: a.status,
+                title: bmMap.get(a.bookmark_id)?.title ?? '[已删除的书签]',
+                url: bmMap.get(a.bookmark_id)?.url ?? '',
+            }));
+
+            return reply.send({ assignments, total, page: pageClamped, totalPages, pageSize });
         } catch (e: any) {
-            return reply.code(400).send({ error: e.message });
+            return reply.code(500).send({ error: e.message });
         }
     });
 
-    // POST /api/ai/organize/:planId/apply - 原子应用
+    // POST /api/ai/organize/:planId/apply - 原子应用（空分类检测）
     app.post('/api/ai/organize/:planId/apply', async (req: FastifyRequest, reply: FastifyReply) => {
         const { planId } = req.params as { planId: string };
         try {
-            const { applyPlan } = await import('../ai-organize-plan');
+            const { applyPlan, getPlan, transitionStatus } = await import('../ai-organize-plan');
             const result = applyPlan(db, planId);
-            return reply.send({ success: true, ...result });
+            const needsConfirm = result.conflicts.length > 0 || result.empty_categories.length > 0;
+            if (!needsConfirm) transitionStatus(db, planId, 'applied');
+            let template_name: string | null = null;
+            const plan = getPlan(db, planId);
+            if (plan?.template_id) {
+                const { getTemplate } = await import('../template-service');
+                const tpl = getTemplate(db, plan.template_id);
+                if (tpl) template_name = tpl.name;
+            }
+            return reply.send({ success: true, needs_confirm: needsConfirm, template_name, ...result });
         } catch (e: any) {
             return reply.code(e.statusCode || 500).send({ error: e.message });
         }
@@ -212,6 +293,21 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                 conflicts: body.conflicts,
                 empty_categories: body.empty_categories,
             });
+            return reply.send({ success: true, ...result });
+        } catch (e: any) {
+            return reply.code(e.statusCode || 500).send({ error: e.message });
+        }
+    });
+
+    // POST /api/ai/organize/:planId/apply/confirm-empty - 空分类确认
+    app.post('/api/ai/organize/:planId/apply/confirm-empty', async (req: FastifyRequest, reply: FastifyReply) => {
+        const { planId } = req.params as { planId: string };
+        const body: any = req.body || {};
+        const decisions = body.decisions;
+        if (!Array.isArray(decisions)) return reply.code(400).send({ error: '请提供 decisions 数组' });
+        try {
+            const { confirmEmpty } = await import('../ai-organize-plan');
+            const result = confirmEmpty(db, planId, decisions);
             return reply.send({ success: true, ...result });
         } catch (e: any) {
             return reply.code(e.statusCode || 500).send({ error: e.message });
