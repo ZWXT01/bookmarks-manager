@@ -93,13 +93,15 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
         try {
             const { getActiveTemplate } = await import('../template-service');
-            if (!getActiveTemplate(db)) return reply.code(400).send({ error: '请先应用一个分类模板' });
+            const activeTemplate = getActiveTemplate(db);
+            if (!activeTemplate) return reply.code(400).send({ error: '请先应用一个分类模板' });
 
             const { createPlan, updatePlan } = await import('../ai-organize-plan');
             const { assignBookmarks } = await import('../ai-organize');
             const { createJob, jobQueue, updateJob } = await import('../jobs');
 
-            const plan = createPlan(db, 'ids:' + ids.join(','));
+            // Use active template for batch classification
+            const plan = createPlan(db, 'ids:' + ids.join(','), activeTemplate.id);
             const job = createJob(db, 'ai_organize', `AI 批量分类 (${ids.length} 个书签)`, ids.length);
             updatePlan(db, plan.id, { job_id: job.id });
 
@@ -127,6 +129,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         const body: any = req.body || {};
         const scope = typeof body.scope === 'string' ? body.scope.trim() : 'all';
         const batchSize = body.batch_size ?? 20;
+        const templateId = typeof body.template_id === 'number' ? body.template_id : null;
         const config = getAIConfig(getSetting);
         if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
 
@@ -134,15 +137,36 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             return reply.code(400).send({ error: 'batch_size 必须为 10、20 或 30' });
         }
 
+        // Validate scope parameter
+        const validScopes = ['all', 'uncategorized'];
+        const isCategoryScope = scope.startsWith('category:');
+        const isIdsScope = scope.startsWith('ids:');
+        if (!validScopes.includes(scope) && !isCategoryScope && !isIdsScope) {
+            return reply.code(400).send({ error: 'scope 参数无效，必须为 all、uncategorized、category:N 或 ids:N,N,N' });
+        }
+
         try {
-            const { getActiveTemplate } = await import('../template-service');
-            if (!getActiveTemplate(db)) return reply.code(400).send({ error: '请先应用一个分类模板' });
+            const { getActiveTemplate, getTemplate } = await import('../template-service');
+            const activeTemplate = getActiveTemplate(db);
+            if (!activeTemplate) return reply.code(400).send({ error: '请先应用一个分类模板' });
+
+            // Validate template_id if provided
+            let targetTemplateId = templateId;
+            if (targetTemplateId !== null) {
+                const template = getTemplate(db, targetTemplateId);
+                if (!template) {
+                    return reply.code(400).send({ error: '指定的模板不存在' });
+                }
+            } else {
+                // Use active template if not specified
+                targetTemplateId = activeTemplate.id;
+            }
 
             const { createPlan, updatePlan } = await import('../ai-organize-plan');
             const { assignBookmarks } = await import('../ai-organize');
             const { createJob, jobQueue, updateJob } = await import('../jobs');
 
-            const plan = createPlan(db, scope);
+            const plan = createPlan(db, scope, targetTemplateId);
             const job = createJob(db, 'ai_organize', `AI 整理 (${scope})`, 0);
             updatePlan(db, plan.id, { job_id: job.id });
 

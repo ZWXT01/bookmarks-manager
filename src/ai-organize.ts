@@ -29,8 +29,33 @@ export function validateAssignment(categoryPath: string, validPaths: Set<string>
 
 interface BookmarkBatch { id: number; url: string; title: string; current_category: string | null }
 
-function buildValidPathsFromDb(db: Db): Set<string> {
+function buildValidPathsFromDb(db: Db, templateId?: number | null): Set<string> {
   const paths = new Set<string>();
+
+  // If templateId is provided and different from active, read from template tree
+  if (templateId != null) {
+    const { getTemplate, getActiveTemplate } = require('./template-service');
+    const active = getActiveTemplate(db);
+
+    if (active?.id !== templateId) {
+      // Cross-template: read from template's tree definition
+      const template = getTemplate(db, templateId);
+      if (template) {
+        const tree = JSON.parse(template.tree);
+        for (const node of tree) {
+          const fp = node.name.trim();
+          if (fp) paths.add(fp.toLowerCase());
+          for (const child of node.children || []) {
+            const cfp = `${node.name}/${child.name}`.trim();
+            if (cfp) paths.add(cfp.toLowerCase());
+          }
+        }
+        return paths;
+      }
+    }
+  }
+
+  // Default: read from live categories
   for (const node of getCategoryTree(db)) {
     const fp = node.fullPath.trim();
     if (fp) paths.add(fp.toLowerCase());
@@ -42,8 +67,33 @@ function buildValidPathsFromDb(db: Db): Set<string> {
   return paths;
 }
 
-function buildCategoryListFromDb(db: Db): string[] {
+function buildCategoryListFromDb(db: Db, templateId?: number | null): string[] {
   const list: string[] = [];
+
+  // If templateId is provided and different from active, read from template tree
+  if (templateId != null) {
+    const { getTemplate, getActiveTemplate } = require('./template-service');
+    const active = getActiveTemplate(db);
+
+    if (active?.id !== templateId) {
+      // Cross-template: read from template's tree definition
+      const template = getTemplate(db, templateId);
+      if (template) {
+        const tree = JSON.parse(template.tree);
+        for (const node of tree) {
+          const fp = node.name.trim();
+          if (fp) list.push(fp);
+          for (const child of node.children || []) {
+            const cfp = `${node.name}/${child.name}`.trim();
+            if (cfp) list.push(cfp);
+          }
+        }
+        return list;
+      }
+    }
+  }
+
+  // Default: read from live categories
   for (const node of getCategoryTree(db)) {
     const fp = node.fullPath.trim();
     if (fp) list.push(fp);
@@ -65,8 +115,9 @@ export async function assignBookmarks(
   const plan = getPlan(db, planId);
   if (!plan) throw new Error('plan not found');
 
-  const validPaths = buildValidPathsFromDb(db);
-  const categoryList = buildCategoryListFromDb(db);
+  // Critical fix: Read categories from target template, not live categories
+  const validPaths = buildValidPathsFromDb(db, plan.template_id);
+  const categoryList = buildCategoryListFromDb(db, plan.template_id);
 
   // resolve scope: support bookmark_ids, uncategorized, category:N, or all
   let whereClause = '';
@@ -190,7 +241,7 @@ ${categoriesText}
       url: bmMap.get(a.bookmark_id)?.url ?? '',
     }));
 
-    updatePlan(db, planId, { batches_done: bi + 1, needs_review_count: needsReviewCount });
+    updatePlan(db, planId, { batches_done: bi + 1, needs_review_count: needsReviewCount, assignments: JSON.stringify(allAssignments) });
     if (plan.job_id) {
       updateJob(db, plan.job_id, {
         processed: allAssignments.length,

@@ -179,7 +179,7 @@ function logStateChange(db: Db, planId: string, from: string | null, to: string,
 
 // ==================== CRUD ====================
 
-export function createPlan(db: Db, scope: string): PlanRow {
+export function createPlan(db: Db, scope: string, templateId?: number | null): PlanRow {
   return db.transaction(() => {
     cleanupExpiredSnapshots(db);
     const active = db.prepare(`SELECT * FROM ai_organize_plans WHERE status = 'assigning' ORDER BY created_at DESC LIMIT 1`).get() as PlanRow | undefined;
@@ -201,11 +201,17 @@ export function createPlan(db: Db, scope: string): PlanRow {
       }
     }
 
-    const activeTpl = getActiveTemplate(db);
+    // Use provided templateId or fallback to active template
+    let targetTemplateId = templateId;
+    if (targetTemplateId === undefined) {
+      const activeTpl = getActiveTemplate(db);
+      targetTemplateId = activeTpl?.id ?? null;
+    }
+
     const id = randomUUID();
     const now = nowIso();
     db.prepare(`INSERT INTO ai_organize_plans (id, status, scope, phase, template_id, batches_done, batches_total, needs_review_count, created_at)
-      VALUES (?, 'assigning', ?, 'assigning', ?, 0, 0, 0, ?)`).run(id, scope.trim() || 'all', activeTpl?.id ?? null, now);
+      VALUES (?, 'assigning', ?, 'assigning', ?, 0, 0, 0, ?)`).run(id, scope.trim() || 'all', targetTemplateId, now);
     logStateChange(db, id, null, 'assigning', 'plan_created');
 
     // cleanup: keep 5 most recent non-applied
@@ -368,7 +374,8 @@ export function computeDiff(db: Db, plan: PlanRow): DiffSummary {
 export function createBackupSnapshot(db: Db): string {
   const categories = db.prepare('SELECT id, name, parent_id, icon, color, sort_order, created_at FROM categories ORDER BY id').all();
   const bookmark_categories = db.prepare('SELECT id AS bookmark_id, category_id FROM bookmarks ORDER BY id').all();
-  return JSON.stringify({ categories, bookmark_categories });
+  const active = getActiveTemplate(db);
+  return JSON.stringify({ categories, bookmark_categories, active_template_id: active?.id ?? null });
 }
 
 export function applyPlan(db: Db, planId: string): ApplyResult {
@@ -376,11 +383,26 @@ export function applyPlan(db: Db, planId: string): ApplyResult {
     const plan = getPlan(db, planId);
     if (!plan || plan.status !== 'preview') throw new Error('plan can only be applied in preview status');
 
-    // Snapshot BEFORE any mutations (template switch, bookmark moves)
+    // Snapshot BEFORE any mutations
     if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
 
-    // Note: do NOT switch template here — applyPlan should only move bookmarks
-    // into categories that already exist under the current active template.
+    const active = getActiveTemplate(db);
+    if (plan.template_id != null && active?.id !== plan.template_id) {
+      // Cross-template apply: write to the plan's template snapshot, leave live tables untouched
+      const assignments = parseAssignments(plan.assignments);
+      const delSnap = db.prepare('DELETE FROM template_snapshots WHERE template_id = ? AND bookmark_id = ?');
+      const insSnap = db.prepare('INSERT INTO template_snapshots (template_id, bookmark_id, category_path) VALUES (?, ?, ?)');
+      let applied = 0;
+      for (const a of assignments) {
+        if (a.status === 'needs_review') { delSnap.run(plan.template_id, a.bookmark_id); continue; }
+        const tp = normalizePath(a.category_path);
+        if (!tp) continue;
+        delSnap.run(plan.template_id, a.bookmark_id);
+        insSnap.run(plan.template_id, a.bookmark_id, tp);
+        applied++;
+      }
+      return { conflicts: [], empty_categories: [], applied_count: applied };
+    }
 
     const assignments = parseAssignments(plan.assignments);
 
@@ -448,6 +470,29 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
     const assignments = parseAssignments(plan.assignments);
 
     if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
+
+    // Cross-template check: if plan belongs to non-active template, write to snapshot
+    const active = getActiveTemplate(db);
+    if (plan.template_id != null && active?.id !== plan.template_id) {
+      const delSnap = db.prepare('DELETE FROM template_snapshots WHERE template_id = ? AND bookmark_id = ?');
+      const insSnap = db.prepare('INSERT INTO template_snapshots (template_id, bookmark_id, category_path) VALUES (?, ?, ?)');
+      let applied = 0;
+      const conflictMap = new Map((decisions.conflicts ?? []).map(c => [c.bookmark_id, c.action]));
+      for (const a of assignments) {
+        const action = conflictMap.get(a.bookmark_id);
+        if (action === 'skip' || a.status === 'needs_review') {
+          delSnap.run(plan.template_id, a.bookmark_id);
+          continue;
+        }
+        const tp = normalizePath(a.category_path);
+        if (!tp) continue;
+        delSnap.run(plan.template_id, a.bookmark_id);
+        insSnap.run(plan.template_id, a.bookmark_id, tp);
+        applied++;
+      }
+      transitionStatus(db, planId, 'applied');
+      return { conflicts: [], empty_categories: [], applied_count: applied };
+    }
 
     const conflictMap = new Map((decisions.conflicts ?? []).map(c => [c.bookmark_id, c.action]));
     const emptyMap = new Map((decisions.empty_categories ?? []).map(e => [e.id, e.action]));
@@ -518,12 +563,33 @@ export function rollbackPlan(db: Db, planId: string): RollbackResult {
     throw new PlanError(403, 'rollback window expired');
   }
 
-  const snapshot = safeJson<{ categories?: unknown[]; bookmark_categories?: unknown[] }>(plan.backup_snapshot, {});
+  const snapshot = safeJson<{ categories?: unknown[]; bookmark_categories?: unknown[]; active_template_id?: number | null }>(plan.backup_snapshot, {});
   if (!Array.isArray(snapshot.categories) || !Array.isArray(snapshot.bookmark_categories)) {
     throw new PlanError(403, 'rollback snapshot corrupted');
   }
 
   return db.transaction(() => {
+    // Critical fix: Check if this was a cross-template apply
+    // Cross-template applies only modify template_snapshots, not live data
+    const activeAtApply = snapshot.active_template_id;
+    const wasCrossTemplate = plan.template_id != null && activeAtApply != null && plan.template_id !== activeAtApply;
+
+    if (wasCrossTemplate) {
+      // Cross-template rollback: only remove template_snapshots entries
+      const assignments = parseAssignments(plan.assignments);
+      const delSnap = db.prepare('DELETE FROM template_snapshots WHERE template_id = ? AND bookmark_id = ?');
+      let restored = 0;
+      for (const a of assignments) {
+        if (a.status !== 'needs_review') {
+          delSnap.run(plan.template_id, a.bookmark_id);
+          restored++;
+        }
+      }
+      transitionStatus(db, planId, 'rolled_back');
+      return { restored_categories: 0, restored_bookmarks: restored };
+    }
+
+    // Same-template rollback: restore live categories and bookmarks
     db.prepare('DELETE FROM categories').run();
     const ins = db.prepare('INSERT INTO categories (id, name, parent_id, icon, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
     // insert parents first
@@ -537,6 +603,14 @@ export function rollbackPlan(db: Db, planId: string): RollbackResult {
     for (const m of snapshot.bookmark_categories! as any[]) {
       const catId = m.category_id !== null && validIds.has(m.category_id) ? m.category_id : null;
       restored += upd.run(catId, now, m.bookmark_id).changes;
+    }
+
+    if (snapshot.active_template_id != null) {
+      const cur = getActiveTemplate(db);
+      if (cur?.id !== snapshot.active_template_id) {
+        db.prepare('UPDATE category_templates SET is_active = 0 WHERE is_active = 1').run();
+        db.prepare('UPDATE category_templates SET is_active = 1 WHERE id = ?').run(snapshot.active_template_id);
+      }
     }
 
     transitionStatus(db, planId, 'rolled_back');
@@ -580,6 +654,13 @@ export function confirmEmpty(db: Db, planId: string, decisions: { id: number; ac
   return db.transaction(() => {
     const plan = getPlan(db, planId);
     if (!plan || plan.status !== 'preview') throw new Error('plan must be in preview status');
+
+    // Cross-template check: if plan belongs to non-active template, skip category deletion
+    const active = getActiveTemplate(db);
+    if (plan.template_id != null && active?.id !== plan.template_id) {
+      // For cross-template plans, category deletion doesn't apply since we only write to snapshots
+      return { deleted: 0, kept: 0 };
+    }
 
     const decisionMap = new Map(decisions.map(d => [d.id, d.action]));
 

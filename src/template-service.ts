@@ -226,7 +226,15 @@ export function resetTemplate(db: Db, id: number): void {
 
   db.transaction(() => {
     const active = getActiveTemplate(db);
-    if (active && active.id !== id) saveSnapshot(db, active.id);
+
+    // Critical fix: Only allow resetting the currently active template
+    // Resetting non-active templates would corrupt live data
+    if (!active || active.id !== id) {
+      throw new TemplateError(403, 'only the active template can be reset');
+    }
+
+    // Save snapshot before reset
+    saveSnapshot(db, id);
 
     db.prepare('DELETE FROM categories').run();
     db.prepare('UPDATE bookmarks SET category_id = NULL').run();
@@ -239,11 +247,7 @@ export function resetTemplate(db: Db, id: number): void {
     }
 
     db.prepare('DELETE FROM template_snapshots WHERE template_id = ?').run(id);
-
-    if (!active || active.id !== id) {
-      db.prepare('UPDATE category_templates SET is_active = 0 WHERE is_active = 1').run();
-      db.prepare('UPDATE category_templates SET is_active = 1 WHERE id = ?').run(id);
-    }
+    db.prepare('UPDATE category_templates SET is_active = 1 WHERE id = ?').run(id);
   })();
 }
 

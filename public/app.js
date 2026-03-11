@@ -55,6 +55,13 @@ function bookmarkApp() {
     // 视图模式
     viewMode: localStorage.getItem('viewMode') || 'table', // 'table' or 'card'
 
+    // 分类管理 (Phase 1)
+    showCategoryManager: false,
+    categoryManagerSearch: '',
+    activeParentCategory: null,
+    categoryDropdownVisible: false,
+    showMobileSidebar: false,
+
     showMoveSelectedModal: false,
     moveSelectedTargetCategory: '',
 
@@ -132,6 +139,23 @@ function bookmarkApp() {
       await this.loadTemplates();
       this.restoreLastJob();
       this.pollCurrentJob();
+
+      // Initialize scroll indicators for category tabs
+      this.$nextTick(() => {
+        const tabsContainer = document.querySelector('.category-tabs-container');
+        const tabs = document.querySelector('.category-tabs');
+        if (tabsContainer && tabs) {
+          const updateScrollIndicators = () => {
+            const hasScrollLeft = tabs.scrollLeft > 10;
+            const hasScrollRight = tabs.scrollLeft < tabs.scrollWidth - tabs.clientWidth - 10;
+            tabsContainer.classList.toggle('has-scroll-left', hasScrollLeft);
+            tabsContainer.classList.toggle('has-scroll-right', hasScrollRight);
+          };
+          tabs.addEventListener('scroll', updateScrollIndicators);
+          setTimeout(updateScrollIndicators, 100);
+          window.addEventListener('resize', updateScrollIndicators);
+        }
+      });
     },
 
     initTheme() {
@@ -645,6 +669,58 @@ function bookmarkApp() {
     // 检查分类是否展开
     isCategoryExpanded(categoryId) {
       return this.expandedCategories.has(categoryId);
+    },
+
+    // 分类导航辅助方法 (Phase 1)
+    toggleCategoryDropdown(parentId) {
+      if (this.activeParentCategory === parentId && this.categoryDropdownVisible) {
+        this.closeCategoryDropdown();
+      } else {
+        this.activeParentCategory = parentId;
+        this.categoryDropdownVisible = true;
+      }
+    },
+
+    closeCategoryDropdown() {
+      this.categoryDropdownVisible = false;
+      this.activeParentCategory = null;
+    },
+
+    openCategoryManager() {
+      this.showCategoryManager = true;
+      this.categoryManagerSearch = '';
+      // Focus management: auto-focus search input when modal opens
+      this.$nextTick(() => {
+        const searchInput = document.querySelector('#category-manager-search');
+        if (searchInput) searchInput.focus();
+      });
+    },
+
+    closeCategoryManager() {
+      this.showCategoryManager = false;
+    },
+
+    // 过滤后的分类树（用于管理弹窗）
+    get filteredCategoryTree() {
+      if (!this.categoryManagerSearch.trim()) {
+        return this.categoryTree;
+      }
+      const keyword = this.categoryManagerSearch.toLowerCase().trim();
+      
+      const filterNodes = (nodes) => {
+        return nodes.map(node => {
+          const nameMatches = node.name.toLowerCase().includes(keyword);
+          const children = node.children ? filterNodes(node.children) : [];
+          const childrenMatch = children.length > 0;
+          
+          if (nameMatches || childrenMatch) {
+            return { ...node, children, isMatch: nameMatches };
+          }
+          return null;
+        }).filter(Boolean);
+      };
+      
+      return filterNodes(this.categoryTree);
     },
 
     initAllCategoryIds() {
@@ -1872,7 +1948,11 @@ function bookmarkApp() {
         const res = await fetch('/api/ai/organize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scope, batch_size: this.classifyBatchSize || 20 })
+          body: JSON.stringify({
+            scope,
+            batch_size: this.classifyBatchSize || 20,
+            template_id: this.activeTemplate?.id || null
+          })
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.success) {

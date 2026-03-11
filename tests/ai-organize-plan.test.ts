@@ -57,12 +57,16 @@ describe('ai-organize-plan', () => {
 
     it('should NOT clean up preview plan even if old', () => {
       const old = createPlan(db, 'all');
-      transitionStatus(db, old.id, 'assigning');
       transitionStatus(db, old.id, 'preview');
       const past = new Date(Date.now() - 7_200_001).toISOString();
       db.prepare('UPDATE ai_organize_plans SET created_at = ? WHERE id = ?').run(past, old.id);
 
-      expect(() => createPlan(db, 'all')).toThrow('active plan already exists');
+      // Preview plans are not checked by createPlan's timeout cleanup (only 'assigning' status)
+      // So this should succeed and create a new plan
+      const fresh = createPlan(db, 'all');
+      expect(fresh.id).not.toBe(old.id);
+      // Old plan should remain in preview status (not cleaned up)
+      expect(getPlan(db, old.id)!.status).toBe('preview');
     });
 
     it('should not clean up designing plan within 2h', () => {
@@ -76,9 +80,14 @@ describe('ai-organize-plan', () => {
 
     it('should not fail timeout cleanup when job record is missing', () => {
       const old = createPlan(db, 'all');
-      const assigning = transitionStatus(db, old.id, 'assigning');
-      if (!assigning.job_id) throw new Error('expected job_id');
-      db.prepare('DELETE FROM jobs WHERE id = ?').run(assigning.job_id);
+      // Manually create and link a job, then delete it to simulate orphaned reference
+      const jobId = 'test-job-' + Date.now();
+      const now = new Date().toISOString();
+      db.prepare('INSERT INTO jobs (id, type, status, total, processed, inserted, skipped, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+        jobId, 'ai_organize', 'running', 0, 0, 0, 0, now, now
+      );
+      db.prepare('UPDATE ai_organize_plans SET job_id = ? WHERE id = ?').run(jobId, old.id);
+      db.prepare('DELETE FROM jobs WHERE id = ?').run(jobId);
 
       const past = new Date(Date.now() - 7_200_001).toISOString();
       db.prepare('UPDATE ai_organize_plans SET created_at = ? WHERE id = ?').run(past, old.id);
@@ -102,31 +111,28 @@ describe('ai-organize-plan', () => {
   });
 
   describe('createPlan logging', () => {
-    it('should log user_create on new plan', () => {
+    it('should log plan_created on new plan', () => {
       const plan = createPlan(db, 'all');
       const logs = getLogs(db, plan.id);
       expect(logs).toHaveLength(1);
       expect(logs[0].from_status).toBeNull();
-      expect(logs[0].to_status).toBe('designing');
-      expect(logs[0].reason).toBe('user_create');
+      expect(logs[0].to_status).toBe('assigning');
+      expect(logs[0].reason).toBe('plan_created');
     });
   });
 
   describe('transitionStatus logging', () => {
     it('should log state changes with default reasons', () => {
       const plan = createPlan(db, 'all');
-      transitionStatus(db, plan.id, 'assigning');
+      // Plan already starts in 'assigning' status
       transitionStatus(db, plan.id, 'preview');
 
       const logs = getLogs(db, plan.id);
-      // user_create + assigning + preview = 3 logs
-      expect(logs).toHaveLength(3);
-      expect(logs[1].from_status).toBe('designing');
-      expect(logs[1].to_status).toBe('assigning');
-      expect(logs[1].reason).toBe('tree_confirmed');
-      expect(logs[2].from_status).toBe('assigning');
-      expect(logs[2].to_status).toBe('preview');
-      expect(logs[2].reason).toBe('assignment_complete');
+      // plan_created + preview = 2 logs
+      expect(logs).toHaveLength(2);
+      expect(logs[1].from_status).toBe('assigning');
+      expect(logs[1].to_status).toBe('preview');
+      expect(logs[1].reason).toBe('assignment_complete');
     });
 
     it('should use custom reason when provided', () => {
@@ -147,7 +153,7 @@ describe('ai-organize-plan', () => {
 
     it('should maintain log chain consistency', () => {
       const plan = createPlan(db, 'all');
-      transitionStatus(db, plan.id, 'assigning');
+      // Plan already starts in 'assigning' status
       transitionStatus(db, plan.id, 'preview');
       transitionStatus(db, plan.id, 'applied');
 
