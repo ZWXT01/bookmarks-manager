@@ -78,7 +78,7 @@
             </div>
         </div>
 
-        <div class="mx-auto max-w-screen-2xl px-4 py-4 h-[calc(100vh-70px)] flex flex-col lg:flex-row gap-4 relative">
+        <div class="mx-auto max-w-screen-2xl px-4 py-4 h-[calc(100vh-70px)] flex flex-col lg:flex-row gap-4 relative overflow-hidden">
             <!-- Mobile Sidebar Overlay -->
             <div x-show="showMobileSidebar" 
                  x-transition:enter="transition ease-out duration-300"
@@ -199,7 +199,7 @@
                 </aside>
 
                 <!-- Main Content -->
-                <main class="flex-1 min-w-0 flex flex-col overflow-y-auto overflow-x-hidden">
+                <main class="flex-1 min-w-0 flex flex-col overflow-hidden">
                     <!-- UI Redesign: Category Navigation moved from Sidebar to Top of Main Content -->
                     <!-- Category Tabs (Horizontal Scrollable) -->
                     <div class="category-tabs-container mb-4 rounded-lg shadow-sm border overflow-visible">
@@ -253,7 +253,7 @@
                         
                         <!-- Manage Button -->
                         <button @click="openCategoryManager()"
-                                class="ml-2 p-2 text-slate-400 hover:text-blue-500 transition-colors flex-shrink-0"
+                                class="ml-2 p-2 text-slate-400 hover:text-blue-500 transition-colors"
                                 aria-label="管理分类"
                                 title="管理分类">
                             <span class="text-lg" aria-hidden="true">⚙️</span>
@@ -311,7 +311,7 @@
                                 </select>
                             </div>
                             <button @click="addBookmark()"
-                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800 flex-shrink-0">添加</button>
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">添加</button>
                         </div>
                     </div>
 
@@ -322,12 +322,12 @@
                                 @keyup.enter="searchBookmarks()" placeholder="搜索书签..."
                                 class="flex-1 min-w-[200px] rounded border px-3 py-2 text-sm">
                             <button @click="searchBookmarks()"
-                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800 flex-shrink-0">搜索</button>
+                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">搜索</button>
                             <button @click="showAdvancedSearch = !showAdvancedSearch"
-                                class="rounded border px-3 py-2 text-sm hover:bg-slate-50 flex-shrink-0">
+                                class="rounded border px-3 py-2 text-sm hover:bg-slate-50">
                                 <span x-text="showAdvancedSearch ? '收起 ▲' : '筛选 ▼'"></span>
                             </button>
-                            <button @click="toggleViewMode()" class="rounded border px-3 py-2 text-sm hover:bg-slate-50 flex-shrink-0"
+                            <button @click="toggleViewMode()" class="rounded border px-3 py-2 text-sm hover:bg-slate-50"
                                 x-text="viewMode === 'table' ? '🗂️ 卡片' : '📋 表格'"></button>
                         </div>
 
@@ -378,23 +378,23 @@
                                 共 <span x-text="total"></span> 条，已选 <span x-text="selectedBookmarks.length"></span> 条
                             </span>
                             <template x-if="selectedBookmarks.length > 0">
-                                <div class="flex gap-1 flex-wrap">
+                                <div class="flex gap-1">
                                     <button @click="openMoveSelectedModal()"
-                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-50 flex-shrink-0">📁
+                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-50">📁
                                         移动</button>
                                     <button @click="openCheckModalForSelected()"
-                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-50 flex-shrink-0">🔍 检查</button>
+                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-50">🔍 检查</button>
                                     <button @click="promptClassifyBatch([...selectedBookmarks])"
-                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-50 flex-shrink-0">🤖 AI 分类</button>
+                                        class="rounded border px-2 py-1 text-xs hover:bg-slate-50">🤖 AI 分类</button>
                                     <button @click="batchDelete()"
-                                        class="rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 hover:bg-rose-50 flex-shrink-0">🗑️
+                                        class="rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 hover:bg-rose-50">🗑️
                                         删除选中</button>
                                 </div>
                             </template>
                             <!-- More dropdown -->
-                            <div class="relative ml-2 flex-shrink-0" x-data="{ showMoreMenu: false }">
+                            <div class="relative ml-2" x-data="{ showMoreMenu: false }">
                                 <button @click="showMoreMenu = !showMoreMenu"
-                                    class="rounded border px-2 py-1 text-xs hover:bg-slate-50 flex-shrink-0">更多 ▼</button>
+                                    class="rounded border px-2 py-1 text-xs hover:bg-slate-50">更多 ▼</button>
                                 <div x-show="showMoreMenu" @click.away="showMoreMenu = false"
                                     class="absolute left-0 top-full mt-1 z-50 w-28 rounded-lg border bg-white shadow-lg py-1 text-left">
                                     <button @click="deleteCurrentPage(); showMoreMenu = false"
@@ -404,22 +404,22 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2 flex-shrink-0">
-                            <span class="text-xs text-slate-500 flex-shrink-0">第 <span x-text="page"></span>/<span
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-slate-500">第 <span x-text="page"></span>/<span
                                     x-text="totalPages"></span>
                                 页</span>
                             <button @click="prevPage()" :disabled="page <= 1"
-                                class="rounded border px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50 flex-shrink-0">上一页</button>
+                                class="rounded border px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50">上一页</button>
                             <button @click="nextPage()" :disabled="page >= totalPages"
-                                class="rounded border px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50 flex-shrink-0">下一页</button>
+                                class="rounded border px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-50">下一页</button>
                         </div>
                     </div>
 
                     <!-- Bookmark List Area -->
                     <div class="flex-1 overflow-y-auto min-h-0">
                         <!-- Table View -->
-                        <div x-show="viewMode === 'table'" class="rounded-lg border bg-white shadow-sm overflow-x-auto overflow-y-hidden">
-                            <table class="w-full min-w-[720px]">
+                        <div x-show="viewMode === 'table'" class="rounded-lg border bg-white shadow-sm overflow-hidden">
+                            <table class="w-full">
                                 <thead class="bg-slate-50">
                                     <tr>
                                         <th class="w-10 px-3 py-2"><input type="checkbox" @change="toggleAll($event)"
