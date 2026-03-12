@@ -31,14 +31,15 @@ bookmarks.html
 *token*.txt
 
 # 大型文档（如果是自动生成）
-# openspec/changes/
-# docs/testing/
+openspec/changes/
+context.md
 
 # IDE 和编辑器配置
 .vscode/
 .idea/
 *.swp
 *.swo
+.windsurfignore
 
 # Claude Code 配置
 .claude/
