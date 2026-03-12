@@ -33,3 +33,16 @@ bookmarks.html
 # 大型文档（如果是自动生成）
 # openspec/changes/
 # docs/testing/
+
+# IDE 和编辑器配置
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code 配置
+.claude/
+
+# MCP 服务器日志和缓存
+.playwright-mcp/
+.mcp/
