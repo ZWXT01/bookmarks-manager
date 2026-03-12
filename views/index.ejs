@@ -256,8 +256,6 @@
                                     </button>
                                     <template x-if="cat.children && cat.children.length > 0">
                                         <button @click="toggleCategoryDropdown(cat.id)"
-                                                @keydown.enter="toggleCategoryDropdown(cat.id)"
-                                                @keydown.space.prevent="toggleCategoryDropdown(cat.id)"
                                                 type="button"
                                                 :aria-label="'展开 ' + cat.name + ' 子分类'"
                                                 :aria-expanded="activeParentCategory == cat.id && categoryDropdownVisible"
@@ -300,8 +298,6 @@
                                 <div class="col-span-full grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
                                     <template x-for="child in (categoryTree.find(c => c.id == activeParentCategory)?.children || [])" :key="child.id">
                                         <button @click="loadCategory(child.id); closeCategoryDropdown()"
-                                                @keydown.enter="loadCategory(child.id); closeCategoryDropdown()"
-                                                @keydown.space.prevent="loadCategory(child.id); closeCategoryDropdown()"
                                                 type="button"
                                                 :aria-label="(child.displayName || child.name) + '子分类'"
                                                 class="subcategory-item focus:outline-none focus:ring-2 focus:ring-blue-500"
