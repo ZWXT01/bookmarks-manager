@@ -5,3 +5,31 @@ node_modules
 *.sqlite
 *.sqlite3
 .env
+
+# 备份文件
+*.old
+*.new
+*.bak
+*.backup
+*~
+
+# 临时文件
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+
+# 测试数据
+test-bookmarks.html
+bookmarks.html
+*Bookmarks*.html
+
+# API 密钥
+*API*.txt
+*api*.txt
+*secret*.txt
+*token*.txt
+
+# 大型文档（如果是自动生成）
+# openspec/changes/
+# docs/testing/
