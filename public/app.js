@@ -60,6 +60,7 @@ function bookmarkApp() {
     categoryManagerSearch: '',
     activeParentCategory: null,
     categoryDropdownVisible: false,
+    showAddBookmarkModal: false,
     showMobileSidebar: false,
 
     showMoveSelectedModal: false,
@@ -683,6 +684,14 @@ function bookmarkApp() {
       this.showCategoryManager = false;
     },
 
+    openAddBookmarkModal() {
+      this.showAddBookmarkModal = true;
+    },
+
+    closeAddBookmarkModal() {
+      this.showAddBookmarkModal = false;
+    },
+
     // 过滤后的分类树（用于管理弹窗）
     get filteredCategoryTree() {
       if (!this.categoryManagerSearch.trim()) {
@@ -1198,6 +1207,7 @@ function bookmarkApp() {
           this.showToast('书签已添加', 'success');
           this.newBookmark = { url: '', title: '', category_id: '' };
           this.aiSuggestion = '';
+          this.showAddBookmarkModal = false;
           this.page = 1;
           await this.loadBookmarks();
           await this.loadCategories();
@@ -1795,12 +1805,15 @@ function bookmarkApp() {
     async saveTemplateEdit() {
       const name = this.templateEditName.trim();
       if (!name) { this.showToast('模板名称不能为空', 'error'); return; }
+      let result;
       if (this.templateEditTarget) {
-        await this.updateTemplate(this.templateEditTarget.id, { name, tree: this.templateEditTree });
+        result = await this.updateTemplate(this.templateEditTarget.id, { name, tree: this.templateEditTree });
       } else {
-        await this.createTemplate(name, this.templateEditTree);
+        result = await this.createTemplate(name, this.templateEditTree);
       }
-      this.showTemplateEditModal = false;
+      if (result) {
+        this.showTemplateEditModal = false;
+      }
     },
 
     promptClassifyBatch(bookmarkIds) {
