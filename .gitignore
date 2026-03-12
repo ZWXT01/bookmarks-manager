@@ -31,7 +31,7 @@ bookmarks.html
 *token*.txt
 
 # 大型文档（如果是自动生成）
-openspec/changes/
+openspec
 context.md
 
 # IDE 和编辑器配置
@@ -40,6 +40,7 @@ context.md
 *.swp
 *.swo
 .windsurfignore
+AGENTS.md
 
 # Claude Code 配置
 .claude/
