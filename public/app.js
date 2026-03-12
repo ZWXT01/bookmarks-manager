@@ -139,23 +139,6 @@ function bookmarkApp() {
       await this.loadTemplates();
       this.restoreLastJob();
       this.pollCurrentJob();
-
-      // Initialize scroll indicators for category tabs
-      this.$nextTick(() => {
-        const tabsContainer = document.querySelector('.category-tabs-container');
-        const tabs = document.querySelector('.category-tabs');
-        if (tabsContainer && tabs) {
-          const updateScrollIndicators = () => {
-            const hasScrollLeft = tabs.scrollLeft > 10;
-            const hasScrollRight = tabs.scrollLeft < tabs.scrollWidth - tabs.clientWidth - 10;
-            tabsContainer.classList.toggle('has-scroll-left', hasScrollLeft);
-            tabsContainer.classList.toggle('has-scroll-right', hasScrollRight);
-          };
-          tabs.addEventListener('scroll', updateScrollIndicators);
-          setTimeout(updateScrollIndicators, 100);
-          window.addEventListener('resize', updateScrollIndicators);
-        }
-      });
     },
 
     initTheme() {
@@ -1022,6 +1005,7 @@ function bookmarkApp() {
     async loadCategory(categoryId) {
       this.currentCategory = categoryId;
       this.page = 1;
+      this.closeCategoryDropdown();
       await this.loadBookmarks();
     },
 

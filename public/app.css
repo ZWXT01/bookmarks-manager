@@ -624,52 +624,13 @@ input[type="checkbox"] {
   z-index: 20;
 }
 
-/* Gradient masks for scroll visibility */
-.category-tabs-container::before,
-.category-tabs-container::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2rem;
-  pointer-events: none;
-  z-index: 1;
-  opacity: 0;
-  transition: opacity 0.3s ease;
-}
-
-.category-tabs-container::before {
-  left: 0;
-  background: linear-gradient(to right, var(--bg-secondary), transparent);
-}
-
-.category-tabs-container::after {
-  right: 3rem;
-  background: linear-gradient(to left, var(--bg-secondary), transparent);
-}
-
-.category-tabs-container.has-scroll-left::before {
-  opacity: 1;
-}
-
-.category-tabs-container.has-scroll-right::after {
-  opacity: 1;
-}
-
 .category-tabs {
   display: flex;
   flex: 1 1 auto;
   min-width: 0;
-  overflow-x: auto;
-  scroll-behavior: smooth;
-  -ms-overflow-style: none;
-  scrollbar-width: none;
+  flex-wrap: wrap;
   padding: 0.75rem 0;
   gap: 0.5rem;
-}
-
-.category-tabs::-webkit-scrollbar {
-  display: none;
 }
 
 .category-tab {
