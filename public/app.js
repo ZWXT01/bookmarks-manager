@@ -665,6 +665,11 @@ function bookmarkApp() {
       }
     },
 
+    openCategoryDropdown(parentId) {
+      this.activeParentCategory = parentId;
+      this.categoryDropdownVisible = true;
+    },
+
     closeCategoryDropdown() {
       this.categoryDropdownVisible = false;
       this.activeParentCategory = null;
