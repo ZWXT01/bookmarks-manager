@@ -1,269 +1,270 @@
 # Bookmarks Manager
 
-一个功能完善的自托管书签管理器，基于 Fastify + TypeScript + Alpine.js + SQLite 构建。
+[English](README.md) | [中文](README.zh-CN.md)
 
-## ✨ 功能特性
+A feature-rich self-hosted bookmark manager built with Fastify + TypeScript + Alpine.js + SQLite.
 
-### 核心功能
-- **书签管理**：添加、编辑、删除、移动书签
-- **分类管理**：支持多级分类，批量移动
-- **导入/导出**：支持浏览器书签 HTML、JSON、TXT 格式
-- **URL 去重**：基于规范化 URL 自动去重
+## ✨ Features
 
-### 书签检查
-- **批量检查**：检查书签链接有效性
-- **高并发**：支持 30+ 并发检查（可配置）
-- **智能重试**：失败自动重试，可配置次数和间隔
-- **忽略检查**：可标记特定书签跳过检查
-- **定期检查**：支持每周/每月自动检查（凌晨执行）
+### Core Features
+- **Bookmark Management**: Add, edit, delete, and move bookmarks
+- **Category Management**: Multi-level categories with batch operations
+- **Import/Export**: Support for browser bookmark HTML, JSON, and TXT formats
+- **URL Deduplication**: Automatic deduplication based on normalized URLs
 
-### AI 功能
-- **AI 分类**：使用 OpenAI 兼容 API 自动分类书签
-- **AI 精简**：智能合并相似分类，简化分类结构
-- **批量处理**：支持批量 AI 分类
+### Bookmark Validation
+- **Batch Checking**: Validate bookmark link availability
+- **High Concurrency**: Support for 30+ concurrent checks (configurable)
+- **Smart Retry**: Automatic retry on failure with configurable attempts and intervals
+- **Skip Checking**: Mark specific bookmarks to skip validation
+- **Periodic Checks**: Support for weekly/monthly automatic checks (runs at night)
 
-### 安全特性
-- **用户认证**：内置登录系统，支持密码修改
-- **API Token**：支持生成多个 API Token，用于浏览器扩展和第三方应用
-- **IP 锁定**：10次登录失败后锁定 IP 30分钟
-- **Session 管理**：安全的会话管理
+### AI Features
+- **AI Classification**: Automatically categorize bookmarks using OpenAI-compatible APIs
+- **AI Simplification**: Intelligently merge similar categories to simplify structure
+- **Batch Processing**: Support for bulk AI classification
 
-### 其他特性
-- **浏览器扩展**：一键添加当前页面为书签
-- **任务队列**：后台任务处理，支持取消
-- **实时进度**：SSE 实时显示任务进度
-- **自动备份**：定时备份数据库
-- **响应式 UI**：现代化的 Web 界面
+### Security Features
+- **User Authentication**: Built-in login system with password change support
+- **API Tokens**: Generate multiple API tokens for browser extensions and third-party apps
+- **IP Lockout**: Lock IP for 30 minutes after 10 failed login attempts
+- **Session Management**: Secure session handling
 
-## 🚀 快速开始
+### Additional Features
+- **Browser Extension**: One-click bookmark saving from current page
+- **Task Queue**: Background task processing with cancellation support
+- **Real-time Progress**: SSE-based real-time task progress display
+- **Auto Backup**: Scheduled database backups
+- **Responsive UI**: Modern web interface
 
-### Docker 部署（推荐）
+## 🚀 Quick Start
+
+### Docker Deployment (Recommended)
 
 ```bash
-# 克隆项目
+# Clone the repository
 git clone https://github.com/ZWXT01/bookmarks-manager.git
 cd bookmarks-manager
 
-# 启动服务
+# Start the service
 docker compose up -d --build
 
-# 访问 http://localhost:8080
-# 默认账号：admin / admin
+# Access http://localhost:8080
+# Default credentials: admin / admin
 ```
 
-### 本地开发
+### Local Development
 
 ```bash
-# 安装依赖
+# Install dependencies
 npm install
 
-# 开发模式
+# Development mode
 npm run dev
 
-# 构建
+# Build
 npm run build
 
-# 生产模式
+# Production mode
 npm start
 ```
 
-## ⚙️ 环境变量
+## ⚙️ Environment Variables
 
-### 基础配置
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `PORT` | 监听端口 | `8080` |
-| `DB_PATH` | SQLite 文件路径 | `./data/app.db` |
-| `SESSION_SECRET` | Session 密钥 | 随机生成 |
+### Basic Configuration
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PORT` | Listen port | `8080` |
+| `DB_PATH` | SQLite file path | `./data/app.db` |
+| `SESSION_SECRET` | Session secret key | Auto-generated |
 
-### 认证配置
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `AUTH_USERNAME` | 默认用户名 | `admin` |
-| `AUTH_PASSWORD` | 默认密码 | `admin` |
-| `API_TOKEN` | 静态 API Token（可选） | - |
+### Authentication Configuration
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AUTH_USERNAME` | Default username | `admin` |
+| `AUTH_PASSWORD` | Default password | `admin` |
+| `API_TOKEN` | Static API token (optional) | - |
 
-### 检查配置
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `CHECK_CONCURRENCY` | 检查并发数 | `30` |
-| `CHECK_TIMEOUT_MS` | 检查超时(ms) | `5000` |
-| `CHECK_RETRIES` | 失败重试次数 | `1` |
-| `CHECK_RETRY_DELAY_MS` | 重试间隔(ms) | `500` |
+### Check Configuration
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CHECK_CONCURRENCY` | Check concurrency | `30` |
+| `CHECK_TIMEOUT_MS` | Check timeout (ms) | `5000` |
+| `CHECK_RETRIES` | Retry attempts on failure | `1` |
+| `CHECK_RETRY_DELAY_MS` | Retry delay (ms) | `500` |
 
-### 定期检查配置
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `PERIODIC_CHECK_ENABLED` | 启用定期检查 | `0` |
-| `PERIODIC_CHECK_SCHEDULE` | 检查周期 (`weekly`/`monthly`) | `weekly` |
-| `PERIODIC_CHECK_HOUR` | 执行时间 (2-5点) | `2` |
+### Periodic Check Configuration
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `PERIODIC_CHECK_ENABLED` | Enable periodic checks | `0` |
+| `PERIODIC_CHECK_SCHEDULE` | Check schedule (`weekly`/`monthly`) | `weekly` |
+| `PERIODIC_CHECK_HOUR` | Execution hour (2-5 AM) | `2` |
 
-### 备份配置
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `BACKUP_ENABLED` | 启用自动备份 | `0` |
-| `BACKUP_INTERVAL_MINUTES` | 备份间隔(分钟) | `1440` |
-| `BACKUP_RETENTION` | 保留份数 | `10` |
-| `BACKUP_DIR` | 备份目录 | `./data/backups` |
+### Backup Configuration
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `BACKUP_ENABLED` | Enable auto backup | `0` |
+| `BACKUP_INTERVAL_MINUTES` | Backup interval (minutes) | `1440` |
+| `BACKUP_RETENTION` | Number of backups to keep | `10` |
+| `BACKUP_DIR` | Backup directory | `./data/backups` |
 
-## 🔑 API Token
+## 🔑 API Tokens
 
-API Token 用于浏览器扩展或第三方应用访问 API，无需 Cookie 认证。
+API tokens allow browser extensions or third-party apps to access the API without cookie authentication.
 
-### 生成 Token
+### Generate Token
 
-1. 登录 Web 管理界面
-2. 进入「设置」页面
-3. 在「API Tokens」部分点击「创建 Token」
-4. 输入名称，选择有效期（可选）
-5. **立即复制并保存 Token**（只显示一次）
+1. Log in to the web management interface
+2. Go to the "Settings" page
+3. Click "Create Token" in the "API Tokens" section
+4. Enter a name and select expiration (optional)
+5. **Copy and save the token immediately** (shown only once)
 
-### 使用 Token
+### Use Token
 
-在 API 请求中添加 Authorization 头：
+Add the Authorization header to API requests:
 
 ```bash
 curl -H "Authorization: Bearer YOUR_TOKEN" \
   https://your-domain.com/api/bookmarks
 ```
 
-### Token 管理
+### Token Management
 
-- 支持创建多个 Token，分别用于不同应用
-- 可设置有效期：7天 / 30天 / 90天 / 1年 / 永不过期
-- 可随时删除不再使用的 Token
-- 系统自动清理过期 Token
+- Support for multiple tokens for different applications
+- Configurable expiration: 7 days / 30 days / 90 days / 1 year / never
+- Delete unused tokens anytime
+- System automatically cleans up expired tokens
 
-## 🔌 浏览器扩展
+## 🔌 Browser Extension
 
-项目包含浏览器扩展，支持一键添加当前页面到书签管理器。
+The project includes a browser extension for one-click bookmark saving.
 
-### 安装扩展
+### Install Extension
 
-1. 打开浏览器扩展管理页面
+1. Open browser extension management page
    - Chrome: `chrome://extensions/`
    - Edge: `edge://extensions/`
    - Firefox: `about:addons`
-2. 开启「开发者模式」
-3. 点击「加载已解压的扩展程序」
-4. 选择项目中的 `extension` 文件夹
+2. Enable "Developer mode"
+3. Click "Load unpacked extension"
+4. Select the `extension` folder from the project
 
-### 配置扩展
+### Configure Extension
 
-1. 点击扩展图标，展开「⚙️ 设置」
-2. 输入服务器地址（如 `https://bookmarks.example.com`）
-3. 输入 API Token（在 Web 设置页面生成）
-4. 点击「保存设置」
+1. Click the extension icon and expand "⚙️ Settings"
+2. Enter server address (e.g., `https://bookmarks.example.com`)
+3. Enter API token (generated from web settings page)
+4. Click "Save Settings"
 
-### 使用扩展
+### Use Extension
 
-1. 浏览任意网页
-2. 点击扩展图标
-3. 选择分类（可选）
-4. 点击「保存书签」
+1. Browse any webpage
+2. Click the extension icon
+3. Select category (optional)
+4. Click "Save Bookmark"
 
-## 📁 项目结构
+## 📁 Project Structure
 
 ```
 bookmarks-manager/
-├── src/                    # TypeScript 源码
-│   ├── index.ts           # 主入口，路由定义
-│   ├── db.ts              # 数据库初始化
-│   ├── auth.ts            # 认证模块（含 API Token）
-│   ├── checker.ts         # 书签检查器
-│   ├── importer.ts        # 导入模块
-│   ├── exporter.ts        # 导出模块
-│   ├── jobs.ts            # 任务队列
-│   ├── ai-classifier.ts   # AI 分类器
-│   ├── ai-classify-job.ts # AI 分类任务
-│   └── ai-simplify-job.ts # AI 精简任务
-├── views/                  # EJS 模板
-├── public/                 # 静态资源
-├── extension/              # 浏览器扩展
-├── data/                   # 数据目录（Docker 挂载）
+├── src/                    # TypeScript source code
+│   ├── index.ts           # Main entry, route definitions
+│   ├── db.ts              # Database initialization
+│   ├── auth.ts            # Authentication module (with API tokens)
+│   ├── checker.ts         # Bookmark checker
+│   ├── importer.ts        # Import module
+│   ├── exporter.ts        # Export module
+│   ├── jobs.ts            # Task queue
+│   ├── ai-organize.ts     # AI organizer
+│   └── ai-organize-plan.ts # AI organize planner
+├── views/                  # EJS templates
+├── public/                 # Static assets
+├── extension/              # Browser extension
+├── data/                   # Data directory (Docker mount)
 ├── Dockerfile
 ├── docker-compose.yml
 └── package.json
 ```
 
-## 🔧 API 接口
+## 🔧 API Endpoints
 
-所有 API 接口需要认证（Session 或 API Token）。
+All API endpoints require authentication (Session or API Token).
 
-### 认证方式
+### Authentication Methods
 
 ```bash
-# 方式1：API Token（推荐用于扩展和脚本）
+# Method 1: API Token (recommended for extensions and scripts)
 curl -H "Authorization: Bearer YOUR_TOKEN" https://your-domain.com/api/bookmarks
 
-# 方式2：Session Cookie（Web 界面使用）
+# Method 2: Session Cookie (used by web interface)
 ```
 
-### 书签管理
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/bookmarks` | 获取书签列表（支持搜索筛选） |
-| POST | `/api/bookmarks` | 添加书签 |
-| PUT | `/api/bookmarks/:id` | 更新书签 |
-| DELETE | `/api/bookmarks/:id` | 删除书签 |
+### Bookmark Management
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/bookmarks` | Get bookmark list (with search/filter) |
+| POST | `/api/bookmarks` | Add bookmark |
+| PUT | `/api/bookmarks/:id` | Update bookmark |
+| DELETE | `/api/bookmarks/:id` | Delete bookmark |
 
-### 分类管理
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/categories` | 获取分类列表 |
-| POST | `/api/categories` | 添加分类 |
-| PUT | `/api/categories/:id` | 更新分类 |
-| DELETE | `/api/categories/:id` | 删除分类 |
+### Category Management
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/categories` | Get category list |
+| POST | `/api/categories` | Add category |
+| PUT | `/api/categories/:id` | Update category |
+| DELETE | `/api/categories/:id` | Delete category |
 
-### Token 管理
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| GET | `/api/tokens` | 获取 Token 列表 |
-| POST | `/api/tokens` | 创建新 Token |
-| DELETE | `/api/tokens/:id` | 删除 Token |
+### Token Management
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/tokens` | Get token list |
+| POST | `/api/tokens` | Create new token |
+| DELETE | `/api/tokens/:id` | Delete token |
 
-### 检查功能
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/check/start` | 开始批量检查 |
-| POST | `/api/check/one/:id` | 检查单个书签 |
+### Check Features
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/check/start` | Start batch check |
+| POST | `/api/check/one/:id` | Check single bookmark |
 
-### AI 功能
-| 方法 | 路径 | 说明 |
-|------|------|------|
-| POST | `/api/ai/classify` | AI 分类 |
-| POST | `/api/ai/simplify` | AI 精简分类 |
-| POST | `/api/ai/apply-simplify` | 应用精简建议 |
+### AI Features
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/ai/classify` | AI classification |
+| POST | `/api/ai/simplify` | AI simplify categories |
+| POST | `/api/ai/apply-simplify` | Apply simplification suggestions |
 
-## 🔍 高级搜索
+## 🔍 Advanced Search
 
-`GET /api/bookmarks` 支持以下查询参数：
+`GET /api/bookmarks` supports the following query parameters:
 
-| 参数 | 说明 | 示例 |
-|------|------|------|
-| `q` | 搜索关键词（空格分隔） | `github python` |
-| `category` | 分类 ID 或 `uncategorized` | `1` |
-| `status` | 检查状态 | `ok` / `fail` / `not_checked` |
-| `skip_check` | 忽略检查 | `1` / `0` |
-| `date_from` | 开始日期 | `2024-01-01` |
-| `date_to` | 结束日期 | `2024-12-31` |
-| `domain` | 域名筛选 | `github.com` |
-| `sort` | 排序字段 | `id` / `title` / `created_at` |
-| `order` | 排序方向 | `asc` / `desc` |
-| `page` | 页码 | `1` |
-| `pageSize` | 每页数量 | `50` |
+| Parameter | Description | Example |
+|-----------|-------------|---------|
+| `q` | Search keywords (space-separated) | `github python` |
+| `category` | Category ID or `uncategorized` | `1` |
+| `status` | Check status | `ok` / `fail` / `not_checked` |
+| `skip_check` | Skip checking | `1` / `0` |
+| `date_from` | Start date | `2024-01-01` |
+| `date_to` | End date | `2024-12-31` |
+| `domain` | Domain filter | `github.com` |
+| `sort` | Sort field | `id` / `title` / `created_at` |
+| `order` | Sort direction | `asc` / `desc` |
+| `page` | Page number | `1` |
+| `pageSize` | Items per page | `50` |
 
-## 🔒 安全建议
+## 🔒 Security Recommendations
 
-### 生产环境部署
+### Production Deployment
 
-1. **修改默认密码**：首次登录后立即修改
-2. **使用 HTTPS**：通过 Nginx 反向代理配置 SSL
-3. **限制访问**：配置 IP 白名单或 VPN
-4. **定期备份**：启用自动备份功能
-5. **Token 管理**：定期清理不用的 Token，设置合理有效期
+1. **Change Default Password**: Change immediately after first login
+2. **Use HTTPS**: Configure SSL via Nginx reverse proxy
+3. **Restrict Access**: Configure IP whitelist or VPN
+4. **Regular Backups**: Enable auto backup feature
+5. **Token Management**: Regularly clean up unused tokens, set reasonable expiration
 
-### Nginx 反向代理配置
+### Nginx Reverse Proxy Configuration
 
 ```nginx
 server {
@@ -279,8 +280,8 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        
-        # SSE 支持
+
+        # SSE support
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 3600;
@@ -288,55 +289,55 @@ server {
 }
 ```
 
-## 📦 数据备份与迁移
+## 📦 Data Backup and Migration
 
-### 手动备份
+### Manual Backup
 
 ```bash
-# Docker 部署
+# Docker deployment
 docker compose exec app sqlite3 /data/app.db ".backup '/data/backup.db'"
 
-# 或直接复制
+# Or direct copy
 cp ./data/app.db ./data/app.db.backup
 ```
 
-### 数据迁移
+### Data Migration
 
 ```bash
-# 在新服务器上
+# On new server
 mkdir -p ./data
 scp old-server:/path/to/data/app.db ./data/
 docker compose up -d
 ```
 
-## 🐛 常见问题
+## 🐛 Troubleshooting
 
-### 扩展显示「网络错误」
+### Extension Shows "Network Error"
 
-1. 检查服务器地址是否正确（包含 `https://`）
-2. 确认 API Token 已正确配置
-3. 检查服务器是否正常运行
-4. 查看浏览器控制台错误信息
+1. Check if server address is correct (include `https://`)
+2. Confirm API token is properly configured
+3. Check if server is running
+4. View browser console for error messages
 
-### SSE 进度不刷新
+### SSE Progress Not Updating
 
-Nginx 缓冲导致，添加配置：
+Caused by Nginx buffering, add configuration:
 ```nginx
 proxy_buffering off;
 ```
 
-### 检查失败率高
+### High Check Failure Rate
 
-1. 增加超时：`CHECK_TIMEOUT_MS=10000`
-2. 增加重试：`CHECK_RETRIES=2`
-3. 降低并发：`CHECK_CONCURRENCY=10`
+1. Increase timeout: `CHECK_TIMEOUT_MS=10000`
+2. Increase retries: `CHECK_RETRIES=2`
+3. Reduce concurrency: `CHECK_CONCURRENCY=10`
 
-### AI 分类不工作
+### AI Classification Not Working
 
-1. 检查 AI 配置（Base URL、API Key、Model）
-2. 使用设置页面的「测试连接」功能
-3. 确保 API 配额充足
+1. Check AI configuration (Base URL, API Key, Model)
+2. Use "Test Connection" feature on settings page
+3. Ensure API quota is sufficient
 
-## 📄 许可证
+## 📄 License
 
 MIT License
