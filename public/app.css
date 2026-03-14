@@ -622,6 +622,10 @@ input[type="checkbox"] {
   border-bottom: 1px solid var(--border-color);
   padding: 0 1rem;
   z-index: 20;
+  max-height: 80px; /* 防止垂直溢出 */
+  overflow: hidden;
+  min-width: 0; /* 允许 flex item 收缩 */
+  max-width: 100%; /* 限制最大宽度为父容器宽度 */
 }
 
 .category-tabs {
@@ -629,10 +633,50 @@ input[type="checkbox"] {
   flex: 1 1 auto;
   min-width: 0;
   overflow-x: auto;
+  overflow-y: hidden; /* 防止垂直滚动 */
   scroll-behavior: smooth;
   scrollbar-width: thin;
   padding: 0.75rem 0;
   gap: 0.5rem;
+  flex-wrap: nowrap; /* 强制单行显示 */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .category-tabs {
+    scroll-behavior: auto;
+  }
+}
+
+/* 确保所有直接子元素不收缩 */
+.category-tabs > * {
+  flex-shrink: 0;
+}
+
+.category-tabs-scroll-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-md);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
+
+.category-tabs-scroll-btn:hover {
+  background: var(--accent-light);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.category-tabs-scroll-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
 }
 
 .category-tabs::-webkit-scrollbar {
@@ -704,6 +748,14 @@ input[type="checkbox"] {
   animation: fadeIn 0.2s ease-out;
 }
 
+/* External dropdown panel (absolute positioned overlay) */
+.category-dropdown-panel-external {
+  background: var(--bg-secondary);
+  box-shadow: var(--shadow-lg);
+  padding: 1.5rem;
+}
+
+
 .subcategory-item {
   padding: 0.5rem 0.75rem;
   border-radius: var(--radius-md);
@@ -715,6 +767,23 @@ input[type="checkbox"] {
   align-items: center;
   gap: 0.5rem;
   border: 1px solid transparent;
+}
+
+.subcategory-item-icon {
+  flex-shrink: 0;
+}
+
+.subcategory-item-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subcategory-item-count {
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 .subcategory-item:hover {
@@ -770,11 +839,56 @@ input[type="checkbox"] {
 }
 
 .category-manager-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 1.5rem;
-  max-width: 1200px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-width: 860px;
   margin: 0 auto;
+}
+
+.category-card {
+  width: 100%;
+}
+
+.drag-handle {
+  flex-shrink: 0;
+  transition: color 0.2s ease, opacity 0.2s ease;
+  touch-action: none;
+}
+
+.category-card-ghost {
+  opacity: 0.5;
+  border-color: var(--accent);
+  background: var(--accent-light);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.category-card-chosen {
+  box-shadow: var(--shadow-lg);
+  transform: scale(1.02);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.category-card-drag {
+  transform: rotate(2deg) scale(1.05);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  will-change: transform;
+}
+
+/* Respect user's motion preferences */
+@media (prefers-reduced-motion: reduce) {
+  .category-card-ghost,
+  .category-card-chosen,
+  .category-card-drag {
+    transition-duration: 0ms;
+    transform: none;
+  }
+}
+
+.category-card-chosen .drag-handle,
+.category-card-drag .drag-handle {
+  cursor: grabbing;
+  color: var(--accent);
 }
 
 .category-drag-item {
@@ -808,12 +922,12 @@ input[type="checkbox"] {
   .category-tabs-container {
     padding: 0 0.5rem;
   }
-  
+
   .category-manager-content {
     padding: 1rem;
   }
-  
+
   .category-manager-grid {
-    grid-template-columns: 1fr;
+    gap: 0.75rem;
   }
 }

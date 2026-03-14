@@ -171,10 +171,21 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
   app.patch('/api/categories/:id/move', async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
     const categoryId = toInt(req.params.id);
     const body: any = req.body || {};
-    const newParentId = body.parent_id === null || body.parent_id === '' ? null : toInt(body.parent_id);
 
     if (typeof categoryId !== 'number') {
       return reply.code(404).send({ error: '分类不存在' });
+    }
+
+    // Validate parent_id
+    let newParentId: number | null;
+    if (body.parent_id === null || body.parent_id === '') {
+      newParentId = null;
+    } else {
+      const parsedParentId = toInt(body.parent_id);
+      if (parsedParentId === null) {
+        return reply.code(400).send({ error: '无效的父分类ID' });
+      }
+      newParentId = parsedParentId;
     }
 
     try {
@@ -242,6 +253,113 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
     } catch (e: any) {
       req.log.error({ err: e }, 'batch delete categories failed');
       return reply.code(500).send({ error: '批量删除失败' });
+    }
+  });
+
+  // POST /api/categories/reorder - 更新分类排序
+  app.post('/api/categories/reorder', async (req: FastifyRequest, reply: FastifyReply) => {
+    const body: any = req.body || {};
+    const categories = body.categories;
+
+    if (!Array.isArray(categories)) {
+      return reply.code(400).send({ error: '无效的请求数据' });
+    }
+
+    if (categories.length === 0) {
+      return reply.code(400).send({ error: '分类列表不能为空' });
+    }
+
+    if (categories.length > 1000) {
+      return reply.code(400).send({ error: '一次最多排序1000个分类' });
+    }
+
+    try {
+      // Validate each element is an object with required properties
+      for (const item of categories) {
+        if (!item || typeof item !== 'object') {
+          return reply.code(400).send({ error: '分类数据格式错误' });
+        }
+        if (!('id' in item) || !('sort_order' in item)) {
+          return reply.code(400).send({ error: '分类数据缺少必需字段' });
+        }
+      }
+
+      // Extract and validate IDs and sort_order values
+      const ids = categories.map((item: any) => toInt(item.id)).filter((id): id is number => id !== null);
+      if (ids.length !== categories.length) {
+        return reply.code(400).send({ error: '包含无效的分类ID' });
+      }
+
+      const sortOrders = categories.map((item: any) => toInt(item.sort_order)).filter((order): order is number => order !== null);
+      if (sortOrders.length !== categories.length) {
+        return reply.code(400).send({ error: '包含无效的排序值' });
+      }
+
+      // Validate sort_order values are non-negative
+      if (sortOrders.some(order => order < 0)) {
+        return reply.code(400).send({ error: '排序值不能为负数' });
+      }
+
+      // Check for duplicate IDs first
+      const uniqueIds = new Set(ids);
+      if (uniqueIds.size !== ids.length) {
+        return reply.code(400).send({ error: '分类ID不能重复' });
+      }
+
+      // Check for duplicate sort_order values
+      const uniqueSortOrders = new Set(sortOrders);
+      if (uniqueSortOrders.size !== sortOrders.length) {
+        return reply.code(400).send({ error: '排序值不能重复' });
+      }
+
+      // Validate sort_order values form a continuous sequence starting from 0
+      const sortedOrders = [...sortOrders].sort((a, b) => a - b);
+      for (let i = 0; i < sortedOrders.length; i++) {
+        if (sortedOrders[i] !== i) {
+          return reply.code(400).send({ error: '排序值必须是从0开始的连续整数' });
+        }
+      }
+
+      // Validate all IDs exist and are top-level categories
+      const placeholders = ids.map(() => '?').join(',');
+      const existingCategories = db.prepare(
+        `SELECT id FROM categories WHERE id IN (${placeholders}) AND parent_id IS NULL`
+      ).all(...ids) as Array<{ id: number }>;
+
+      if (existingCategories.length !== ids.length) {
+        return reply.code(400).send({ error: '部分分类不存在或不是一级分类' });
+      }
+
+      // Validate that the request includes all top-level categories
+      const allTopLevelCount = (db.prepare('SELECT COUNT(*) as cnt FROM categories WHERE parent_id IS NULL').get() as { cnt: number }).cnt;
+      if (ids.length !== allTopLevelCount) {
+        return reply.code(400).send({ error: '必须包含所有一级分类' });
+      }
+
+      const stmt = db.prepare('UPDATE categories SET sort_order = ? WHERE id = ?');
+      const transaction = db.transaction((items: Array<{ id: number; sort_order: number }>) => {
+        let totalChanges = 0;
+        for (const item of items) {
+          const id = toInt(item.id);
+          const sortOrder = toInt(item.sort_order);
+          if (id === null || sortOrder === null) {
+            throw new Error('Invalid id or sort_order');
+          }
+          const result = stmt.run(sortOrder, id);
+          totalChanges += result.changes;
+        }
+        if (totalChanges !== items.length) {
+          throw new Error('Some categories were not updated');
+        }
+      });
+
+      transaction(categories);
+      req.log.info({ count: categories.length }, 'categories reordered');
+      return reply.send({ success: true });
+    } catch (e: any) {
+      req.log.error({ err: e }, 'reorder categories failed');
+      const message = e.message || '更新排序失败';
+      return reply.code(500).send({ error: message });
     }
   });
 

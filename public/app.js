@@ -10,14 +10,17 @@ function bookmarkApp() {
     importOverrideCategory: false, // 导入时是否忽略原有分类
     categories: [],
     categoryTree: [], // 树状分类数据
-    expandedCategories: new Set(), // 展开的一级分类ID
     categorySearch: '',
     totalCount: 0,
     uncategorizedCount: 0,
+    bookmarksAbortController: null, // 用于取消请求
     newBookmark: { url: '', title: '', category_id: '' },
     aiSuggestion: '',
     moveTargetCategory: '',
     searchDebounceTimer: null, // 搜索去抖计时器
+    categoryHoverTimer: null, // 分类悬停计时器
+    categoryCloseTimer: null, // 分类关闭计时器
+    skipNextFocusOpen: false, // 跳过下次 focus 自动打开（用于 Escape 关闭后）
 
     // 主题
     theme: localStorage.getItem('theme') || 'system',
@@ -58,6 +61,7 @@ function bookmarkApp() {
     // 分类管理 (Phase 1)
     showCategoryManager: false,
     categoryManagerSearch: '',
+    categoryManagerSortable: null,
     activeParentCategory: null,
     categoryDropdownVisible: false,
     showAddBookmarkModal: false,
@@ -401,8 +405,8 @@ function bookmarkApp() {
           await this.loadCategories();
           this.closeCategoryStyleModal();
         } else {
-          const data = await res.json();
-          await AppDialog.alert(data.error || '保存失败');
+          const data = await res.json().catch(() => null);
+          await AppDialog.alert(data?.error || '保存失败');
         }
       } catch (e) {
         await AppDialog.alert('保存失败: ' + e.message);
@@ -596,17 +600,27 @@ function bookmarkApp() {
       try {
         // 获取树状结构
         const res = await fetch('/api/categories?tree=true');
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+        }
+
         const data = await res.json();
-        console.log('[DEBUG] loadCategories response:', data);
         this.categoryTree = data.tree || [];
-        console.log('[DEBUG] categoryTree:', this.categoryTree);
         this.totalCount = data.totalCount || 0;
         this.uncategorizedCount = data.uncategorizedCount || 0;
 
         // 扁平化为兼容旧格式的 categories 数组
         this.categories = this.flattenCategoryTree(this.categoryTree);
         this.initAllCategoryIds();
+
+        if (this.showCategoryManager) {
+          this.$nextTick(() => {
+            this.initCategoryManagerDragSort();
+          });
+        }
       } catch (e) {
+        console.error('Failed to load categories:', e);
         this.showToast('加载分类失败', 'error');
       }
     },
@@ -639,40 +653,160 @@ function bookmarkApp() {
       return result;
     },
 
-    // 切换一级分类展开/折叠
-    toggleCategoryExpand(categoryId) {
-      if (this.expandedCategories.has(categoryId)) {
-        this.expandedCategories.delete(categoryId);
-      } else {
-        this.expandedCategories.add(categoryId);
-      }
-      // 触发响应式更新
-      this.expandedCategories = new Set(this.expandedCategories);
-    },
-
-    // 检查分类是否展开
-    isCategoryExpanded(categoryId) {
-      return this.expandedCategories.has(categoryId);
-    },
-
     // 分类导航辅助方法 (Phase 1)
-    toggleCategoryDropdown(parentId) {
-      if (this.activeParentCategory === parentId && this.categoryDropdownVisible) {
-        this.closeCategoryDropdown();
-      } else {
-        this.activeParentCategory = parentId;
-        this.categoryDropdownVisible = true;
-      }
+    isTouchPrimaryDevice() {
+      // Use pointer media query to detect if the primary input is touch (coarse pointer)
+      // This correctly identifies phones/tablets but not touch-enabled laptops
+      return window.matchMedia('(pointer: coarse)').matches;
     },
 
-    openCategoryDropdown(parentId) {
+    openCategoryDropdown(parentId, skipFocusReopening = false) {
+      if (this.categoryHoverTimer) {
+        clearTimeout(this.categoryHoverTimer);
+        this.categoryHoverTimer = null;
+      }
+      if (this.categoryCloseTimer) {
+        clearTimeout(this.categoryCloseTimer);
+        this.categoryCloseTimer = null;
+      }
+
       this.activeParentCategory = parentId;
       this.categoryDropdownVisible = true;
+      this.skipNextFocusOpen = skipFocusReopening;
     },
 
-    closeCategoryDropdown() {
+    closeCategoryDropdown(restoreFocus = false) {
+      const parentId = this.activeParentCategory;
+
+      if (this.categoryHoverTimer) {
+        clearTimeout(this.categoryHoverTimer);
+        this.categoryHoverTimer = null;
+      }
+      if (this.categoryCloseTimer) {
+        clearTimeout(this.categoryCloseTimer);
+        this.categoryCloseTimer = null;
+      }
+
       this.categoryDropdownVisible = false;
       this.activeParentCategory = null;
+
+      if (restoreFocus && parentId !== null) {
+        // Set flag to skip reopening on focus
+        this.skipNextFocusOpen = true;
+        this.$nextTick(() => {
+          const parentTab = document.getElementById(`category-tab-${parentId}`);
+          if (parentTab) parentTab.focus();
+        });
+      }
+    },
+
+    handleCategoryClick(cat) {
+      // On touch-primary devices with subcategories: first tap opens dropdown, second tap navigates
+      if (this.isTouchPrimaryDevice() && cat.children && cat.children.length > 0) {
+        if (this.categoryDropdownVisible && this.activeParentCategory === cat.id) {
+          // Already open, navigate to category
+          this.loadCategory(cat.id);
+          this.closeCategoryDropdown();
+        } else {
+          // Open dropdown
+          this.openCategoryDropdown(cat.id);
+        }
+      } else {
+        // Desktop or no subcategories: navigate directly
+        this.loadCategory(cat.id);
+      }
+    },
+
+    handleCategoryHover(parentId) {
+      // Skip hover logic on touch-primary devices
+      if (this.isTouchPrimaryDevice()) {
+        return;
+      }
+
+      // 清除关闭计时器
+      if (this.categoryCloseTimer) {
+        clearTimeout(this.categoryCloseTimer);
+        this.categoryCloseTimer = null;
+      }
+
+      // 设置悬停计时器，延迟展开
+      if (this.categoryHoverTimer) {
+        clearTimeout(this.categoryHoverTimer);
+      }
+
+      this.categoryHoverTimer = setTimeout(() => {
+        this.openCategoryDropdown(parentId);
+      }, 200);
+    },
+
+    handleCategoryLeave() {
+      // Skip hover logic on touch-primary devices
+      if (this.isTouchPrimaryDevice()) {
+        return;
+      }
+
+      // 清除悬停计时器
+      if (this.categoryHoverTimer) {
+        clearTimeout(this.categoryHoverTimer);
+        this.categoryHoverTimer = null;
+      }
+
+      // 设置关闭计时器，延迟关闭以便鼠标移入二级面板
+      this.categoryCloseTimer = setTimeout(() => {
+        this.closeCategoryDropdown();
+      }, 300);
+    },
+
+    handleDropdownPanelEnter() {
+      // 鼠标进入二级面板时，清除关闭计时器
+      if (this.categoryCloseTimer) {
+        clearTimeout(this.categoryCloseTimer);
+        this.categoryCloseTimer = null;
+      }
+    },
+
+    handleDropdownPanelLeave() {
+      if (this.$refs.subcategoryPanel?.contains(document.activeElement)) {
+        return;
+      }
+
+      // 鼠标离开二级面板时，立即关闭
+      this.closeCategoryDropdown();
+    },
+
+    handleDropdownPanelFocusOut(event) {
+      const nextFocused = event?.relatedTarget;
+      if (nextFocused && this.$refs.subcategoryPanel?.contains(nextFocused)) {
+        return;
+      }
+      this.closeCategoryDropdown();
+    },
+
+    handleCategoryBlur(event) {
+      const nextFocused = event?.relatedTarget;
+      // Don't close if focus moved to subcategory panel
+      if (nextFocused && this.$refs.subcategoryPanel?.contains(nextFocused)) {
+        return;
+      }
+      // Store the current parent ID to check later
+      const currentParentId = this.activeParentCategory;
+      // Delay closing to allow focus to move to subcategory
+      setTimeout(() => {
+        // Only close if we're still on the same parent (prevent race condition when tabbing between parents)
+        if (this.activeParentCategory === currentParentId &&
+            !this.$refs.subcategoryPanel?.contains(document.activeElement)) {
+          this.closeCategoryDropdown();
+        }
+      }, 100);
+    },
+
+    focusFirstSubcategory(parentId) {
+      if (!parentId) return;
+      this.openCategoryDropdown(parentId);
+      this.$nextTick(() => {
+        const firstSubcategory = this.$refs.subcategoryPanel?.querySelector('.subcategory-item');
+        if (firstSubcategory) firstSubcategory.focus();
+      });
     },
 
     openCategoryManager() {
@@ -682,10 +816,15 @@ function bookmarkApp() {
       this.$nextTick(() => {
         const searchInput = document.querySelector('#category-manager-search');
         if (searchInput) searchInput.focus();
+        this.initCategoryManagerDragSort();
       });
     },
 
     closeCategoryManager() {
+      if (this.categoryManagerSortable) {
+        this.categoryManagerSortable.destroy();
+        this.categoryManagerSortable = null;
+      }
       this.showCategoryManager = false;
     },
 
@@ -718,6 +857,62 @@ function bookmarkApp() {
       };
       
       return filterNodes(this.categoryTree);
+    },
+
+    initCategoryManagerDragSort() {
+      const container = this.$refs.categoryManagerGrid;
+      if (!container || typeof Sortable === 'undefined') return;
+
+      if (this.categoryManagerSortable) {
+        this.categoryManagerSortable.destroy();
+        this.categoryManagerSortable = null;
+      }
+
+      this.categoryManagerSortable = Sortable.create(container, {
+        animation: 300,
+        easing: 'cubic-bezier(0.4, 0, 0.2, 1)',
+        delay: 50,
+        delayOnTouchOnly: true,
+        handle: '.drag-handle',
+        draggable: '.category-card',
+        ghostClass: 'category-card-ghost',
+        chosenClass: 'category-card-chosen',
+        dragClass: 'category-card-drag',
+        onEnd: async (evt) => {
+          if (evt.oldIndex === evt.newIndex) return;
+
+          const orderedIds = Array.from(container.querySelectorAll('.category-card'))
+            .map((item) => Number(item.dataset.categoryId))
+            .filter((id) => Number.isFinite(id));
+
+          if (orderedIds.length !== this.categoryTree.length) {
+            this.showToast('清空搜索后再调整排序', 'info');
+            await this.loadCategories();
+            return;
+          }
+
+          const previousTree = [...this.categoryTree];
+          const categoryMap = new Map(previousTree.map((cat) => [Number(cat.id), cat]));
+          this.categoryTree = orderedIds.map((id) => categoryMap.get(id)).filter(Boolean);
+
+          const saved = await this.saveCategoryOrder();
+          if (!saved) {
+            this.categoryTree = previousTree;
+            await this.loadCategories();
+          } else {
+            // Sync the flattened categories array after successful reorder
+            this.categories = this.flattenCategoryTree(this.categoryTree);
+            this.initAllCategoryIds();
+          }
+        }
+      });
+
+      this.syncCategoryManagerSortState();
+    },
+
+    syncCategoryManagerSortState() {
+      if (!this.categoryManagerSortable) return;
+      this.categoryManagerSortable.option('disabled', Boolean(this.categoryManagerSearch.trim()));
     },
 
     initAllCategoryIds() {
@@ -879,6 +1074,12 @@ function bookmarkApp() {
 
     async loadBookmarks() {
       try {
+        // 取消之前的请求
+        if (this.bookmarksAbortController) {
+          this.bookmarksAbortController.abort();
+        }
+        this.bookmarksAbortController = new AbortController();
+
         this.ensureSelectionContext();
         const params = new URLSearchParams();
         if (this.currentCategory !== null) {
@@ -919,7 +1120,14 @@ function bookmarkApp() {
         params.append('page', String(this.page));
         params.append('pageSize', String(this.pageSize));
 
-        const response = await fetch(`/api/bookmarks?${params}`);
+        const response = await fetch(`/api/bookmarks?${params}`, {
+          signal: this.bookmarksAbortController.signal
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
         const data = await response.json();
         this.bookmarks = data.bookmarks || [];
         this.displayBookmarks = this.bookmarks;
@@ -928,6 +1136,10 @@ function bookmarkApp() {
         this.pageSize = data.pageSize || this.pageSize;
         this.totalPages = data.totalPages || 1;
       } catch (error) {
+        if (error.name === 'AbortError') {
+          // 请求被取消，忽略
+          return;
+        }
         console.error('Failed to load bookmarks:', error);
         this.showToast('加载书签失败', 'error');
       }
@@ -1039,6 +1251,44 @@ function bookmarkApp() {
       }, 300);
     },
 
+    scrollCategoryTabs(direction) {
+      const container = this.$refs.categoryTabsContainer;
+      if (!container) return;
+
+      const scrollAmount = 300; // 每次滚动 300px
+      const currentScroll = container.scrollLeft;
+
+      if (direction === 'left') {
+        container.scrollLeft = currentScroll - scrollAmount;
+      } else if (direction === 'right') {
+        container.scrollLeft = currentScroll + scrollAmount;
+      }
+    },
+
+    async saveCategoryOrder() {
+      try {
+        const orderData = this.categoryTree.map((cat, index) => ({
+          id: cat.id,
+          sort_order: index
+        }));
+
+        const res = await fetch('/api/categories/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ categories: orderData })
+        });
+
+        if (!res.ok) {
+          this.showToast('保存分类排序失败', 'error');
+          return false;
+        }
+        return true;
+      } catch (err) {
+        this.showToast('保存分类排序失败', 'error');
+        return false;
+      }
+    },
+
     openCreateCategoryModal(parentId = null) {
       this.createCategoryParentId = parentId;
       this.createCategoryName = '';
@@ -1063,15 +1313,11 @@ function bookmarkApp() {
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
           body: JSON.stringify(body),
         });
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
         if (response.ok && data?.category) {
           this.showToast(this.createCategoryParentId ? '子分类已创建' : '分类已创建', 'success');
           this.closeCreateCategoryModal();
           await this.loadCategories();
-          if (this.createCategoryParentId !== null) {
-            this.expandedCategories.add(this.createCategoryParentId);
-            this.expandedCategories = new Set(this.expandedCategories);
-          }
         } else {
           this.showToast(data?.error || '创建分类失败', 'error');
         }
@@ -1089,7 +1335,7 @@ function bookmarkApp() {
           method: 'DELETE',
           headers: { 'Accept': 'application/json' },
         });
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
         if (response.ok && data && data.success) {
           this.showToast(`分类已删除，${data.movedBookmarks || 0} 个书签移到未分类`, 'success');
           await this.loadCategories();
@@ -1179,7 +1425,7 @@ function bookmarkApp() {
           },
           body: params.toString(),
         });
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
         if (response.ok && data.category) {
           this.aiSuggestion = data.category;
           this.showToast('AI 建议已生成', 'success');
@@ -1207,7 +1453,7 @@ function bookmarkApp() {
           },
           body: params.toString(),
         });
-        const data = await response.json();
+        const data = await response.json().catch(() => null);
         if (response.ok) {
           this.showToast('书签已添加', 'success');
           this.newBookmark = { url: '', title: '', category_id: '' };
@@ -1290,7 +1536,7 @@ function bookmarkApp() {
       if (!await AppDialog.confirm('确认删除全部书签？该操作不可恢复。')) return;
       try {
         const res = await fetch('/api/bookmarks/delete-all', { method: 'POST', headers: { 'Accept': 'application/json' } });
-        const data = await res.json();
+        const data = await res.json().catch(() => null);
         if (res.ok) {
           this.showToast('已删除全部书签', 'success');
           this.selectedBookmarks = [];

@@ -252,10 +252,18 @@ export function createTopCategory(db: Db, name: string, options?: {
     color?: string;
 }): number {
     const now = new Date().toISOString();
+    // Get the maximum sort_order for top-level categories
+    const maxSortOrder = db.prepare(`
+        SELECT COALESCE(MAX(sort_order), -1) as max_order
+        FROM categories
+        WHERE parent_id IS NULL
+    `).get() as { max_order: number };
+    const nextSortOrder = maxSortOrder.max_order + 1;
+
     const result = db.prepare(`
     INSERT INTO categories (name, parent_id, icon, color, sort_order, created_at)
-    VALUES (?, NULL, ?, ?, 0, ?)
-  `).run(name.trim(), options?.icon ?? null, options?.color ?? null, now);
+    VALUES (?, NULL, ?, ?, ?, ?)
+  `).run(name.trim(), options?.icon ?? null, options?.color ?? null, nextSortOrder, now);
     return Number(result.lastInsertRowid);
 }
 
@@ -407,8 +415,25 @@ export function renameCategory(db: Db, categoryId: number, newName: string): voi
 }
 
 /**
+ * 重新分配所有一级分类的 sort_order 为连续序列（0, 1, 2, ...）
+ * 保持当前的相对顺序（按 sort_order, name 排序）
+ */
+function reorderTopLevelCategories(db: Db): void {
+    const topLevelCategories = db.prepare(`
+        SELECT id FROM categories
+        WHERE parent_id IS NULL
+        ORDER BY sort_order ASC, name ASC
+    `).all() as Array<{ id: number }>;
+
+    const stmt = db.prepare('UPDATE categories SET sort_order = ? WHERE id = ?');
+    topLevelCategories.forEach((cat, index) => {
+        stmt.run(index, cat.id);
+    });
+}
+
+/**
  * 移动分类（更改父分类）
- * 
+ *
  * @param categoryId 要移动的分类 ID
  * @param newParentId 新的父分类 ID，null 表示移动到一级
  */
@@ -439,24 +464,41 @@ export function moveCategory(db: Db, categoryId: number, newParentId: number | n
         }
     }
 
-    // 更新 parent_id
-    db.prepare('UPDATE categories SET parent_id = ? WHERE id = ?').run(newParentId, categoryId);
+    // 更新 parent_id 和 sort_order（使用事务确保原子性）
+    const tx = db.transaction(() => {
+        if (newParentId === null) {
+            // 移动到一级：分配新的 sort_order
+            const maxSortOrder = db.prepare(`
+                SELECT COALESCE(MAX(sort_order), -1) as max_order
+                FROM categories
+                WHERE parent_id IS NULL
+            `).get() as { max_order: number };
+            const nextSortOrder = maxSortOrder.max_order + 1;
 
-    // 更新名称前缀（兼容旧格式）
-    if (newParentId === null) {
-        // 移动到一级：去掉路径前缀
-        const nameParts = cat.name.split('/');
-        const simpleName = nameParts[nameParts.length - 1];
-        db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(simpleName, categoryId);
-    } else {
-        const newParent = getCategoryById(db, newParentId)!;
-        const nameParts = cat.name.split('/');
-        const simpleName = nameParts[nameParts.length - 1];
-        db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(
-            `${newParent.name}/${simpleName}`,
-            categoryId
-        );
-    }
+            // 更新名称：去掉路径前缀
+            const nameParts = cat.name.split('/');
+            const simpleName = nameParts[nameParts.length - 1];
+
+            db.prepare('UPDATE categories SET parent_id = ?, sort_order = ?, name = ? WHERE id = ?')
+                .run(null, nextSortOrder, simpleName, categoryId);
+        } else {
+            // 更新名称：添加父分类前缀
+            const newParent = getCategoryById(db, newParentId)!;
+            const nameParts = cat.name.split('/');
+            const simpleName = nameParts[nameParts.length - 1];
+            const newName = `${newParent.name}/${simpleName}`;
+
+            db.prepare('UPDATE categories SET parent_id = ?, name = ? WHERE id = ?')
+                .run(newParentId, newName, categoryId);
+
+            // 如果原来是一级分类，降级为二级分类后需要压缩剩余一级分类的 sort_order
+            if (cat.parent_id === null) {
+                reorderTopLevelCategories(db);
+            }
+        }
+    });
+
+    tx();
 }
 
 /**
@@ -468,34 +510,39 @@ export function deleteCategory(db: Db, categoryId: number): { movedBookmarks: nu
         throw new Error('分类不存在');
     }
 
-    // 将该分类下的书签移到未分类
-    const moveResult = db.prepare('UPDATE bookmarks SET category_id = NULL WHERE category_id = ?').run(categoryId);
-    const movedBookmarks = moveResult.changes;
+    let totalMoved = 0;
 
-    // 如果是一级分类，先处理其子分类
-    if (cat.parent_id === null) {
-        // 将子分类下的书签也移到未分类
-        const subMoveResult = db.prepare(`
-      UPDATE bookmarks SET category_id = NULL 
-      WHERE category_id IN (SELECT id FROM categories WHERE parent_id = ?)
-    `).run(categoryId);
+    // 使用事务确保原子性
+    const tx = db.transaction(() => {
+        // 将该分类下的书签移到未分类
+        const moveResult = db.prepare('UPDATE bookmarks SET category_id = NULL WHERE category_id = ?').run(categoryId);
+        totalMoved += moveResult.changes;
 
-        // 删除子分类
-        db.prepare('DELETE FROM categories WHERE parent_id = ?').run(categoryId);
+        // 如果是一级分类，先处理其子分类
+        if (cat.parent_id === null) {
+            // 将子分类下的书签也移到未分类
+            const subMoveResult = db.prepare(`
+          UPDATE bookmarks SET category_id = NULL
+          WHERE category_id IN (SELECT id FROM categories WHERE parent_id = ?)
+        `).run(categoryId);
+            totalMoved += subMoveResult.changes;
 
-        // 总共移动的书签数
-        const totalMoved = movedBookmarks + subMoveResult.changes;
+            // 删除子分类
+            db.prepare('DELETE FROM categories WHERE parent_id = ?').run(categoryId);
+        }
 
         // 删除该分类
         db.prepare('DELETE FROM categories WHERE id = ?').run(categoryId);
 
-        return { movedBookmarks: totalMoved };
-    }
+        // 如果是一级分类，重新分配剩余一级分类的 sort_order
+        if (cat.parent_id === null) {
+            reorderTopLevelCategories(db);
+        }
+    });
 
-    // 删除该分类
-    db.prepare('DELETE FROM categories WHERE id = ?').run(categoryId);
+    tx();
 
-    return { movedBookmarks };
+    return { movedBookmarks: totalMoved };
 }
 
 /**
@@ -509,10 +556,15 @@ export function deleteCategories(db: Db, categoryIds: number[]): { movedBookmark
             try {
                 const result = deleteCategory(db, id);
                 totalMoved += result.movedBookmarks;
-            } catch {
-                // 忽略单个删除错误（可能已被级联删除）
+            } catch (e: any) {
+                // 只忽略"分类不存在"错误，其他错误应该抛出
+                if (e?.message !== '分类不存在') {
+                    throw e;
+                }
             }
         }
+        // 重新分配一级分类的 sort_order（在事务结束前统一处理）
+        reorderTopLevelCategories(db);
     });
 
     tx();
