@@ -7,6 +7,13 @@
     <title>书签管理器</title>
     <script src="/public/lib/tailwind.js"></script>
     <link rel="stylesheet" href="/public/app.css">
+    <!-- OverlayScrollbars for consistent cross-browser scrollbar behavior -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.4.6/styles/overlayscrollbars.min.css"
+          integrity="sha256-sW5QjJEaGGeGqh+eMnVRVwpeK/K0LqP0VqGLqKLqXXE="
+          crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/overlayscrollbars@2.4.6/browser/overlayscrollbars.browser.es6.min.js"
+            integrity="sha256-H2VM1lFzVHYE0Pa1TqKp9zBpYTW7e9hQ+2cLkC0FZqk="
+            crossorigin="anonymous"></script>
     <!-- SortableJS with SRI -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.2/Sortable.min.js"
             integrity="sha256-ymhDBwPE9ZYOkHNYZ8bpTSm1o943EH2BAOWjAQB+nm4="
@@ -896,81 +903,127 @@
         <div x-cloak x-show="showTemplateSelectModal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
             @click.self="showTemplateSelectModal = false">
-            <div class="w-full max-w-3xl rounded-lg bg-white p-4 shadow-xl max-h-[80vh] flex flex-col">
+            <div class="w-full max-w-3xl rounded-lg bg-white p-4 shadow-xl max-h-[80vh] flex flex-col" x-data="{ activeTab: 'custom' }">
                 <div class="flex items-center justify-between mb-3 flex-shrink-0">
                     <h3 class="text-lg font-semibold">🗂️ 选择分类模板</h3>
                     <button @click="showTemplateSelectModal = false"
                         class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                 </div>
-                <div class="flex-1 overflow-y-auto space-y-4 min-h-0">
-                    <!-- 预置模板 -->
-                    <template x-if="presetTemplates.length > 0">
-                        <div>
-                            <div class="text-xs font-medium text-slate-500 mb-1.5">预置模板</div>
-                            <div class="space-y-2">
-                                <template x-for="tpl in presetTemplates" :key="tpl.id">
-                                    <div class="flex items-center justify-between border rounded-lg px-3 py-2 hover:bg-slate-50"
-                                        :class="tpl.is_active === 1 ? 'border-blue-300 bg-blue-50' : ''">
-                                        <div class="flex-1 min-w-0">
-                                            <div class="flex items-center gap-2">
-                                                <span class="text-sm font-medium truncate" x-text="tpl.name"></span>
-                                                <span class="text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-600">预置</span>
-                                                <template x-if="tpl.is_active === 1">
-                                                    <span class="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">当前</span>
-                                                </template>
-                                            </div>
-                                            <div class="text-xs text-slate-400 mt-0.5" x-text="tpl.top_level_count + ' 个一级分类'"></div>
-                                        </div>
-                                        <div class="flex items-center gap-1 ml-2 flex-shrink-0">
-                                            <button @click="resetPresetTemplate(tpl.id)"
-                                                class="text-xs px-2 py-1 rounded border border-amber-300 text-amber-600 hover:bg-amber-50">重置</button>
-                                            <template x-if="tpl.is_active !== 1">
-                                                <button @click="if(await AppDialog.confirm('应用模板将替换当前所有分类，所有书签将变为未分类。如果该模板曾使用过，书签分布将自动恢复。\n\n确定应用此模板？')) { applyTemplate(tpl.id); showTemplateSelectModal = false; }"
-                                                    class="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600"
-                                                    :disabled="templateApplying">应用</button>
-                                            </template>
-                                        </div>
+                <!-- Tab Navigation -->
+                <div class="flex border-b mb-3 flex-shrink-0" role="tablist" aria-label="模板类型">
+                    <button @click="activeTab = 'custom'"
+                        class="px-4 py-2 text-sm font-medium transition-colors"
+                        role="tab" :aria-selected="activeTab === 'custom'" aria-controls="tabpanel-custom" id="tab-custom"
+                        :class="activeTab === 'custom' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500 hover:text-slate-700'">
+                        📁 我的模板
+                    </button>
+                    <button @click="activeTab = 'preset'"
+                        class="px-4 py-2 text-sm font-medium transition-colors"
+                        role="tab" :aria-selected="activeTab === 'preset'" aria-controls="tabpanel-preset" id="tab-preset"
+                        :class="activeTab === 'preset' ? 'border-b-2 border-blue-500 text-blue-600' : 'text-slate-500 hover:text-slate-700'">
+                        📚 模板库
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto min-h-0">
+                    <!-- Tab 1: My Templates (Custom) -->
+                    <div x-show="activeTab === 'custom'" class="space-y-2" role="tabpanel" id="tabpanel-custom" aria-labelledby="tab-custom">
+                        <template x-for="tpl in customTemplates" :key="tpl.id">
+                            <div class="flex items-center justify-between border rounded-lg px-3 py-2 hover:bg-slate-50"
+                                :class="tpl.is_active === 1 ? 'border-blue-300 bg-blue-50' : ''">
+                                <div class="flex-1 min-w-0">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-sm font-medium truncate" x-text="tpl.name"></span>
+                                        <template x-if="tpl.is_active === 1">
+                                            <span class="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">当前</span>
+                                        </template>
                                     </div>
-                                </template>
+                                    <div class="text-xs text-slate-400 mt-0.5" x-text="tpl.top_level_count + ' 个一级分类'"></div>
+                                </div>
+                                <div class="flex items-center gap-1 ml-2 flex-shrink-0">
+                                    <button @click="openTemplateEditor(tpl.id)"
+                                        class="text-xs px-2 py-1 rounded border hover:bg-slate-100">编辑</button>
+                                    <template x-if="tpl.is_active === 1">
+                                        <div class="relative group cursor-not-allowed">
+                                            <button aria-disabled="true" tabindex="-1"
+                                                class="text-xs px-2 py-1 rounded border border-rose-200 text-rose-500 opacity-50 pointer-events-none">删除</button>
+                                            <div class="absolute bottom-full left-1/2 -translate-x-1/2 mb-1 px-2 py-1 text-xs text-white bg-slate-800 rounded whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity">
+                                                无法删除正在使用中的模板
+                                            </div>
+                                        </div>
+                                    </template>
+                                    <template x-if="tpl.is_active !== 1">
+                                        <button @click="if(await AppDialog.confirm('确定删除此模板？')) deleteTemplate(tpl.id)"
+                                            class="text-xs px-2 py-1 rounded border border-rose-200 text-rose-500 hover:bg-rose-50">删除</button>
+                                    </template>
+                                    <template x-if="tpl.is_active !== 1">
+                                        <button @click="if(await AppDialog.confirm('应用模板将替换当前所有分类，所有书签将变为未分类。如果该模板曾使用过，书签分布将自动恢复。\n\n确定应用此模板？')) { applyTemplate(tpl.id); showTemplateSelectModal = false; }"
+                                            class="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600"
+                                            :disabled="templateApplying">应用</button>
+                                    </template>
+                                </div>
                             </div>
-                        </div>
-                    </template>
-                    <!-- 自定义模板 -->
-                    <div>
-                        <div class="text-xs font-medium text-slate-500 mb-1.5">自定义模板</div>
-                        <div class="space-y-2">
-                            <template x-for="tpl in customTemplates" :key="tpl.id">
-                                <div class="flex items-center justify-between border rounded-lg px-3 py-2 hover:bg-slate-50"
-                                    :class="tpl.is_active === 1 ? 'border-blue-300 bg-blue-50' : ''">
+                        </template>
+                        <template x-if="customTemplates.length === 0">
+                            <div class="text-xs text-slate-400 text-center py-8">暂无自定义模板，可从模板库创建</div>
+                        </template>
+                    </div>
+                    <!-- Tab 2: Template Library (Preset) -->
+                    <div x-show="activeTab === 'preset'" class="space-y-2" role="tabpanel" id="tabpanel-preset" aria-labelledby="tab-preset">
+                        <template x-for="tpl in presetTemplates" :key="tpl.id">
+                            <div class="border rounded-lg overflow-hidden"
+                                :class="tpl.is_active === 1 ? 'border-violet-300 bg-violet-50' : ''">
+                                <div class="flex items-center justify-between px-3 py-2 hover:bg-slate-50">
                                     <div class="flex-1 min-w-0">
                                         <div class="flex items-center gap-2">
                                             <span class="text-sm font-medium truncate" x-text="tpl.name"></span>
-                                            <span class="text-xs px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">自定义</span>
+                                            <span class="text-xs px-1.5 py-0.5 rounded bg-violet-100 text-violet-600">预置</span>
                                             <template x-if="tpl.is_active === 1">
-                                                <span class="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">当前</span>
+                                                <span class="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">当前使用</span>
                                             </template>
                                         </div>
                                         <div class="text-xs text-slate-400 mt-0.5" x-text="tpl.top_level_count + ' 个一级分类'"></div>
                                     </div>
                                     <div class="flex items-center gap-1 ml-2 flex-shrink-0">
-                                        <button @click="openTemplateEditor(tpl.id)"
-                                            class="text-xs px-2 py-1 rounded border hover:bg-slate-100">编辑</button>
-                                        <template x-if="tpl.is_active !== 1">
-                                            <button @click="if(await AppDialog.confirm('确定删除此模板？')) deleteTemplate(tpl.id)"
-                                                class="text-xs px-2 py-1 rounded border border-rose-200 text-rose-500 hover:bg-rose-50">删除</button>
-                                        </template>
-                                        <template x-if="tpl.is_active !== 1">
-                                            <button @click="if(await AppDialog.confirm('应用模板将替换当前所有分类，所有书签将变为未分类。如果该模板曾使用过，书签分布将自动恢复。\n\n确定应用此模板？')) { applyTemplate(tpl.id); showTemplateSelectModal = false; }"
-                                                class="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600"
-                                                :disabled="templateApplying">应用</button>
+                                        <button @click="toggleTemplatePreview(tpl.id)"
+                                            class="text-xs px-2 py-1 rounded border hover:bg-slate-100"
+                                            :class="templatePreviewId === tpl.id ? 'bg-slate-100' : ''"
+                                            :aria-expanded="templatePreviewId === tpl.id"
+                                            :aria-controls="'preview-panel-' + tpl.id">
+                                            <span x-text="templatePreviewId === tpl.id ? '👁️ 收起' : '👁️ 预览'"></span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <!-- Preview Tree -->
+                                <div x-show="templatePreviewId === tpl.id"
+                                    :id="'preview-panel-' + tpl.id"
+                                    class="border-t bg-slate-50 px-3 py-2">
+                                    <div class="text-xs font-medium text-slate-600 mb-2">分类结构预览：</div>
+                                    <div class="space-y-1 max-h-60 overflow-y-auto">
+                                        <template x-for="node in templatePreviewTree" :key="node.name">
+                                            <div>
+                                                <div class="text-xs font-medium text-slate-700">
+                                                    <span aria-hidden="true">📁 </span>
+                                                    <span x-text="node.name"></span>
+                                                </div>
+                                                <template x-if="node.children && node.children.length > 0">
+                                                    <div class="ml-4 mt-0.5 space-y-0.5">
+                                                        <template x-for="child in node.children" :key="child.name">
+                                                            <div class="text-xs text-slate-600">
+                                                                <span aria-hidden="true">└─ </span>
+                                                                <span x-text="child.name"></span>
+                                                            </div>
+                                                        </template>
+                                                    </div>
+                                                </template>
+                                            </div>
                                         </template>
                                     </div>
                                 </div>
-                            </template>
-                            <template x-if="customTemplates.length === 0">
-                                <div class="text-xs text-slate-400 text-center py-3">暂无自定义模板</div>
-                            </template>
-                        </div>
+                            </div>
+                        </template>
+                        <template x-if="presetTemplates.length === 0">
+                            <div class="text-xs text-slate-400 text-center py-8">暂无预置模板</div>
+                        </template>
                     </div>
                 </div>
                 <!-- New Template Button -->
@@ -982,16 +1035,16 @@
         <!-- Batch Size Selector Modal -->
         <div x-cloak x-show="showBatchSizeModal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-            @click.self="showBatchSizeModal = false">
+            @click.self="classifyBatchTemplateId = null; showBatchSizeModal = false">
             <div class="w-full max-w-xs rounded-lg bg-white p-4 shadow-xl">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-lg font-semibold">🤖 AI 分类</h3>
-                    <button @click="showBatchSizeModal = false"
+                    <button @click="classifyBatchTemplateId = null; showBatchSizeModal = false"
                         class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                 </div>
                 <p class="text-sm text-slate-500 mb-3">将对 <span class="font-medium text-slate-700" x-text="classifyBatchIds.length"></span> 个书签进行 AI 分类</p>
-                <template x-if="!activeTemplate">
-                    <div class="mb-3 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">请先在左侧「分类模板」中选择并应用一个模板，AI 分类依赖模板中的分类结构。</div>
+                <template x-if="!activeTemplate && !classifyBatchTemplateId">
+                    <div class="mb-3 text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">请先选择一个分类模板；可直接使用模板库中的预置模板，或使用当前已应用模板。</div>
                 </template>
                 <div class="mb-4">
                     <label class="text-xs text-slate-600">每批处理数量</label>
@@ -1002,10 +1055,12 @@
                     </select>
                 </div>
                 <div class="flex justify-end gap-2">
-                    <button @click="showBatchSizeModal = false"
+                    <button @click="classifyBatchTemplateId = null; showBatchSizeModal = false"
                         class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
                     <button @click="startClassifyBatch(classifyBatchIds, classifyBatchSize)"
-                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">开始分类</button>
+                        :disabled="!activeTemplate && !classifyBatchTemplateId"
+                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800"
+                        :class="{'opacity-50 cursor-not-allowed': !activeTemplate && !classifyBatchTemplateId}">开始分类</button>
                 </div>
             </div>
         </div>
@@ -1068,11 +1123,11 @@
                     <div class="mb-3 flex-shrink-0">
                         <label class="text-xs text-slate-600">基于</label>
                         <select x-model="templateEditSourceId"
-                            @change="loadPresetTreeForEdit(templateEditSourceId)"
+                            @change="loadTemplateForEdit(templateEditSourceId)"
                             class="w-full rounded border px-3 py-2 text-sm mt-1">
                             <option :value="null">空白模板</option>
-                            <template x-for="tpl in presetTemplates" :key="tpl.id">
-                                <option :value="tpl.id" x-text="tpl.name"></option>
+                            <template x-for="tpl in templates" :key="tpl.id">
+                                <option :value="tpl.id" x-text="tpl.name + (tpl.type === 'preset' ? ' [预置]' : ' [自定义]')"></option>
                             </template>
                         </select>
                     </div>

@@ -77,6 +77,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         const body: any = req.body || {};
         const rawIds = body.bookmark_ids;
         const batchSize = body.batch_size ?? 20;
+        const templateId = typeof body.template_id === 'number' ? body.template_id : null;
 
         if (!Array.isArray(rawIds) || rawIds.length === 0) {
             return reply.code(400).send({ error: '请提供书签 ID 列表' });
@@ -92,16 +93,23 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
 
         try {
-            const { getActiveTemplate } = await import('../template-service');
-            const activeTemplate = getActiveTemplate(db);
-            if (!activeTemplate) return reply.code(400).send({ error: '请先应用一个分类模板' });
+            const { getActiveTemplate, getTemplate } = await import('../template-service');
+
+            let targetTemplateId = templateId;
+            if (targetTemplateId !== null) {
+                const template = getTemplate(db, targetTemplateId);
+                if (!template) return reply.code(400).send({ error: '指定的模板不存在' });
+            } else {
+                const activeTemplate = getActiveTemplate(db);
+                if (!activeTemplate) return reply.code(400).send({ error: '请先应用一个分类模板' });
+                targetTemplateId = activeTemplate.id;
+            }
 
             const { createPlan, updatePlan } = await import('../ai-organize-plan');
             const { assignBookmarks } = await import('../ai-organize');
             const { createJob, jobQueue, updateJob } = await import('../jobs');
 
-            // Use active template for batch classification
-            const plan = createPlan(db, 'ids:' + ids.join(','), activeTemplate.id);
+            const plan = createPlan(db, 'ids:' + ids.join(','), targetTemplateId);
             const job = createJob(db, 'ai_organize', `AI 批量分类 (${ids.length} 个书签)`, ids.length);
             updatePlan(db, plan.id, { job_id: job.id });
 

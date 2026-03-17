@@ -178,6 +178,44 @@ export function getCategoryById(db: Db, id: number): CategoryRow | null {
 }
 
 /**
+ * 根据路径获取分类
+ * @param path 分类路径，如 "技术" 或 "技术/编程"
+ * @returns 分类对象，如果不存在则返回 null
+ */
+export function getCategoryByPath(db: Db, path: string): CategoryRow | null {
+    const parts = path.split('/').map(s => s.trim()).filter(Boolean);
+
+    if (parts.length === 0) return null;
+
+    if (parts.length === 1) {
+        // 一级分类
+        const topName = parts[0];
+        return db.prepare(`
+            SELECT id, name, parent_id, icon, color, sort_order, created_at
+            FROM categories WHERE parent_id IS NULL AND name = ?
+        `).get(topName) as CategoryRow | undefined ?? null;
+    }
+
+    // 二级分类
+    const topName = parts[0];
+    const subName = parts[1];
+    const fullSubName = `${topName}/${subName}`;
+
+    // 先找到一级分类
+    const topCat = db.prepare(`
+        SELECT id FROM categories WHERE parent_id IS NULL AND name = ?
+    `).get(topName) as { id: number } | undefined;
+
+    if (!topCat) return null;
+
+    // 查找二级分类（兼容 simpleName 和 fullSubName 两种存储格式）
+    return db.prepare(`
+        SELECT id, name, parent_id, icon, color, sort_order, created_at
+        FROM categories WHERE parent_id = ? AND (name = ? OR name = ?)
+    `).get(topCat.id, fullSubName, subName) as CategoryRow | undefined ?? null;
+}
+
+/**
  * 根据名称获取分类
  */
 export function getCategoryByName(db: Db, name: string): CategoryRow | null {
@@ -268,6 +306,34 @@ export function createTopCategory(db: Db, name: string, options?: {
 }
 
 /**
+ * 创建一级分类（带模板同步）
+ */
+export function createTopCategoryWithSync(db: Db, name: string, options?: {
+    icon?: string;
+    color?: string;
+}, syncFn?: (db: Db) => void): number {
+    return db.transaction(() => {
+        const id = createTopCategory(db, name, options);
+        if (syncFn) syncFn(db);
+        return id;
+    })();
+}
+
+/**
+ * 创建二级分类（带模板同步）
+ */
+export function createSubCategoryWithSync(db: Db, name: string, parentId: number, options?: {
+    icon?: string;
+    color?: string;
+}, syncFn?: (db: Db) => void): number {
+    return db.transaction(() => {
+        const id = createSubCategory(db, name, parentId, options);
+        if (syncFn) syncFn(db);
+        return id;
+    })();
+}
+
+/**
  * 创建二级分类
  */
 export function createSubCategory(db: Db, name: string, parentId: number, options?: {
@@ -315,7 +381,7 @@ export function createSubCategory(db: Db, name: string, parentId: number, option
 
 /**
  * 根据路径创建或获取分类（兼容旧格式如 "技术/编程"）
- * 
+ *
  * @param path 分类路径，如 "技术" 或 "技术/编程"
  * @returns 最终分类的 ID
  */
@@ -379,6 +445,27 @@ export function getOrCreateCategoryByPath(db: Db, path: string): number {
 }
 
 /**
+ * 根据路径创建或获取分类（带模板同步）
+ */
+export function getOrCreateCategoryByPathWithSync(db: Db, path: string, syncFn?: (db: Db) => void): number {
+    return db.transaction(() => {
+        const id = getOrCreateCategoryByPath(db, path);
+        if (syncFn) syncFn(db);
+        return id;
+    })();
+}
+
+/**
+ * 重命名分类（带模板同步）
+ */
+export function renameCategoryWithSync(db: Db, categoryId: number, newName: string, syncFn?: (db: Db) => void): void {
+    db.transaction(() => {
+        renameCategory(db, categoryId, newName);
+        if (syncFn) syncFn(db);
+    })();
+}
+
+/**
  * 重命名分类
  */
 export function renameCategory(db: Db, categoryId: number, newName: string): void {
@@ -429,6 +516,16 @@ function reorderTopLevelCategories(db: Db): void {
     topLevelCategories.forEach((cat, index) => {
         stmt.run(index, cat.id);
     });
+}
+
+/**
+ * 移动分类（带模板同步）
+ */
+export function moveCategoryWithSync(db: Db, categoryId: number, newParentId: number | null, syncFn?: (db: Db) => void): void {
+    db.transaction(() => {
+        moveCategory(db, categoryId, newParentId);
+        if (syncFn) syncFn(db);
+    })();
 }
 
 /**
@@ -502,6 +599,17 @@ export function moveCategory(db: Db, categoryId: number, newParentId: number | n
 }
 
 /**
+ * 删除分类（带模板同步）
+ */
+export function deleteCategoryWithSync(db: Db, categoryId: number, syncFn?: (db: Db) => void): { movedBookmarks: number } {
+    return db.transaction(() => {
+        const result = deleteCategory(db, categoryId);
+        if (syncFn) syncFn(db);
+        return result;
+    })();
+}
+
+/**
  * 删除分类（书签移到未分类）
  */
 export function deleteCategory(db: Db, categoryId: number): { movedBookmarks: number } {
@@ -543,6 +651,17 @@ export function deleteCategory(db: Db, categoryId: number): { movedBookmarks: nu
     tx();
 
     return { movedBookmarks: totalMoved };
+}
+
+/**
+ * 批量删除分类（带模板同步）
+ */
+export function deleteCategoriesWithSync(db: Db, categoryIds: number[], syncFn?: (db: Db) => void): { movedBookmarks: number } {
+    return db.transaction(() => {
+        const result = deleteCategories(db, categoryIds);
+        if (syncFn) syncFn(db);
+        return result;
+    })();
 }
 
 /**

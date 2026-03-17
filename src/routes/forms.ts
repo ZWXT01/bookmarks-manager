@@ -4,7 +4,8 @@
  */
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
-import { deleteCategory as deleteCategoryService, getOrCreateCategoryByPath, renameCategory } from '../category-service';
+import { deleteCategoryWithSync, getOrCreateCategoryByPathWithSync, renameCategoryWithSync } from '../category-service';
+import { syncCategoriesToActiveTemplate } from '../template-service';
 import { canonicalizeUrl } from '../url';
 import { toInt, validateStringLength, safeRedirectTarget, withFlash } from '../utils/helpers';
 
@@ -29,7 +30,7 @@ export const formsRoutes: FastifyPluginCallback<FormsRoutesOptions> = (app, opts
 
         try {
             validateStringLength(name, 200, '分类名称');
-            getOrCreateCategoryByPath(db, name);
+            getOrCreateCategoryByPathWithSync(db, name, syncCategoriesToActiveTemplate);
             req.log.info({ categoryName: name }, 'category created');
             return reply.redirect(flash(redirectTo, 'msg', '分类已创建'));
         } catch (e: any) {
@@ -59,7 +60,7 @@ export const formsRoutes: FastifyPluginCallback<FormsRoutesOptions> = (app, opts
 
         try {
             validateStringLength(name, 200, '分类名称');
-            renameCategory(db, categoryId, name);
+            renameCategoryWithSync(db, categoryId, name, syncCategoriesToActiveTemplate);
             req.log.info({ categoryId, newName: name }, 'category updated');
             return reply.redirect(flash(redirectTo, 'msg', '分类已更新'));
         } catch (e: any) {
@@ -83,7 +84,7 @@ export const formsRoutes: FastifyPluginCallback<FormsRoutesOptions> = (app, opts
         }
 
         try {
-            const result = deleteCategoryService(db, categoryId);
+            const result = deleteCategoryWithSync(db, categoryId, syncCategoriesToActiveTemplate);
             req.log.info({ categoryId, movedBookmarks: result.movedBookmarks }, 'category deleted');
             return reply.redirect(flash(redirectTo, 'msg', '分类已删除'));
         } catch (e: any) {

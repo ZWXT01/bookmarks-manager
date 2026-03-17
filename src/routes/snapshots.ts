@@ -9,10 +9,11 @@ import type { Database } from 'better-sqlite3';
 export interface SnapshotRoutesOptions {
     db: Database;
     snapshotsDir: string;
+    staticApiToken: string;
 }
 
 export const snapshotRoutes: FastifyPluginCallback<SnapshotRoutesOptions> = (app, opts, done) => {
-    const { db, snapshotsDir } = opts;
+    const { db, snapshotsDir, staticApiToken } = opts;
 
     // 确保快照表存在
     db.exec(`
@@ -44,7 +45,7 @@ export const snapshotRoutes: FastifyPluginCallback<SnapshotRoutesOptions> = (app
             snapshots,
             pagination: { page: 1, limit: total, total, totalPages: 1 },
             totalSizeMB: (totalSize / 1024 / 1024).toFixed(2),
-            apiToken: process.env.API_TOKEN || '',
+            apiToken: staticApiToken,
         });
     });
 

@@ -127,6 +127,15 @@ function bookmarkApp() {
     templateApplying: false,
     templateEditSnapshot: null,
     templateEditSourceId: null,
+    templatePreviewId: null,
+    templatePreviewTree: [],
+
+    // Race condition prevention: sequence numbers and abort controllers for async requests
+    _categoryLoadSeq: 0,
+    _templateLoadSeq: 0,
+    _categoryAbortController: null,
+    _templateAbortController: null,
+    _overlayScrollbarsInstance: null,
 
     get presetTemplates() { return this.templates.filter(t => t.type === 'preset'); },
     get customTemplates() { return this.templates.filter(t => t.type === 'custom'); },
@@ -135,6 +144,7 @@ function bookmarkApp() {
     showBatchSizeModal: false,
     classifyBatchIds: [],
     classifyBatchSize: 20,
+    classifyBatchTemplateId: null,
 
     async init() {
       this.initTheme();
@@ -144,6 +154,11 @@ function bookmarkApp() {
       await this.loadTemplates();
       this.restoreLastJob();
       this.pollCurrentJob();
+
+      // Initialize OverlayScrollbars for consistent cross-browser scrollbar behavior
+      this.$nextTick(() => {
+        this.initCategoryTabsScrollbar();
+      });
     },
 
     initTheme() {
@@ -168,6 +183,12 @@ function bookmarkApp() {
         this.theme = 'dark';
         document.documentElement.setAttribute('data-theme', 'dark');
         localStorage.setItem('theme', 'dark');
+      }
+
+      // Update OverlayScrollbars theme if instance exists
+      if (this._overlayScrollbarsInstance) {
+        const newTheme = this.theme === 'dark' ? 'os-theme-dark' : 'os-theme-light';
+        this._overlayScrollbarsInstance.options({ scrollbars: { theme: newTheme } });
       }
     },
 
@@ -597,15 +618,33 @@ function bookmarkApp() {
     },
 
     async loadCategories() {
+      // Abort previous request if still pending
+      if (this._categoryAbortController) {
+        this._categoryAbortController.abort();
+      }
+
+      // Create new abort controller for this request
+      this._categoryAbortController = new AbortController();
+      const currentSeq = ++this._categoryLoadSeq;
+
       try {
         // 获取树状结构
-        const res = await fetch('/api/categories?tree=true');
+        const res = await fetch('/api/categories?tree=true', {
+          signal: this._categoryAbortController.signal
+        });
 
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}: ${res.statusText}`);
         }
 
         const data = await res.json();
+
+        // Discard stale responses: only apply if this is still the latest request
+        if (currentSeq !== this._categoryLoadSeq) {
+          console.log(`[loadCategories] Discarding stale response (seq ${currentSeq}, current ${this._categoryLoadSeq})`);
+          return;
+        }
+
         this.categoryTree = data.tree || [];
         this.totalCount = data.totalCount || 0;
         this.uncategorizedCount = data.uncategorizedCount || 0;
@@ -620,6 +659,11 @@ function bookmarkApp() {
           });
         }
       } catch (e) {
+        // Don't show error toast for aborted requests
+        if (e.name === 'AbortError') {
+          console.log('[loadCategories] Request aborted');
+          return;
+        }
         console.error('Failed to load categories:', e);
         this.showToast('加载分类失败', 'error');
       }
@@ -881,28 +925,54 @@ function bookmarkApp() {
         onEnd: async (evt) => {
           if (evt.oldIndex === evt.newIndex) return;
 
-          const orderedIds = Array.from(container.querySelectorAll('.category-card'))
-            .map((item) => Number(item.dataset.categoryId))
-            .filter((id) => Number.isFinite(id));
+          // Disable dragging during save to prevent race conditions with server
+          this.categoryManagerSortable.option('disabled', true);
 
-          if (orderedIds.length !== this.categoryTree.length) {
-            this.showToast('清空搜索后再调整排序', 'info');
-            await this.loadCategories();
-            return;
-          }
+          try {
+            // Step 1: Read the new order from DOM (after Sortable's modification)
+            const orderedIds = Array.from(container.querySelectorAll('.category-card'))
+              .map((item) => Number(item.dataset.categoryId))
+              .filter((id) => Number.isFinite(id));
 
-          const previousTree = [...this.categoryTree];
-          const categoryMap = new Map(previousTree.map((cat) => [Number(cat.id), cat]));
-          this.categoryTree = orderedIds.map((id) => categoryMap.get(id)).filter(Boolean);
+            if (orderedIds.length !== this.categoryTree.length) {
+              this.showToast('清空搜索后再调整排序', 'info');
+              await this.loadCategories();
+              return;
+            }
 
-          const saved = await this.saveCategoryOrder();
-          if (!saved) {
-            this.categoryTree = previousTree;
-            await this.loadCategories();
-          } else {
-            // Sync the flattened categories array after successful reorder
-            this.categories = this.flattenCategoryTree(this.categoryTree);
-            this.initAllCategoryIds();
+            // Step 2: CRITICAL FIX - Revert Sortable's DOM manipulation before Alpine re-renders
+            // This prevents "DOM Tearing" where Sortable's physical DOM changes conflict
+            // with Alpine's data-driven rendering, causing animation stuttering and visual glitches
+            const itemEl = evt.item;
+            const parent = itemEl.parentNode;
+
+            if (evt.oldIndex < evt.newIndex) {
+              // Item moved forward: insert before the element now at oldIndex
+              const referenceNode = parent.children[evt.oldIndex];
+              parent.insertBefore(itemEl, referenceNode);
+            } else {
+              // Item moved backward: insert before the element after oldIndex
+              const referenceNode = parent.children[evt.oldIndex + 1];
+              parent.insertBefore(itemEl, referenceNode);
+            }
+
+            // Step 3: Update Alpine's data - Alpine will handle smooth re-rendering
+            const previousTree = [...this.categoryTree];
+            const categoryMap = new Map(previousTree.map((cat) => [Number(cat.id), cat]));
+            this.categoryTree = orderedIds.map((id) => categoryMap.get(id)).filter(Boolean);
+
+            const saved = await this.saveCategoryOrder();
+            if (!saved) {
+              this.categoryTree = previousTree;
+              await this.loadCategories();
+            } else {
+              // Sync the flattened categories array after successful reorder
+              this.categories = this.flattenCategoryTree(this.categoryTree);
+              this.initAllCategoryIds();
+            }
+          } finally {
+            // Re-enable dragging after save completes (or fails)
+            this.syncCategoryManagerSortState();
           }
         }
       });
@@ -1251,17 +1321,64 @@ function bookmarkApp() {
       }, 300);
     },
 
-    scrollCategoryTabs(direction) {
+    initCategoryTabsScrollbar() {
+      // Initialize OverlayScrollbars for consistent cross-browser scrollbar behavior
       const container = this.$refs.categoryTabsContainer;
-      if (!container) return;
+      if (!container || typeof OverlayScrollbarsGlobal === 'undefined') return;
+
+      // Clean up existing instance before creating a new one
+      this.destroyCategoryTabsScrollbar();
+
+      const { OverlayScrollbars } = OverlayScrollbarsGlobal;
+
+      // Determine theme based on current setting
+      const theme = this.theme === 'dark' ||
+                    (this.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
+                    ? 'os-theme-dark' : 'os-theme-light';
+
+      // Apply OverlayScrollbars to the category tabs container
+      this._overlayScrollbarsInstance = OverlayScrollbars(container, {
+        scrollbars: {
+          theme: theme,
+          autoHide: 'leave',
+          autoHideDelay: 300,
+        },
+        overflow: {
+          x: 'scroll',
+          y: 'hidden',
+        },
+      });
+    },
+
+    destroyCategoryTabsScrollbar() {
+      // Clean up OverlayScrollbars instance to prevent memory leaks
+      if (this._overlayScrollbarsInstance) {
+        this._overlayScrollbarsInstance.destroy();
+        this._overlayScrollbarsInstance = null;
+      }
+    },
+
+    scrollCategoryTabs(direction) {
+      // Use OverlayScrollbars instance if available, otherwise fallback to direct DOM manipulation
+      let scrollTarget;
+
+      if (this._overlayScrollbarsInstance) {
+        // Get the viewport element from OverlayScrollbars instance
+        scrollTarget = this._overlayScrollbarsInstance.elements().viewport;
+      } else {
+        // Fallback to direct reference
+        scrollTarget = this.$refs.categoryTabsContainer;
+      }
+
+      if (!scrollTarget) return;
 
       const scrollAmount = 300; // 每次滚动 300px
-      const currentScroll = container.scrollLeft;
+      const currentScroll = scrollTarget.scrollLeft;
 
       if (direction === 'left') {
-        container.scrollLeft = currentScroll - scrollAmount;
+        scrollTarget.scrollLeft = currentScroll - scrollAmount;
       } else if (direction === 'right') {
-        container.scrollLeft = currentScroll + scrollAmount;
+        scrollTarget.scrollLeft = currentScroll + scrollAmount;
       }
     },
 
@@ -1849,13 +1966,38 @@ function bookmarkApp() {
     },
 
     async loadTemplates() {
+      // Abort previous request if still pending
+      if (this._templateAbortController) {
+        this._templateAbortController.abort();
+      }
+
+      // Create new abort controller for this request
+      this._templateAbortController = new AbortController();
+      const currentSeq = ++this._templateLoadSeq;
+
       try {
-        const res = await fetch('/api/templates', { headers: { 'Accept': 'application/json' } });
+        const res = await fetch('/api/templates', {
+          headers: { 'Accept': 'application/json' },
+          signal: this._templateAbortController.signal
+        });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data) return;
+
+        // Discard stale responses: only apply if this is still the latest request
+        if (currentSeq !== this._templateLoadSeq) {
+          console.log(`[loadTemplates] Discarding stale response (seq ${currentSeq}, current ${this._templateLoadSeq})`);
+          return;
+        }
+
         this.templates = data.templates || [];
         this.activeTemplate = this.templates.find(t => t.is_active === 1) || null;
-      } catch { }
+      } catch (e) {
+        // Don't log error for aborted requests
+        if (e.name === 'AbortError') {
+          return;
+        }
+        // Silently fail for template loading errors
+      }
     },
 
     async applyTemplate(id) {
@@ -1867,7 +2009,11 @@ function bookmarkApp() {
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.success) {
-          this.showToast(data?.error || '应用模板失败', 'error');
+          if (res.status === 403) {
+            this.showToast(data?.error || '预置模板为只读参考，请先基于此创建自定义模板', 'error');
+          } else {
+            this.showToast(data?.error || '应用模板失败', 'error');
+          }
           return;
         }
         await this.loadTemplates();
@@ -1915,6 +2061,11 @@ function bookmarkApp() {
           return null;
         }
         await this.loadTemplates();
+        // 如果更新的是活动模板，刷新分类和书签以同步 UI
+        if (data.template && data.template.is_active === 1) {
+          await this.loadCategories();
+          await this.loadBookmarks();
+        }
         this.showToast('模板已更新', 'success');
         return data.template || null;
       } catch {
@@ -1997,6 +2148,12 @@ function bookmarkApp() {
           name: n.name,
           children: (n.children || []).map(c => ({ name: c.name })),
         }));
+        this.templateEditSourceId = null;
+        this.templateEditSnapshot = JSON.stringify({
+          name: this.templateEditName,
+          tree: this.templateEditTree
+        });
+        this.showTemplateSelectModal = false;
         this.showTemplateEditModal = true;
       } catch {
         this.showToast('加载模板详情失败', 'error');
@@ -2017,23 +2174,64 @@ function bookmarkApp() {
       return JSON.stringify({ name: this.templateEditName, tree: this.templateEditTree }) !== this.templateEditSnapshot;
     },
 
-    async loadPresetTreeForEdit(sourceId) {
+    async loadTemplateForEdit(sourceId) {
       if (!sourceId) {
         this.templateEditTree = [];
+        this.templateEditName = '';
         return;
       }
       try {
         const res = await fetch(`/api/templates/${sourceId}`, { headers: { 'Accept': 'application/json' } });
         const data = await res.json().catch(() => null);
-        if (res.ok && data?.template?.tree) {
-          this.templateEditTree = data.template.tree.map(n => ({
+        if (res.ok && data?.template) {
+          this.templateEditTree = (data.template.tree || []).map(n => ({
             name: n.name,
             children: (n.children || []).map(c => ({ name: c.name })),
           }));
+          const baseName = data.template.name.replace(/\s*\(自定义\)\s*$/, '');
+          this.templateEditName = baseName + ' (自定义)';
         }
       } catch {
-        this.showToast('加载预置模板失败', 'error');
+        this.showToast('加载模板失败', 'error');
       }
+    },
+
+    toggleTemplatePreview(tplId) {
+      if (this.templatePreviewId === tplId) {
+        this.templatePreviewId = null;
+        this.templatePreviewTree = [];
+      } else {
+        this.loadTemplatePreview(tplId);
+      }
+    },
+
+    async loadTemplatePreview(tplId) {
+      try {
+        const res = await fetch(`/api/templates/${tplId}`, { headers: { 'Accept': 'application/json' } });
+        const data = await res.json().catch(() => null);
+        if (res.ok && data?.template?.tree) {
+          this.templatePreviewId = tplId;
+          this.templatePreviewTree = data.template.tree;
+        }
+      } catch {
+        this.showToast('加载模板详情失败', 'error');
+      }
+    },
+
+    async startClassifyWithTemplate(templateId) {
+      if (!this.isAIConfigured()) {
+        this.showToast('请先在设置页配置 AI', 'error');
+        return;
+      }
+      const uncategorized = this.bookmarks.filter(b => !b.category_id);
+      if (uncategorized.length === 0) {
+        this.showToast('没有未分类的书签', 'info');
+        return;
+      }
+      this.classifyBatchIds = uncategorized.map(b => b.id);
+      this.classifyBatchSize = 20;
+      this.classifyBatchTemplateId = templateId;
+      this.showBatchSizeModal = true;
     },
 
     addTemplateTreeNode(parentIndex) {
@@ -2081,6 +2279,7 @@ function bookmarkApp() {
         return;
       }
       this.classifyBatchIds = bookmarkIds;
+      this.classifyBatchTemplateId = null;
       this.classifyBatchSize = 20;
       this.showBatchSizeModal = true;
     },
@@ -2088,10 +2287,14 @@ function bookmarkApp() {
     async startClassifyBatch(bookmarkIds, batchSize) {
       this.showBatchSizeModal = false;
       try {
+        const body = { bookmark_ids: bookmarkIds, batch_size: batchSize };
+        if (this.classifyBatchTemplateId) {
+          body.template_id = this.classifyBatchTemplateId;
+        }
         const res = await fetch('/api/ai/classify-batch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ bookmark_ids: bookmarkIds, batch_size: batchSize }),
+          body: JSON.stringify(body),
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.success) {
@@ -2102,6 +2305,7 @@ function bookmarkApp() {
           this.showToast(data?.error || '启动 AI 分类失败', 'error');
           return;
         }
+        this.classifyBatchTemplateId = null;
         this.organizePlan = { id: data.planId, job_id: data.jobId };
         this.organizePhase = 'assigning';
         this.organizeProgress = { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 };
@@ -2110,6 +2314,8 @@ function bookmarkApp() {
         this.showToast(`AI 分类已启动 (${bookmarkIds.length} 个书签)`, 'info');
       } catch {
         this.showToast('启动 AI 分类失败', 'error');
+      } finally {
+        this.classifyBatchTemplateId = null;
       }
     },
 

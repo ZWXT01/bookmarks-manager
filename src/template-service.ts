@@ -1,5 +1,5 @@
 import type { Db } from './db';
-import { getOrCreateCategoryByPath, getCategoryTree, getCategoryFullPath } from './category-service';
+import { getOrCreateCategoryByPath, getCategoryTree, getCategoryFullPath, getCategoryByPath, deleteCategory } from './category-service';
 import { jobQueue, updateJob } from './jobs';
 
 export interface TemplateRow {
@@ -32,6 +32,129 @@ function normalizeTree(tree: CategoryNode[]): CategoryNode[] {
     name: n.name.trim(),
     children: (n.children ?? []).map(c => ({ name: c.name.trim() })),
   }));
+}
+
+/**
+ * 同步活动模板的 tree 到 categories 表
+ * 策略：
+ * - 新增：自动创建分类
+ * - 删除：只删除空分类（无书签）
+ * - 重命名：不自动处理（保留旧分类，创建新分类）
+ */
+function syncActiveTemplateToCategories(db: Db, oldTree: CategoryNode[], newTree: CategoryNode[]): void {
+  // 构建新旧路径集合
+  const oldPaths = new Set<string>();
+  const newPaths = new Set<string>();
+
+  for (const node of oldTree) {
+    oldPaths.add(node.name);
+    for (const child of node.children ?? []) {
+      oldPaths.add(`${node.name}/${child.name}`);
+    }
+  }
+
+  for (const node of newTree) {
+    newPaths.add(node.name);
+    for (const child of node.children ?? []) {
+      newPaths.add(`${node.name}/${child.name}`);
+    }
+  }
+
+  // 1. 处理新增：创建不存在的分类
+  for (const path of newPaths) {
+    if (!oldPaths.has(path)) {
+      getOrCreateCategoryByPath(db, path);
+    }
+  }
+
+  // 2. 处理删除：只删除空分类（无书签）
+  for (const path of oldPaths) {
+    if (!newPaths.has(path)) {
+      const cat = getCategoryByPath(db, path);
+      if (cat) {
+        // 检查分类及其所有子分类是否都为空
+        const hasAnyBookmarks = db.prepare(`
+          SELECT COUNT(*) as count FROM bookmarks
+          WHERE category_id = ? OR category_id IN (
+            SELECT id FROM categories WHERE parent_id = ?
+          )
+        `).get(cat.id, cat.id) as { count: number };
+
+        if (hasAnyBookmarks.count === 0) {
+          // 空分类且无子分类书签，安全删除
+          try {
+            deleteCategory(db, cat.id);
+          } catch (e: any) {
+            // 只忽略"分类不存在"的预期异常，其他异常应该抛出让事务回滚
+            if (e?.message === '分类不存在') {
+              // 预期的异常（可能父分类已删除），静默处理
+              continue;
+            }
+            // 非预期异常，记录并抛出以触发事务回滚
+            console.error(`Failed to delete empty category ${cat.id} (${path}):`, e);
+            throw e;
+          }
+        }
+        // 如果有书签，保留分类不删除
+      }
+    }
+  }
+}
+
+/**
+ * 反向同步：将 categories 表同步到活动自定义模板
+ * 策略：读取当前分类树，更新活动模板的 tree 字段
+ *
+ * 应在以下分类操作后调用：
+ * - 创建分类
+ * - 删除分类
+ * - 重命名分类
+ * - 移动分类
+ * - 重新排序分类
+ */
+export function syncCategoriesToActiveTemplate(db: Db): void {
+  const activeTemplate = getActiveTemplate(db);
+  if (!activeTemplate) return;
+  if (activeTemplate.type === 'preset') return; // 预置模板不可修改
+
+  // 获取分类结构（不计算书签数量，提升性能）
+  const categories = db.prepare(`
+    SELECT id, name, parent_id, sort_order
+    FROM categories
+    ORDER BY parent_id NULLS FIRST, sort_order, name
+  `).all() as Array<{ id: number; name: string; parent_id: number | null; sort_order: number }>;
+
+  // 构建树结构
+  const topLevel: Array<{ name: string; children: Array<{ name: string }> }> = [];
+  const categoryMap = new Map<number, { name: string; children: Array<{ name: string }> }>();
+
+  for (const cat of categories) {
+    if (cat.parent_id === null) {
+      const node = { name: cat.name, children: [] as Array<{ name: string }> };
+      topLevel.push(node);
+      categoryMap.set(cat.id, node);
+    }
+  }
+
+  for (const cat of categories) {
+    if (cat.parent_id !== null) {
+      const parent = categoryMap.get(cat.parent_id);
+      if (parent) {
+        const childName = cat.name.includes('/') ? cat.name.split('/').pop()! : cat.name;
+        parent.children.push({ name: childName });
+      } else {
+        // 孤立的二级分类（parent_id 对应的一级不存在），提升为一级分类
+        const orphanName = cat.name.includes('/') ? cat.name.split('/').pop()! : cat.name;
+        topLevel.push({ name: orphanName, children: [] });
+      }
+    }
+  }
+
+  // 更新活动模板
+  const now = nowIso();
+  db.prepare(
+    'UPDATE category_templates SET tree = ?, updated_at = ? WHERE id = ?'
+  ).run(JSON.stringify(normalizeTree(topLevel)), now, activeTemplate.id);
 }
 
 // ==================== CRUD ====================
@@ -88,9 +211,24 @@ export function updateTemplate(db: Db, id: number, patch: { name?: string; tree?
   }
   if (!sets.length) return tpl;
 
-  sets.push('updated_at = ?'); vals.push(nowIso()); vals.push(id);
-  db.prepare(`UPDATE category_templates SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
-  return getTemplate(db, id);
+  // 使用事务确保模板更新和分类同步的原子性
+  return db.transaction(() => {
+    // 如果是活动模板且更新了 tree，先获取旧 tree 用于 diff
+    const oldTree = (tpl.is_active === 1 && patch.tree !== undefined)
+      ? JSON.parse(tpl.tree) as CategoryNode[]
+      : [];
+
+    sets.push('updated_at = ?'); vals.push(nowIso()); vals.push(id);
+    db.prepare(`UPDATE category_templates SET ${sets.join(', ')} WHERE id = ?`).run(...vals);
+
+    // 如果是活动模板且更新了 tree，完整同步到 categories 表
+    if (tpl.is_active === 1 && patch.tree !== undefined) {
+      const newTree = normalizeTree(patch.tree);
+      syncActiveTemplateToCategories(db, oldTree, newTree);
+    }
+
+    return getTemplate(db, id);
+  })();
 }
 
 export function deleteTemplate(db: Db, id: number): boolean {
@@ -179,10 +317,10 @@ export function validateTree(tree: CategoryNode[], type: 'preset' | 'custom'): {
 export function applyTemplate(db: Db, templateId: number): void {
   db.transaction(() => {
     const active = getActiveTemplate(db);
-    if (active?.id === templateId) return;
-
     const target = getTemplate(db, templateId);
     if (!target) throw new TemplateError(404, 'template not found');
+    if (target.type === 'preset') throw new TemplateError(403, 'Preset templates are read-only references. Please create a custom template based on it first.');
+    if (active?.id === templateId) return;
 
     if (active) saveSnapshot(db, active.id);
 
@@ -220,19 +358,21 @@ export function saveSnapshot(db: Db, templateId: number): void {
 export function resetTemplate(db: Db, id: number): void {
   const tpl = getTemplate(db, id);
   if (!tpl) throw new TemplateError(404, 'template not found');
-  if (tpl.type !== 'preset') throw new TemplateError(403, 'only preset templates can be reset');
+
+  // Only custom templates can be reset (preset templates are read-only)
+  if (tpl.type === 'preset') {
+    throw new TemplateError(403, 'Preset templates are read-only and cannot be reset. Please create a custom template based on it instead.');
+  }
+
+  // Only the active template can be reset (to avoid corrupting live data)
+  const active = getActiveTemplate(db);
+  if (!active || active.id !== id) {
+    throw new TemplateError(403, 'Only the currently active template can be reset');
+  }
 
   const tree: CategoryNode[] = JSON.parse(tpl.tree);
 
   db.transaction(() => {
-    const active = getActiveTemplate(db);
-
-    // Critical fix: Only allow resetting the currently active template
-    // Resetting non-active templates would corrupt live data
-    if (!active || active.id !== id) {
-      throw new TemplateError(403, 'only the active template can be reset');
-    }
-
     // Save snapshot before reset
     saveSnapshot(db, id);
 
