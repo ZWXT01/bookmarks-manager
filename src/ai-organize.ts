@@ -235,6 +235,14 @@ ${categoriesText}
           needs_review_count: needsReviewCount,
           batches_done: bi + 1,
         });
+        if (plan.job_id) {
+          updateJob(db, plan.job_id, {
+            total: bookmarks.length,
+            processed: allAssignments.length,
+            inserted: allAssignments.filter(a => a.status === 'assigned').length,
+            skipped: needsReviewCount,
+          });
+        }
         transitionStatus(db, planId, 'failed');
         return;
       }

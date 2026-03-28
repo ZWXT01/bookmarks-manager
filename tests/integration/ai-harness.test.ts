@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { assignBookmarks } from '../../src/ai-organize';
-import { createPlan, getPlan } from '../../src/ai-organize-plan';
-import { getJob, jobQueue } from '../../src/jobs';
-import { applyTemplate, createTemplate, type CategoryNode } from '../../src/template-service';
+import { createPlan, getPlan, updatePlan } from '../../src/ai-organize-plan';
+import { createJob, getJob, jobQueue } from '../../src/jobs';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import {
+    activateAiTestTemplate,
     createQueuedAIHarness,
     jsonCompletion,
     seedAISettings,
@@ -13,23 +13,6 @@ import {
     type MockAIStep,
 } from '../helpers/ai';
 import { seedBookmarks } from '../helpers/factories';
-
-const TEST_TEMPLATE_TREE: CategoryNode[] = [
-    {
-        name: '技术开发',
-        children: [{ name: '前端' }, { name: '后端' }],
-    },
-    {
-        name: '学习资源',
-        children: [{ name: '文档' }],
-    },
-];
-
-function activateAiTestTemplate(ctx: TestAppContext): number {
-    const template = createTemplate(ctx.db, 'AI 测试模板', TEST_TEMPLATE_TREE);
-    applyTemplate(ctx.db, template.id);
-    return template.id;
-}
 
 function parseAssignments(planId: string, assignments: string | null) {
     if (!assignments) {
@@ -67,7 +50,7 @@ describe('integration: AI deterministic harness', () => {
             textCompletion('技术开发/前端/React'),
         ]);
         const config = seedAISettings(appCtx.db);
-        activateAiTestTemplate(appCtx);
+        activateAiTestTemplate(appCtx.db);
 
         const response = await appCtx.app.inject({
             method: 'POST',
@@ -101,7 +84,7 @@ describe('integration: AI deterministic harness', () => {
                 ],
             }),
         ]);
-        activateAiTestTemplate(appCtx);
+        activateAiTestTemplate(appCtx.db);
         seedAISettings(appCtx.db);
 
         const bookmarkIds = seedBookmarks(appCtx.db, [
@@ -149,13 +132,15 @@ describe('integration: AI deterministic harness', () => {
 
     it('replays organize batch failures deterministically and marks every bookmark for review', async () => {
         ctx = await createTestApp();
-        const templateId = activateAiTestTemplate(ctx);
+        const templateId = activateAiTestTemplate(ctx.db).id;
         const config = seedAISettings(ctx.db);
         const bookmarkIds = seedBookmarks(ctx.db, [
             { title: 'React', url: 'https://react.dev' },
             { title: 'Node.js', url: 'https://nodejs.org' },
         ]);
         const plan = createPlan(ctx.db, 'all', templateId);
+        const job = createJob(ctx.db, 'ai_organize', 'fixture organize failure', bookmarkIds.length);
+        updatePlan(ctx.db, plan.id, { job_id: job.id });
         const harness = createQueuedAIHarness([new Error('fixture timeout')]);
 
         await assignBookmarks(
@@ -176,6 +161,14 @@ describe('integration: AI deterministic harness', () => {
             { bookmark_id: bookmarkIds[0], category_path: '', status: 'needs_review' },
             { bookmark_id: bookmarkIds[1], category_path: '', status: 'needs_review' },
         ]);
+        expect(getJob(ctx.db, job.id)).toMatchObject({
+            status: 'failed',
+            total: 2,
+            processed: 2,
+            inserted: 0,
+            skipped: 2,
+            message: 'plan failed',
+        });
         expect(harness.calls).toHaveLength(1);
         expect(harness.calls[0].timeout).toBe(123);
         expect(harness.remainingSteps()).toBe(0);

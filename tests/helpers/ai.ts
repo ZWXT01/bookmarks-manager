@@ -5,6 +5,7 @@ import type {
     AIClientFactory,
     AIClientFactoryOptions,
 } from '../../src/ai-client';
+import { applyTemplate, createTemplate, type CategoryNode, type TemplateRow } from '../../src/template-service';
 
 export interface SeedAISettingsOptions {
     baseUrl?: string;
@@ -26,6 +27,17 @@ export interface QueuedAIHarness {
     calls: MockAICall[];
     remainingSteps: () => number;
 }
+
+export const AI_TEST_TEMPLATE_TREE: CategoryNode[] = [
+    {
+        name: '技术开发',
+        children: [{ name: '前端' }, { name: '后端' }],
+    },
+    {
+        name: '学习资源',
+        children: [{ name: '文档' }],
+    },
+];
 
 function upsertSetting(db: Db, key: string, value: string): void {
     db.prepare(
@@ -82,6 +94,12 @@ export function createQueuedAIHarness(steps: MockAIStep[]): QueuedAIHarness {
         calls,
         remainingSteps: () => queue.length,
     };
+}
+
+export function activateAiTestTemplate(db: Db, name = 'AI 测试模板'): TemplateRow {
+    const template = createTemplate(db, name, AI_TEST_TEMPLATE_TREE);
+    applyTemplate(db, template.id);
+    return template;
 }
 
 export function textCompletion(content: string): AIChatCompletionResponse {
