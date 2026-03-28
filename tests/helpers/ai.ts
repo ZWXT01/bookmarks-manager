@@ -11,6 +11,7 @@ export interface SeedAISettingsOptions {
     baseUrl?: string;
     apiKey?: string;
     model?: string;
+    batchSize?: number | string;
 }
 
 export interface MockAICall extends AIClientFactoryOptions, AIChatCompletionRequest {
@@ -49,16 +50,19 @@ export function seedAISettings(db: Db, options: SeedAISettingsOptions = {}): {
     baseUrl: string;
     apiKey: string;
     model: string;
+    batchSize: string;
 } {
     const config = {
         baseUrl: options.baseUrl ?? 'https://mock-ai.example.test/v1',
         apiKey: options.apiKey ?? 'test-ai-key',
         model: options.model ?? 'mock-model',
+        batchSize: String(options.batchSize ?? 30),
     };
 
     upsertSetting(db, 'ai_base_url', config.baseUrl);
     upsertSetting(db, 'ai_api_key', config.apiKey);
     upsertSetting(db, 'ai_model', config.model);
+    upsertSetting(db, 'ai_batch_size', config.batchSize);
 
     return config;
 }

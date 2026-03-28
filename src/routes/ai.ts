@@ -1,6 +1,7 @@
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { createOpenAIClient, type AIClientFactory } from '../ai-client';
+import { getConfiguredAiBatchSize, parseAiBatchSize } from '../ai-batch-size';
 
 export interface AIRoutesOptions {
     db: Database;
@@ -26,6 +27,16 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             baseUrl: config.baseUrl,
             timeout,
         });
+    }
+
+    function getDefaultBatchSize() {
+        return getConfiguredAiBatchSize(getSetting('ai_batch_size'));
+    }
+
+    function resolveBatchSize(rawValue: unknown) {
+        if (rawValue === undefined || rawValue === null) return getDefaultBatchSize();
+        if (typeof rawValue === 'string' && rawValue.trim() === '') return getDefaultBatchSize();
+        return parseAiBatchSize(rawValue);
     }
 
     // POST /api/ai/classify - 单个书签分类（保留，浏览器扩展依赖）
@@ -86,7 +97,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
     app.post('/api/ai/classify-batch', async (req: FastifyRequest, reply: FastifyReply) => {
         const body: any = req.body || {};
         const rawIds = body.bookmark_ids;
-        const batchSize = body.batch_size ?? 20;
+        const batchSize = resolveBatchSize(body.batch_size);
         const templateId = typeof body.template_id === 'number' ? body.template_id : null;
 
         if (!Array.isArray(rawIds) || rawIds.length === 0) {
@@ -95,7 +106,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         const ids = [...new Set(rawIds.map((id: unknown) => Number(id)).filter((id: number) => Number.isInteger(id) && id > 0))];
         if (ids.length === 0) return reply.code(400).send({ error: '无有效的书签 ID' });
 
-        if (![10, 20, 30].includes(batchSize)) {
+        if (!batchSize) {
             return reply.code(400).send({ error: 'batch_size 必须为 10、20 或 30' });
         }
 
@@ -146,12 +157,12 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
     app.post('/api/ai/organize', async (req: FastifyRequest, reply: FastifyReply) => {
         const body: any = req.body || {};
         const scope = typeof body.scope === 'string' ? body.scope.trim() : 'all';
-        const batchSize = body.batch_size ?? 20;
+        const batchSize = resolveBatchSize(body.batch_size);
         const templateId = typeof body.template_id === 'number' ? body.template_id : null;
         const config = getAIConfig(getSetting);
         if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
 
-        if (![10, 20, 30].includes(batchSize)) {
+        if (!batchSize) {
             return reply.code(400).send({ error: 'batch_size 必须为 10、20 或 30' });
         }
 
@@ -393,9 +404,10 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                 if (config) {
                     const { assignBookmarks } = await import('../ai-organize');
                     const { jobQueue, updateJob } = await import('../jobs');
+                    const batchSize = getDefaultBatchSize();
                     jobQueue.enqueue(plan.job_id, async () => {
                         try {
-                            await assignBookmarks(db, planId, config, {}, 20, aiClientFactory);
+                            await assignBookmarks(db, planId, config, {}, batchSize, aiClientFactory);
                         } catch (e: any) {
                             updateJob(db, plan.job_id!, { status: 'failed', message: e.message });
                         }

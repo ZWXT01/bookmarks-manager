@@ -9,7 +9,9 @@ import {
   transitionStatus,
   getActivePlan,
   PlanError,
+  recoverStalePlans,
 } from '../src/ai-organize-plan';
+import { createJob, getJob } from '../src/jobs';
 
 type LogRow = { plan_id: string; from_status: string | null; to_status: string; reason: string; created_at: string };
 
@@ -191,6 +193,25 @@ describe('ai-organize-plan', () => {
 
       deletePlan(db, plan.id);
       expect(getLogs(db, plan.id)).toHaveLength(0);
+    });
+  });
+
+  describe('recoverStalePlans', () => {
+    it('marks assigning plans as error after restart and fails linked jobs', () => {
+      const job = createJob(db, 'ai_organize', 'restart recovery', 0);
+      const plan = createPlan(db, 'all');
+      updatePlan(db, plan.id, { job_id: job.id });
+
+      const recovered = recoverStalePlans(db);
+
+      expect(recovered).toBe(1);
+      expect(getPlan(db, plan.id)!.status).toBe('error');
+      expect(getPlan(db, plan.id)!.phase).toBeNull();
+      expect(getJob(db, job.id)!.status).toBe('failed');
+      expect(getJob(db, job.id)!.message).toBe('server restart');
+
+      const logs = getLogs(db, plan.id);
+      expect(logs.some(l => l.to_status === 'error' && l.reason === 'server_restart')).toBe(true);
     });
   });
 });

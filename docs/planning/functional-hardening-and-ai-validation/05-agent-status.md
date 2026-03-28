@@ -33,7 +33,7 @@
 | 50 | R1 | `R1-DOC-04` | 清理 README / 页面遗留功能漂移 | `A0` | `G1-QA-01` | blocked | 2026-03-28 16:53:17 +0800 |  | 内置 Playwright MCP transport closed；切到 `https://bookmarks.1018666.xyz` 仍无法建会话。本地 HTML 渲染自检、`npm test`、`npm run build` 已通过，待下个可用 MCP 会话补浏览器验证。 |
 | 60 | R1.5 | `R15-AI-01` | 建立 AI mock / fixture 与 deterministic harness | `A0` | `R1-API-02,R1-BE-03` | done | 2026-03-28 20:50:01 +0800 | 2026-03-28 21:01:24 +0800 |  |
 | 70 | R1.5 | `R15-AI-02` | 覆盖 AI classify / test / classify-batch HTTP 合同 | `A0` | `R15-AI-01` | done | 2026-03-28 21:32:32 +0800 | 2026-03-28 23:49:57 +0800 |  |
-| 80 | R1.5 | `R15-AI-03` | 覆盖 organize 生命周期与配置漂移 | `A0` | `R15-AI-01,R1-BE-03` | todo |  |  |  |
+| 80 | R1.5 | `R15-AI-03` | 覆盖 organize 生命周期与配置漂移 | `A0` | `R15-AI-01,R1-BE-03` | done | 2026-03-29 00:19:38 +0800 | 2026-03-29 00:45:20 +0800 |  |
 | 90 | R1.5 | `R15-H1-04` | 真实 AI 提供方联调与人工验收 | `H1` | `R15-AI-02,R15-AI-03` | todo |  |  |  |
 | 100 | R2 | `R2-E2E-01` | 补齐 Playwright MCP 关键业务旅程 | `A1` | `R1-QA-01,R1-API-02,R15-AI-02,R15-AI-03` | todo |  |  |  |
 | 110 | R2 | `R2-EXT-02` | 浏览器扩展与快照 round-trip 验收 | `A1` | `R2-E2E-01,R15-H1-04` | todo |  |  |  |

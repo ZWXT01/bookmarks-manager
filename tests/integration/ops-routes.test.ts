@@ -88,6 +88,7 @@ describe('integration: ops routes', () => {
                 periodic_check_hour: 4,
                 ai_base_url: 'https://api.example.test/v1',
                 ai_model: 'demo-model',
+                ai_batch_size: '30',
             },
         });
 
@@ -113,7 +114,7 @@ describe('integration: ops routes', () => {
             ai_base_url: 'https://api.example.test/v1',
             ai_api_key: '******',
             ai_model: 'demo-model',
-            ai_batch_size: '42',
+            ai_batch_size: '30',
         });
 
         const resetResponse = await ctx.app.inject({
@@ -141,7 +142,7 @@ describe('integration: ops routes', () => {
             ai_base_url: 'https://api.example.test/v1',
             ai_api_key: '******',
             ai_model: 'demo-model',
-            ai_batch_size: '42',
+            ai_batch_size: '30',
         });
 
         ctx.db.exec('DROP TABLE settings');

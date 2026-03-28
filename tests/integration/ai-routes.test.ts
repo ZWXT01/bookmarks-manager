@@ -34,6 +34,13 @@ describe('integration: ai route contracts', () => {
         };
     }
 
+    function buildAssignments(count: number, category: string) {
+        return Array.from({ length: count }, (_, index) => ({
+            index: index + 1,
+            category,
+        }));
+    }
+
     it('covers /api/ai/test validation, success, and provider failures', async () => {
         const { ctx: appCtx, authHeaders } = await createHarnessApp();
 
@@ -220,21 +227,18 @@ describe('integration: ai route contracts', () => {
         expect(invalidTemplate.json()).toEqual({ error: '指定的模板不存在' });
     });
 
-    it('creates preview plans and completes jobs for successful classify-batch requests', async () => {
+    it('creates preview plans with the configured default batch size for successful classify-batch requests', async () => {
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
             jsonCompletion({
-                assignments: [
-                    { index: 1, category: '技术开发/前端' },
-                    { index: 2, category: '学习资源' },
-                ],
+                assignments: buildAssignments(25, '技术开发/前端'),
             }),
         ]);
-        seedAISettings(appCtx.db);
+        seedAISettings(appCtx.db, { batchSize: 30 });
         const template = activateAiTestTemplate(appCtx.db);
-        const bookmarkIds = seedBookmarks(appCtx.db, [
-            { title: 'React', url: 'https://react.dev' },
-            { title: 'TypeScript', url: 'https://www.typescriptlang.org' },
-        ]);
+        const bookmarkIds = seedBookmarks(appCtx.db, Array.from({ length: 25 }, (_, index) => ({
+            title: `Bookmark ${index + 1}`,
+            url: `https://bookmark-${index + 1}.example.test`,
+        })));
 
         const response = await appCtx.app.inject({
             method: 'POST',
@@ -242,7 +246,6 @@ describe('integration: ai route contracts', () => {
             headers: authHeaders,
             payload: {
                 bookmark_ids: bookmarkIds,
-                batch_size: 10,
                 template_id: template.id,
             },
         });
@@ -260,9 +263,9 @@ describe('integration: ai route contracts', () => {
         expect(plan?.needs_review_count).toBe(0);
         expect(job).toMatchObject({
             status: 'done',
-            total: 2,
-            processed: 2,
-            inserted: 2,
+            total: 25,
+            processed: 25,
+            inserted: 25,
             skipped: 0,
         });
         expect(harness.calls).toHaveLength(1);
