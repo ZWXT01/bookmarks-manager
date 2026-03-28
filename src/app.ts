@@ -16,6 +16,7 @@ import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest }
 
 import { toInt, toIntClamp, withFlash, safeRedirectTarget } from './utils/helpers';
 import { allocateBackupFile, createSqliteBackup } from './backup-contract';
+import type { AIClientFactory } from './ai-client';
 
 import { initUserTable, validateApiToken, cleanupExpiredTokens } from './auth';
 
@@ -67,6 +68,7 @@ export interface BuildAppOptions {
   periodicCheckEnabled?: boolean;
   periodicCheckSchedule?: string;
   periodicCheckHour?: number;
+  aiClientFactory?: AIClientFactory;
 }
 
 export interface BuildAppResult {
@@ -350,7 +352,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   await app.register(categoryRoutes, { db });
   await app.register(snapshotRoutes, { db, snapshotsDir, staticApiToken });
   await app.register(backupRoutes, { db, backupDir, runBackupNow });
-  await app.register(aiRoutes, { db, getSetting });
+  await app.register(aiRoutes, { db, getSetting, aiClientFactory: options.aiClientFactory });
   await app.register(authRoutes, { db, staticApiToken });
   await app.register(settingsRoutes, {
     db, envFilePath, dbPath, backupDir,

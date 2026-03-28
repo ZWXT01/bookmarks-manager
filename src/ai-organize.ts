@@ -1,9 +1,10 @@
-import OpenAI from 'openai';
 import type { Db } from './db';
 import type { Assignment, CategoryNode, PlanRow } from './ai-organize-plan';
 import { updatePlan, transitionStatus, getPlan } from './ai-organize-plan';
 import { updateJob, jobQueue, publishJobEvent } from './jobs';
 import { getCategoryTree } from './category-service';
+import { createOpenAIClient, type AIClientFactory } from './ai-client';
+import { getTemplate, getActiveTemplate } from './template-service';
 
 export interface AIConfig {
   baseUrl: string;
@@ -34,7 +35,6 @@ function buildValidPathsFromDb(db: Db, templateId?: number | null): Set<string> 
 
   // If templateId is provided and different from active, read from template tree
   if (templateId != null) {
-    const { getTemplate, getActiveTemplate } = require('./template-service');
     const active = getActiveTemplate(db);
 
     if (active?.id !== templateId) {
@@ -72,7 +72,6 @@ function buildCategoryListFromDb(db: Db, templateId?: number | null): string[] {
 
   // If templateId is provided and different from active, read from template tree
   if (templateId != null) {
-    const { getTemplate, getActiveTemplate } = require('./template-service');
     const active = getActiveTemplate(db);
 
     if (active?.id !== templateId) {
@@ -106,7 +105,12 @@ function buildCategoryListFromDb(db: Db, templateId?: number | null): string[] {
 }
 
 export async function assignBookmarks(
-  db: Db, planId: string, config: AIConfig, retryConfig: RetryConfig = {}, batchSize: BatchSize = 20,
+  db: Db,
+  planId: string,
+  config: AIConfig,
+  retryConfig: RetryConfig = {},
+  batchSize: BatchSize = 20,
+  aiClientFactory: AIClientFactory = createOpenAIClient,
 ): Promise<void> {
   const timeout = retryConfig.timeout ?? 300000;
   const maxRetries = retryConfig.maxRetries ?? 2;
@@ -152,7 +156,11 @@ export async function assignBookmarks(
   const failedBatchIds: number[] = [];
 
   const categoriesText = categoryList.join('\n');
-  const openai = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseUrl.replace(/\/+$/, ''), timeout, defaultHeaders: { 'User-Agent': 'bookmarks-manager/1.0' } });
+  const aiClient = aiClientFactory({
+    apiKey: config.apiKey,
+    baseUrl: config.baseUrl,
+    timeout,
+  });
 
   for (let bi = 0; bi < batches.length; bi++) {
     if (jobQueue.isCanceled(plan.job_id ?? '')) {
@@ -166,7 +174,7 @@ export async function assignBookmarks(
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         const batchList = batch.map((b, i) => `${i + 1}. [${b.title}] ${b.url}`).join('\n');
-        const completion = await openai.chat.completions.create({
+        const completion = await aiClient.createChatCompletion({
           model: config.model,
           messages: [
             {

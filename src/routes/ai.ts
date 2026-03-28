@@ -1,10 +1,11 @@
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
-import OpenAI from 'openai';
+import { createOpenAIClient, type AIClientFactory } from '../ai-client';
 
 export interface AIRoutesOptions {
     db: Database;
     getSetting: (key: string) => string | null;
+    aiClientFactory?: AIClientFactory;
 }
 
 function getAIConfig(getSetting: (key: string) => string | null) {
@@ -17,6 +18,15 @@ function getAIConfig(getSetting: (key: string) => string | null) {
 
 export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done) => {
     const { db, getSetting } = opts;
+    const aiClientFactory = opts.aiClientFactory ?? createOpenAIClient;
+
+    function createAIClient(config: { baseUrl: string; apiKey: string }, timeout: number) {
+        return aiClientFactory({
+            apiKey: config.apiKey,
+            baseUrl: config.baseUrl,
+            timeout,
+        });
+    }
 
     // POST /api/ai/classify - 单个书签分类（保留，浏览器扩展依赖）
     app.post('/api/ai/classify', async (req: FastifyRequest, reply: FastifyReply) => {
@@ -38,8 +48,8 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             (title ? '标题: ' + title + '\n' : '') + (url ? '网址: ' + url + '\n' : '');
 
         try {
-            const openai = new OpenAI({ apiKey: config.apiKey, baseURL: config.baseUrl.replace(/\/+$/, ''), timeout: 60000, defaultHeaders: { 'User-Agent': 'bookmarks-manager/1.0' } });
-            const completion = await openai.chat.completions.create({
+            const aiClient = createAIClient(config, 60000);
+            const completion = await aiClient.createChatCompletion({
                 model: config.model,
                 messages: [{ role: 'system', content: '只输出分类路径（最多2级），不要解释。' }, { role: 'user', content: prompt }],
                 temperature: 0.2,
@@ -63,8 +73,8 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         if (!baseUrl || !apiKey || !model) return reply.code(400).send({ error: '请填写完整的 AI 配置' });
 
         try {
-            const openai = new OpenAI({ apiKey, baseURL: baseUrl.replace(/\/+$/, ''), timeout: 30000, defaultHeaders: { 'User-Agent': 'bookmarks-manager/1.0' } });
-            await openai.chat.completions.create({ model, messages: [{ role: 'user', content: '你好，请回复"OK"' }], max_tokens: 10 });
+            const aiClient = createAIClient({ apiKey, baseUrl }, 30000);
+            await aiClient.createChatCompletion({ model, messages: [{ role: 'user', content: '你好，请回复"OK"' }], max_tokens: 10 });
             return reply.send({ success: true, message: 'AI 配置测试成功' });
         } catch (e: any) {
             req.log.error({ err: e }, 'ai test failed');
@@ -115,7 +125,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
             jobQueue.enqueue(job.id, async () => {
                 try {
-                    await assignBookmarks(db, plan.id, config, {}, batchSize);
+                    await assignBookmarks(db, plan.id, config, {}, batchSize, aiClientFactory);
                 } catch (e: any) {
                     updateJob(db, job.id, { status: 'failed', message: e.message });
                 }
@@ -180,7 +190,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
             jobQueue.enqueue(job.id, async () => {
                 try {
-                    await assignBookmarks(db, plan.id, config, {}, batchSize);
+                    await assignBookmarks(db, plan.id, config, {}, batchSize, aiClientFactory);
                 } catch (e: any) {
                     updateJob(db, job.id, { status: 'failed', message: e.message });
                 }
@@ -385,7 +395,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                     const { jobQueue, updateJob } = await import('../jobs');
                     jobQueue.enqueue(plan.job_id, async () => {
                         try {
-                            await assignBookmarks(db, planId, config);
+                            await assignBookmarks(db, planId, config, {}, 20, aiClientFactory);
                         } catch (e: any) {
                             updateJob(db, plan.job_id!, { status: 'failed', message: e.message });
                         }
