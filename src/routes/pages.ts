@@ -34,14 +34,6 @@ export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts
         const failures = listJobFailuresPaged(db, jobId, failPageSize, failOffset);
         const failPageUrlPrefix = '/jobs/' + jobId + '?fail_page_size=' + failPageSize + '&fail_page=';
 
-        // Legacy suggestion vars (tables removed)
-        let suggestions: any[] = [];
-        let suggestionTotal = 0;
-        let suggestionPage = 1;
-        let suggestionTotalPages = 1;
-        let suggestionPageSize = clamp(q.sug_page_size, 10, 100, 20);
-        let simplifySuggestions: any[] = [];
-
         // ai_organize: fetch plan info for AJAX pagination
         let organizeAssignments: any[] = [];
         let organizePlanStatus: string | null = null;
@@ -101,12 +93,6 @@ export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts
             failTotalPages,
             failPageSize,
             failPageUrlPrefix,
-            suggestions,
-            suggestionTotal,
-            suggestionPage,
-            suggestionTotalPages,
-            suggestionPageSize,
-            simplifySuggestions,
             organizeAssignments,
             organizePlanId,
             organizePlanStatus,

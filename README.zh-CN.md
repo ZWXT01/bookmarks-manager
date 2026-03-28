@@ -20,9 +20,11 @@
 - **定期检查**：支持每周/每月自动检查（凌晨执行）
 
 ### AI 功能
-- **AI 分类**：使用 OpenAI 兼容 API 自动分类书签
-- **AI 精简**：智能合并相似分类，简化分类结构
-- **批量处理**：支持批量 AI 分类
+- **AI 分类**：通过 OpenAI 兼容 API 对单个书签进行分类
+- **AI 批量分类**：为选中的书签启动后台批量分类任务
+- **AI 整理计划**：生成、复核、应用、重试与回滚分类分配计划
+
+当前 AI 运行时配置统一在设置页填写：`Base URL`、`API Key`、`Model`。遗留的 `ai_simplify` 仅作为 backlog 保留，不属于当前发布范围。
 
 ### 安全特性
 - **用户认证**：内置登录系统，支持密码修改
@@ -148,7 +150,7 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
    - Firefox: `about:addons`
 2. 开启「开发者模式」
 3. 点击「加载已解压的扩展程序」
-4. 选择项目中的 `extension` 文件夹
+4. 选择项目中的 `extension-new` 文件夹
 
 ### 配置扩展
 
@@ -169,19 +171,20 @@ curl -H "Authorization: Bearer YOUR_TOKEN" \
 ```
 bookmarks-manager/
 ├── src/                    # TypeScript 源码
-│   ├── index.ts           # 主入口，路由定义
-│   ├── db.ts              # 数据库初始化
-│   ├── auth.ts            # 认证模块（含 API Token）
+│   ├── app.ts             # Fastify 应用工厂与路由注册
+│   ├── index.ts           # 服务启动入口
+│   ├── db.ts              # 数据库初始化与 schema 引导
+│   ├── auth.ts            # 认证辅助
 │   ├── checker.ts         # 书签检查器
 │   ├── importer.ts        # 导入模块
 │   ├── exporter.ts        # 导出模块
 │   ├── jobs.ts            # 任务队列
-│   ├── ai-classifier.ts   # AI 分类器
-│   ├── ai-classify-job.ts # AI 分类任务
-│   └── ai-simplify-job.ts # AI 精简任务
+│   ├── ai-organize.ts     # AI 分类分配执行器
+│   ├── ai-organize-plan.ts # AI 整理计划生命周期
+│   └── routes/            # 模块化路由处理器
 ├── views/                  # EJS 模板
 ├── public/                 # 静态资源
-├── extension/              # 浏览器扩展
+├── extension-new/          # 浏览器扩展
 ├── data/                   # 数据目录（Docker 挂载）
 ├── Dockerfile
 ├── docker-compose.yml
@@ -206,7 +209,8 @@ curl -H "Authorization: Bearer YOUR_TOKEN" https://your-domain.com/api/bookmarks
 |------|------|------|
 | GET | `/api/bookmarks` | 获取书签列表（支持搜索筛选） |
 | POST | `/api/bookmarks` | 添加书签 |
-| PUT | `/api/bookmarks/:id` | 更新书签 |
+| POST | `/api/bookmarks/:id/update` | 更新书签 |
+| POST | `/api/bookmarks/move` | 批量移动书签 |
 | DELETE | `/api/bookmarks/:id` | 删除书签 |
 
 ### 分类管理
@@ -214,7 +218,9 @@ curl -H "Authorization: Bearer YOUR_TOKEN" https://your-domain.com/api/bookmarks
 |------|------|------|
 | GET | `/api/categories` | 获取分类列表 |
 | POST | `/api/categories` | 添加分类 |
-| PUT | `/api/categories/:id` | 更新分类 |
+| PATCH | `/api/categories/:id` | 更新分类 |
+| PATCH | `/api/categories/:id/move` | 移动分类 |
+| POST | `/api/categories/reorder` | 重排同级分类 |
 | DELETE | `/api/categories/:id` | 删除分类 |
 
 ### Token 管理
@@ -230,12 +236,23 @@ curl -H "Authorization: Bearer YOUR_TOKEN" https://your-domain.com/api/bookmarks
 | POST | `/api/check/start` | 开始批量检查 |
 | POST | `/api/check/one/:id` | 检查单个书签 |
 
-### AI 功能
+### AI 路由
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/ai/classify` | AI 分类 |
-| POST | `/api/ai/simplify` | AI 精简分类 |
-| POST | `/api/ai/apply-simplify` | 应用精简建议 |
+| POST | `/api/ai/test` | 测试设置页中的 AI 配置 |
+| POST | `/api/ai/classify` | 对单个书签做 AI 分类 |
+| POST | `/api/ai/classify-batch` | 为指定书签 ID 启动后台批量分类 |
+| POST | `/api/ai/organize` | 按 scope 启动整理计划 |
+| GET | `/api/ai/organize/active` | 获取当前 assigning 计划 |
+| GET | `/api/ai/organize/pending` | 列出待处理的 preview 计划 |
+| GET | `/api/ai/organize/:planId` | 获取计划详情与 diff |
+| GET | `/api/ai/organize/:planId/assignments` | 分页获取 enriched assignments |
+| POST | `/api/ai/organize/:planId/apply` | 应用计划并返回冲突/空分类信息 |
+| POST | `/api/ai/organize/:planId/apply/resolve` | 解决冲突后完成应用 |
+| POST | `/api/ai/organize/:planId/apply/confirm-empty` | 确认空分类处理决策 |
+| POST | `/api/ai/organize/:planId/rollback` | 回滚已应用计划 |
+| POST | `/api/ai/organize/:planId/cancel` | 取消待处理/执行中的计划 |
+| POST | `/api/ai/organize/:planId/retry` | 重试失败计划 |
 
 ## 🔍 高级搜索
 
@@ -301,6 +318,10 @@ docker compose exec app sqlite3 /data/app.db ".backup '/data/backup.db'"
 # 或直接复制
 cp ./data/app.db ./data/app.db.backup
 ```
+
+### 内置还原范围
+
+内置还原接口只会对 `categories` 和 `bookmarks` 做显式部分恢复。执行前会先创建 `pre_restore_*.db` 回滚点，不会覆盖设置、API Token、模板、快照等运维元数据。
 
 ### 数据迁移
 

@@ -20,9 +20,11 @@ A feature-rich self-hosted bookmark manager built with Fastify + TypeScript + Al
 - **Periodic Checks**: Support for weekly/monthly automatic checks (runs at night)
 
 ### AI Features
-- **AI Classification**: Automatically categorize bookmarks using OpenAI-compatible APIs
-- **AI Simplification**: Intelligently merge similar categories to simplify structure
-- **Batch Processing**: Support for bulk AI classification
+- **AI Classification**: Classify a single bookmark through OpenAI-compatible APIs
+- **AI Batch Classification**: Launch background classification jobs for selected bookmarks
+- **AI Organize Plan**: Generate, review, apply, retry, and roll back category assignment plans
+
+Current AI runtime credentials are configured on the Settings page with `Base URL`, `API Key`, and `Model`. Legacy `ai_simplify` remains backlog-only and is not part of the current release.
 
 ### Security Features
 - **User Authentication**: Built-in login system with password change support
@@ -148,7 +150,7 @@ The project includes a browser extension for one-click bookmark saving.
    - Firefox: `about:addons`
 2. Enable "Developer mode"
 3. Click "Load unpacked extension"
-4. Select the `extension` folder from the project
+4. Select the `extension-new` folder from the project
 
 ### Configure Extension
 
@@ -169,18 +171,20 @@ The project includes a browser extension for one-click bookmark saving.
 ```
 bookmarks-manager/
 ├── src/                    # TypeScript source code
-│   ├── index.ts           # Main entry, route definitions
-│   ├── db.ts              # Database initialization
-│   ├── auth.ts            # Authentication module (with API tokens)
+│   ├── app.ts             # Fastify app factory and route registration
+│   ├── index.ts           # Server bootstrap
+│   ├── db.ts              # Database initialization and schema bootstrap
+│   ├── auth.ts            # Authentication helpers
 │   ├── checker.ts         # Bookmark checker
 │   ├── importer.ts        # Import module
 │   ├── exporter.ts        # Export module
 │   ├── jobs.ts            # Task queue
-│   ├── ai-organize.ts     # AI organizer
-│   └── ai-organize-plan.ts # AI organize planner
+│   ├── ai-organize.ts     # AI assignment executor
+│   ├── ai-organize-plan.ts # AI organize plan lifecycle
+│   └── routes/            # Modular route handlers
 ├── views/                  # EJS templates
 ├── public/                 # Static assets
-├── extension/              # Browser extension
+├── extension-new/          # Browser extension
 ├── data/                   # Data directory (Docker mount)
 ├── Dockerfile
 ├── docker-compose.yml
@@ -205,7 +209,8 @@ curl -H "Authorization: Bearer YOUR_TOKEN" https://your-domain.com/api/bookmarks
 |--------|------|-------------|
 | GET | `/api/bookmarks` | Get bookmark list (with search/filter) |
 | POST | `/api/bookmarks` | Add bookmark |
-| PUT | `/api/bookmarks/:id` | Update bookmark |
+| POST | `/api/bookmarks/:id/update` | Update bookmark |
+| POST | `/api/bookmarks/move` | Batch move bookmarks |
 | DELETE | `/api/bookmarks/:id` | Delete bookmark |
 
 ### Category Management
@@ -213,7 +218,9 @@ curl -H "Authorization: Bearer YOUR_TOKEN" https://your-domain.com/api/bookmarks
 |--------|------|-------------|
 | GET | `/api/categories` | Get category list |
 | POST | `/api/categories` | Add category |
-| PUT | `/api/categories/:id` | Update category |
+| PATCH | `/api/categories/:id` | Update category |
+| PATCH | `/api/categories/:id/move` | Move category |
+| POST | `/api/categories/reorder` | Reorder sibling categories |
 | DELETE | `/api/categories/:id` | Delete category |
 
 ### Token Management
@@ -229,12 +236,23 @@ curl -H "Authorization: Bearer YOUR_TOKEN" https://your-domain.com/api/bookmarks
 | POST | `/api/check/start` | Start batch check |
 | POST | `/api/check/one/:id` | Check single bookmark |
 
-### AI Features
+### AI Routes
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/ai/classify` | AI classification |
-| POST | `/api/ai/simplify` | AI simplify categories |
-| POST | `/api/ai/apply-simplify` | Apply simplification suggestions |
+| POST | `/api/ai/test` | Validate AI settings from the Settings page |
+| POST | `/api/ai/classify` | Classify one bookmark |
+| POST | `/api/ai/classify-batch` | Start background classification for selected bookmark IDs |
+| POST | `/api/ai/organize` | Start an organize plan by scope |
+| GET | `/api/ai/organize/active` | Get the active assigning plan |
+| GET | `/api/ai/organize/pending` | List pending preview plans |
+| GET | `/api/ai/organize/:planId` | Get plan detail and diff |
+| GET | `/api/ai/organize/:planId/assignments` | Paginate enriched assignments |
+| POST | `/api/ai/organize/:planId/apply` | Apply a plan and surface conflicts/empty categories |
+| POST | `/api/ai/organize/:planId/apply/resolve` | Resolve conflicts and finish apply |
+| POST | `/api/ai/organize/:planId/apply/confirm-empty` | Confirm empty-category decisions |
+| POST | `/api/ai/organize/:planId/rollback` | Roll back an applied plan |
+| POST | `/api/ai/organize/:planId/cancel` | Cancel a pending/assigning plan |
+| POST | `/api/ai/organize/:planId/retry` | Retry a failed plan |
 
 ## 🔍 Advanced Search
 
@@ -300,6 +318,10 @@ docker compose exec app sqlite3 /data/app.db ".backup '/data/backup.db'"
 # Or direct copy
 cp ./data/app.db ./data/app.db.backup
 ```
+
+### Built-in Restore Scope
+
+The built-in restore endpoint performs an explicit partial restore for `categories` and `bookmarks` only. Before restore, the app creates a `pre_restore_*.db` rollback point. It does not overwrite settings, API tokens, templates, snapshots, or other operational metadata.
 
 ### Data Migration
 
