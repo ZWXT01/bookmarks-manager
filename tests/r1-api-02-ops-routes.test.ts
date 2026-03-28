@@ -1,0 +1,790 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import type { FastifyInstance } from 'fastify';
+
+import { buildApp } from '../src/app';
+import type { Db } from '../src/db';
+import { seedBookmarks, seedCategory } from './helpers/db';
+
+interface TestContext {
+    app: FastifyInstance;
+    db: Db;
+    rootDir: string;
+    backupDir: string;
+    snapshotsDir: string;
+    envFilePath: string;
+    authHeaders: Record<string, string>;
+    cleanup: () => Promise<void>;
+}
+
+let tempCounter = 0;
+
+function writeEnvFile(envFilePath: string, values: Record<string, string>): void {
+    fs.mkdirSync(path.dirname(envFilePath), { recursive: true });
+    const body = Object.entries(values)
+        .map(([key, value]) => `${key}=${value}`)
+        .join('\n')
+        .concat('\n');
+    fs.writeFileSync(envFilePath, body, 'utf8');
+}
+
+function applyEnv(values: Record<string, string>): () => void {
+    const previous = new Map<string, string | undefined>();
+
+    for (const [key, value] of Object.entries(values)) {
+        previous.set(key, process.env[key]);
+        process.env[key] = value;
+    }
+
+    return () => {
+        for (const [key, value] of previous.entries()) {
+            if (value === undefined) delete process.env[key];
+            else process.env[key] = value;
+        }
+    };
+}
+
+function createOriginHeaders(baseUrl: string = 'http://127.0.0.1'): Record<string, string> {
+    const url = new URL(baseUrl);
+    return {
+        host: url.host,
+        origin: url.origin,
+        referer: `${url.origin}/`,
+    };
+}
+
+function extractSessionCookie(response: Awaited<ReturnType<FastifyInstance['inject']>>): string {
+    const raw = response.headers['set-cookie'];
+    const items = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
+    const cookies = items
+        .map((value) => value.split(';', 1)[0])
+        .filter(Boolean);
+
+    if (cookies.length === 0) {
+        throw new Error('Login response did not include a session cookie');
+    }
+
+    return cookies.join('; ');
+}
+
+async function loginWithSession(app: FastifyInstance, username: string, password: string, baseUrl: string): Promise<Record<string, string>> {
+    const response = await app.inject({
+        method: 'POST',
+        url: '/login',
+        headers: {
+            'content-type': 'application/x-www-form-urlencoded',
+            ...createOriginHeaders(baseUrl),
+        },
+        payload: new URLSearchParams({ username, password }).toString(),
+    });
+
+    if (response.statusCode >= 400) {
+        throw new Error(`Login failed: ${response.statusCode} ${response.body}`);
+    }
+
+    return {
+        ...createOriginHeaders(baseUrl),
+        cookie: extractSessionCookie(response),
+    };
+}
+
+async function createTestContext(): Promise<TestContext> {
+    tempCounter += 1;
+    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), `bm-r1-api-02-${tempCounter}-`));
+    const dbPath = path.join(rootDir, 'data', 'app.db');
+    const backupDir = path.join(rootDir, 'data', 'backups');
+    const snapshotsDir = path.join(rootDir, 'data', 'snapshots');
+    const envFilePath = path.join(rootDir, '.env.test');
+    const baseUrl = 'http://127.0.0.1';
+    const username = 'test-admin';
+    const password = 'test-password';
+
+    const envValues = {
+        ENV_FILE_PATH: envFilePath,
+        DB_PATH: dbPath,
+        BACKUP_DIR: backupDir,
+        SNAPSHOTS_DIR: snapshotsDir,
+        AUTH_USERNAME: username,
+        AUTH_PASSWORD: password,
+        SESSION_SECRET: 'test-session-secret-must-be-at-least-32-characters-long',
+        API_TOKEN: 'test-static-api-token',
+    };
+
+    writeEnvFile(envFilePath, envValues);
+    const restoreEnv = applyEnv(envValues);
+
+    try {
+        const { app, db } = await buildApp({
+            dbPath,
+            envFilePath,
+            backupDir,
+            snapshotsDir,
+            staticApiToken: envValues.API_TOKEN,
+            sessionSecret: envValues.SESSION_SECRET,
+            backupEnabled: false,
+            periodicCheckEnabled: false,
+            logLevel: 'error',
+        });
+
+        const authHeaders = await loginWithSession(app, username, password, baseUrl);
+        let cleaned = false;
+
+        return {
+            app,
+            db,
+            rootDir,
+            backupDir,
+            snapshotsDir,
+            envFilePath,
+            authHeaders,
+            cleanup: async () => {
+                if (cleaned) return;
+                cleaned = true;
+
+                try {
+                    await app.close();
+                } finally {
+                    restoreEnv();
+                    fs.rmSync(rootDir, { recursive: true, force: true });
+                }
+            },
+        };
+    } catch (error) {
+        restoreEnv();
+        fs.rmSync(rootDir, { recursive: true, force: true });
+        throw error;
+    }
+}
+
+function insertSnapshot(db: Db, snapshotsDir: string, options: { url?: string; title?: string; filename?: string; content?: string; bookmarkId?: number | null } = {}): number {
+    const url = options.url ?? 'https://example.com/snapshot';
+    const title = options.title ?? 'Example Snapshot';
+    const filename = options.filename ?? `snapshot-${Date.now()}.html`;
+    const content = options.content ?? '<!doctype html><html><body>snapshot</body></html>';
+    const filePath = path.join(snapshotsDir, filename);
+
+    fs.mkdirSync(snapshotsDir, { recursive: true });
+    fs.writeFileSync(filePath, content, 'utf8');
+    const fileSize = fs.statSync(filePath).size;
+
+    const result = db.prepare(`
+        INSERT INTO snapshots (bookmark_id, url, title, filename, file_size, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+    `).run(options.bookmarkId ?? null, url, title, filename, fileSize, '2026-03-28T00:00:00.000Z');
+
+    return Number(result.lastInsertRowid);
+}
+
+describe('R1-API-02 integration coverage', () => {
+    let ctx: TestContext;
+
+    beforeEach(async () => {
+        ctx = await createTestContext();
+    });
+
+    afterEach(async () => {
+        if (ctx) await ctx.cleanup();
+    });
+
+    it('covers settings save, read, reset, masking, and reset failure paths', async () => {
+        const saveResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/settings',
+            headers: {
+                ...ctx.authHeaders,
+                accept: 'application/json',
+            },
+            payload: {
+                check_retries: '3',
+                check_retry_delay_ms: '700',
+                backup_enabled: 'on',
+                backup_interval_minutes: '60',
+                backup_retention: '5',
+                periodic_check_enabled: '1',
+                periodic_check_schedule: 'monthly',
+                periodic_check_hour: '4',
+                ai_base_url: 'https://api.example.test/v1',
+                ai_api_key: 'top-secret-key',
+                ai_model: 'demo-model',
+                ai_batch_size: '42',
+            },
+        });
+
+        expect(saveResponse.statusCode).toBe(200);
+        expect(saveResponse.json()).toMatchObject({
+            success: true,
+            env: {
+                success: true,
+                updatedKeys: [
+                    'CHECK_RETRIES',
+                    'CHECK_RETRY_DELAY_MS',
+                    'BACKUP_ENABLED',
+                    'BACKUP_INTERVAL_MINUTES',
+                    'BACKUP_RETENTION',
+                    'PERIODIC_CHECK_ENABLED',
+                    'PERIODIC_CHECK_SCHEDULE',
+                    'PERIODIC_CHECK_HOUR',
+                ],
+            },
+            saved: {
+                check_retries: 3,
+                check_retry_delay_ms: 700,
+                backup_enabled: true,
+                backup_interval_minutes: 60,
+                backup_retention: 5,
+                periodic_check_enabled: true,
+                periodic_check_schedule: 'monthly',
+                periodic_check_hour: 4,
+                ai_base_url: 'https://api.example.test/v1',
+                ai_model: 'demo-model',
+            },
+        });
+
+        const envBody = fs.readFileSync(ctx.envFilePath, 'utf8');
+        expect(envBody).toContain('CHECK_RETRIES=3');
+        expect(envBody).toContain('CHECK_RETRY_DELAY_MS=700');
+        expect(envBody).toContain('BACKUP_ENABLED=1');
+        expect(envBody).toContain('PERIODIC_CHECK_SCHEDULE=monthly');
+
+        const getResponse = await ctx.app.inject({
+            method: 'GET',
+            url: '/api/settings',
+            headers: ctx.authHeaders,
+        });
+
+        expect(getResponse.statusCode).toBe(200);
+        expect(getResponse.json()).toEqual({
+            check_retries: 3,
+            check_retry_delay_ms: 700,
+            backup_enabled: true,
+            backup_interval_minutes: 60,
+            backup_retention: 5,
+            ai_base_url: 'https://api.example.test/v1',
+            ai_api_key: '******',
+            ai_model: 'demo-model',
+            ai_batch_size: '42',
+        });
+
+        const resetResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/settings/reset',
+            headers: ctx.authHeaders,
+        });
+
+        expect(resetResponse.statusCode).toBe(200);
+        expect(resetResponse.json()).toEqual({ success: true });
+
+        const afterReset = await ctx.app.inject({
+            method: 'GET',
+            url: '/api/settings',
+            headers: ctx.authHeaders,
+        });
+
+        expect(afterReset.statusCode).toBe(200);
+        expect(afterReset.json()).toEqual({
+            check_retries: 1,
+            check_retry_delay_ms: 500,
+            backup_enabled: false,
+            backup_interval_minutes: 1440,
+            backup_retention: 10,
+            ai_base_url: 'https://api.example.test/v1',
+            ai_api_key: '******',
+            ai_model: 'demo-model',
+            ai_batch_size: '42',
+        });
+
+        ctx.db.exec('DROP TABLE settings');
+
+        const failedReset = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/settings/reset',
+            headers: ctx.authHeaders,
+        });
+
+        expect(failedReset.statusCode).toBe(500);
+        expect(failedReset.json()).toEqual({ error: '重置失败' });
+    });
+
+    it('covers template CRUD, apply/reset success, and validation/not-found branches', async () => {
+        const listResponse = await ctx.app.inject({
+            method: 'GET',
+            url: '/api/templates',
+            headers: ctx.authHeaders,
+        });
+
+        expect(listResponse.statusCode).toBe(200);
+        expect(listResponse.json().templates.length).toBeGreaterThanOrEqual(4);
+        const presetTemplate = listResponse.json().templates.find((template: any) => template.type === 'preset');
+        expect(presetTemplate).toBeTruthy();
+
+        const createResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/templates',
+            headers: ctx.authHeaders,
+            payload: {
+                name: 'Ops Template',
+                tree: [
+                    { name: 'Work', children: [{ name: 'Docs' }] },
+                    { name: 'Life', children: [{ name: 'Travel' }] },
+                ],
+            },
+        });
+
+        expect(createResponse.statusCode).toBe(200);
+        const templateId = createResponse.json().template.id as number;
+
+        const getResponse = await ctx.app.inject({
+            method: 'GET',
+            url: `/api/templates/${templateId}`,
+            headers: ctx.authHeaders,
+        });
+
+        expect(getResponse.statusCode).toBe(200);
+        expect(getResponse.json().template).toMatchObject({
+            id: templateId,
+            name: 'Ops Template',
+        });
+        expect(getResponse.json().template.tree).toEqual([
+            { name: 'Work', children: [{ name: 'Docs' }] },
+            { name: 'Life', children: [{ name: 'Travel' }] },
+        ]);
+
+        const updateResponse = await ctx.app.inject({
+            method: 'PUT',
+            url: `/api/templates/${templateId}`,
+            headers: ctx.authHeaders,
+            payload: {
+                name: 'Ops Template v2',
+                tree: [
+                    { name: 'Projects', children: [{ name: 'Alpha' }] },
+                ],
+            },
+        });
+
+        expect(updateResponse.statusCode).toBe(200);
+        expect(updateResponse.json().template).toMatchObject({
+            id: templateId,
+            name: 'Ops Template v2',
+        });
+
+        const applyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/templates/${templateId}/apply`,
+            headers: ctx.authHeaders,
+        });
+
+        expect(applyResponse.statusCode).toBe(200);
+        expect(applyResponse.json()).toEqual({ success: true });
+        expect(ctx.db.prepare('SELECT id FROM category_templates WHERE is_active = 1').get()).toEqual({ id: templateId });
+        expect(ctx.db.prepare('SELECT name FROM categories WHERE parent_id IS NULL ORDER BY name').all()).toEqual([{ name: 'Projects' }]);
+        expect(ctx.db.prepare('SELECT name FROM categories WHERE parent_id IS NOT NULL ORDER BY name').all()).toEqual([{ name: 'Projects/Alpha' }]);
+
+        seedCategory(ctx.db, 'Extra');
+
+        const resetResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/templates/${templateId}/reset`,
+            headers: ctx.authHeaders,
+        });
+
+        expect(resetResponse.statusCode).toBe(200);
+        expect(resetResponse.json()).toEqual({ success: true });
+        expect(ctx.db.prepare('SELECT id FROM categories WHERE name = ?').get('Extra')).toBeUndefined();
+        expect(ctx.db.prepare('SELECT name FROM categories WHERE parent_id IS NULL ORDER BY name').all()).toEqual([{ name: 'Projects' }]);
+
+        const secondTemplate = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/templates',
+            headers: ctx.authHeaders,
+            payload: {
+                name: 'Switch Template',
+                tree: [{ name: 'Reference', children: [{ name: 'Links' }] }],
+            },
+        });
+        const secondTemplateId = secondTemplate.json().template.id as number;
+
+        const applySecondResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/templates/${secondTemplateId}/apply`,
+            headers: ctx.authHeaders,
+        });
+
+        expect(applySecondResponse.statusCode).toBe(200);
+
+        const deleteResponse = await ctx.app.inject({
+            method: 'DELETE',
+            url: `/api/templates/${templateId}`,
+            headers: ctx.authHeaders,
+        });
+
+        expect(deleteResponse.statusCode).toBe(200);
+        expect(deleteResponse.json()).toEqual({ success: true });
+
+        const missingAfterDelete = await ctx.app.inject({
+            method: 'GET',
+            url: `/api/templates/${templateId}`,
+            headers: ctx.authHeaders,
+        });
+
+        expect(missingAfterDelete.statusCode).toBe(404);
+        expect(missingAfterDelete.json()).toEqual({ error: 'template not found' });
+
+        const invalidId = await ctx.app.inject({
+            method: 'GET',
+            url: '/api/templates/not-a-number',
+            headers: ctx.authHeaders,
+        });
+        expect(invalidId.statusCode).toBe(400);
+        expect(invalidId.json()).toEqual({ error: 'invalid id' });
+
+        const missingTemplate = await ctx.app.inject({
+            method: 'DELETE',
+            url: '/api/templates/999999',
+            headers: ctx.authHeaders,
+        });
+        expect(missingTemplate.statusCode).toBe(404);
+        expect(missingTemplate.json()).toEqual({ error: 'template not found' });
+
+        const invalidTree = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/templates',
+            headers: ctx.authHeaders,
+            payload: {
+                name: 'Broken Template',
+                tree: [
+                    { name: 'Dup', children: [] },
+                    { name: 'Dup', children: [] },
+                ],
+            },
+        });
+        expect(invalidTree.statusCode).toBe(400);
+        expect(invalidTree.json().error).toContain('duplicate top-level: Dup');
+
+        const presetUpdate = await ctx.app.inject({
+            method: 'PUT',
+            url: `/api/templates/${presetTemplate.id}`,
+            headers: ctx.authHeaders,
+            payload: { name: 'Blocked' },
+        });
+        expect(presetUpdate.statusCode).toBe(403);
+        expect(presetUpdate.json()).toEqual({ error: 'preset templates cannot be updated' });
+
+        const presetApply = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/templates/${presetTemplate.id}/apply`,
+            headers: ctx.authHeaders,
+        });
+        expect(presetApply.statusCode).toBe(403);
+        expect(presetApply.json().error).toContain('Preset templates are read-only references');
+
+        const inactiveTemplate = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/templates',
+            headers: ctx.authHeaders,
+            payload: {
+                name: 'Inactive Template',
+                tree: [{ name: 'Archive', children: [] }],
+            },
+        });
+        const inactiveTemplateId = inactiveTemplate.json().template.id as number;
+
+        const resetInactive = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/templates/${inactiveTemplateId}/reset`,
+            headers: ctx.authHeaders,
+        });
+        expect(resetInactive.statusCode).toBe(403);
+        expect(resetInactive.json()).toEqual({ error: 'Only the currently active template can be reset' });
+    });
+
+    it('covers snapshot save/list/view/delete/batch-delete success and validation branches', async () => {
+        const [bookmarkId] = seedBookmarks(ctx.db, [
+            {
+                url: 'https://matched.example.com/article',
+                title: 'Matched Bookmark',
+            },
+        ]);
+
+        const createResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/snapshots',
+            headers: ctx.authHeaders,
+            payload: {
+                url: 'https://matched.example.com/article',
+                title: 'Matched Snapshot',
+                content: '<!doctype html><html><body>matched</body></html>',
+            },
+        });
+
+        expect(createResponse.statusCode).toBe(200);
+        expect(createResponse.json()).toMatchObject({
+            success: true,
+            snapshot: {
+                bookmark_id: bookmarkId,
+            },
+        });
+        const firstSnapshot = createResponse.json().snapshot;
+        expect(fs.existsSync(path.join(ctx.snapshotsDir, firstSnapshot.filename))).toBe(true);
+
+        const filteredList = await ctx.app.inject({
+            method: 'GET',
+            url: `/api/snapshots?bookmark_id=${bookmarkId}`,
+            headers: ctx.authHeaders,
+        });
+
+        expect(filteredList.statusCode).toBe(200);
+        expect(filteredList.json().snapshots).toHaveLength(1);
+        expect(filteredList.json().snapshots[0].id).toBe(firstSnapshot.id);
+
+        const viewResponse = await ctx.app.inject({
+            method: 'GET',
+            url: `/snapshots/${firstSnapshot.filename}`,
+            headers: ctx.authHeaders,
+        });
+
+        expect(viewResponse.statusCode).toBe(200);
+        expect(viewResponse.headers['content-type']).toContain('text/html');
+        expect(viewResponse.body).toContain('matched');
+
+        const secondSnapshotResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/snapshots',
+            headers: ctx.authHeaders,
+            payload: {
+                url: 'https://unmatched.example.com/article',
+                title: 'Unmatched Snapshot',
+                content: '<!doctype html><html><body>other</body></html>',
+            },
+        });
+
+        expect(secondSnapshotResponse.statusCode).toBe(200);
+        const secondSnapshot = secondSnapshotResponse.json().snapshot;
+        expect(secondSnapshot.bookmark_id).toBe(null);
+
+        const deleteResponse = await ctx.app.inject({
+            method: 'DELETE',
+            url: `/api/snapshots/${firstSnapshot.id}`,
+            headers: ctx.authHeaders,
+        });
+
+        expect(deleteResponse.statusCode).toBe(200);
+        expect(deleteResponse.json()).toEqual({ success: true });
+        expect(fs.existsSync(path.join(ctx.snapshotsDir, firstSnapshot.filename))).toBe(false);
+
+        const batchDeleteResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/snapshots/batch-delete',
+            headers: ctx.authHeaders,
+            payload: {
+                ids: [secondSnapshot.id, 'bad-id', 999999],
+            },
+        });
+
+        expect(batchDeleteResponse.statusCode).toBe(200);
+        expect(batchDeleteResponse.json()).toEqual({ success: true, deleted: 1 });
+        expect(fs.existsSync(path.join(ctx.snapshotsDir, secondSnapshot.filename))).toBe(false);
+
+        const missingUrl = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/snapshots',
+            headers: ctx.authHeaders,
+            payload: {
+                title: 'Broken Snapshot',
+                content: '<html></html>',
+            },
+        });
+        expect(missingUrl.statusCode).toBe(400);
+        expect(missingUrl.json()).toEqual({ error: '缺少 URL' });
+
+        const missingContent = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/snapshots',
+            headers: ctx.authHeaders,
+            payload: {
+                url: 'https://missing-content.example.com',
+                title: 'Broken Snapshot',
+            },
+        });
+        expect(missingContent.statusCode).toBe(400);
+        expect(missingContent.json()).toEqual({ error: '缺少快照内容' });
+
+        const invalidFilename = await ctx.app.inject({
+            method: 'GET',
+            url: '/snapshots/bad.txt',
+            headers: ctx.authHeaders,
+        });
+        expect(invalidFilename.statusCode).toBe(400);
+        expect(invalidFilename.json()).toEqual({ error: '无效的文件名' });
+
+        const missingFile = await ctx.app.inject({
+            method: 'GET',
+            url: '/snapshots/missing-file.html',
+            headers: ctx.authHeaders,
+        });
+        expect(missingFile.statusCode).toBe(404);
+        expect(missingFile.json()).toEqual({ error: '快照不存在' });
+
+        const invalidDelete = await ctx.app.inject({
+            method: 'DELETE',
+            url: '/api/snapshots/not-a-number',
+            headers: ctx.authHeaders,
+        });
+        expect(invalidDelete.statusCode).toBe(400);
+        expect(invalidDelete.json()).toEqual({ error: '无效的 ID' });
+
+        const missingDelete = await ctx.app.inject({
+            method: 'DELETE',
+            url: '/api/snapshots/999999',
+            headers: ctx.authHeaders,
+        });
+        expect(missingDelete.statusCode).toBe(404);
+        expect(missingDelete.json()).toEqual({ error: '快照不存在' });
+
+        const missingIds = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/snapshots/batch-delete',
+            headers: ctx.authHeaders,
+            payload: {},
+        });
+        expect(missingIds.statusCode).toBe(400);
+        expect(missingIds.json()).toEqual({ error: '缺少 ids 参数' });
+    });
+
+    it('covers backup list/run/download/delete and restore error paths with isolated data', async () => {
+        const emptyListResponse = await ctx.app.inject({
+            method: 'GET',
+            url: '/api/backups',
+            headers: ctx.authHeaders,
+        });
+
+        expect(emptyListResponse.statusCode).toBe(200);
+        expect(emptyListResponse.json()).toEqual({ backups: [] });
+
+        const skippedBackup = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/backups/run',
+            headers: ctx.authHeaders,
+        });
+
+        expect(skippedBackup.statusCode).toBe(200);
+        expect(skippedBackup.json()).toEqual({
+            success: true,
+            skipped: true,
+            message: '当前无书签，跳过备份',
+        });
+
+        seedBookmarks(ctx.db, [{ url: 'https://backup.example.com', title: 'Backup target' }]);
+
+        const createdBackup = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/backups/run',
+            headers: ctx.authHeaders,
+        });
+
+        expect(createdBackup.statusCode).toBe(200);
+        expect(createdBackup.json().success).toBe(true);
+        expect(createdBackup.json().backup).toMatch(/^manual_\d{8}_\d{6}\.db$/);
+        const backupName = createdBackup.json().backup as string;
+        const backupPath = path.join(ctx.backupDir, backupName);
+        expect(fs.existsSync(backupPath)).toBe(true);
+
+        const listResponse = await ctx.app.inject({
+            method: 'GET',
+            url: '/api/backups',
+            headers: ctx.authHeaders,
+        });
+
+        expect(listResponse.statusCode).toBe(200);
+        expect(listResponse.json().backups).toHaveLength(1);
+        expect(listResponse.json().backups[0]).toMatchObject({
+            name: backupName,
+            type: 'manual',
+        });
+
+        const invalidDownload = await ctx.app.inject({
+            method: 'GET',
+            url: '/backups/bad.txt',
+            headers: ctx.authHeaders,
+        });
+        expect(invalidDownload.statusCode).toBe(400);
+        expect(invalidDownload.json()).toEqual({ error: '无效的文件名' });
+
+        const missingDownload = await ctx.app.inject({
+            method: 'GET',
+            url: '/backups/manual_20990101_000000.db',
+            headers: ctx.authHeaders,
+        });
+        expect(missingDownload.statusCode).toBe(404);
+        expect(missingDownload.json()).toEqual({ error: '备份不存在' });
+
+        const downloadResponse = await ctx.app.inject({
+            method: 'GET',
+            url: `/backups/${backupName}`,
+            headers: ctx.authHeaders,
+        });
+
+        expect(downloadResponse.statusCode).toBe(200);
+        expect(downloadResponse.headers['content-disposition']).toContain(backupName);
+        expect(downloadResponse.rawPayload.length).toBeGreaterThan(0);
+
+        const invalidDelete = await ctx.app.inject({
+            method: 'DELETE',
+            url: '/api/backups/bad.txt',
+            headers: ctx.authHeaders,
+        });
+        expect(invalidDelete.statusCode).toBe(400);
+        expect(invalidDelete.json()).toEqual({ error: '无效的文件名' });
+
+        const missingDelete = await ctx.app.inject({
+            method: 'DELETE',
+            url: '/api/backups/manual_20990101_000000.db',
+            headers: ctx.authHeaders,
+        });
+        expect(missingDelete.statusCode).toBe(404);
+        expect(missingDelete.json()).toEqual({ error: '备份不存在' });
+
+        const invalidRestoreName = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/backups/restore',
+            headers: ctx.authHeaders,
+            payload: {},
+        });
+        expect(invalidRestoreName.statusCode).toBe(400);
+        expect(invalidRestoreName.json()).toEqual({ error: '无效的备份名称' });
+
+        const missingRestore = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/backups/restore',
+            headers: ctx.authHeaders,
+            payload: { name: 'manual_20990101_000000.db' },
+        });
+        expect(missingRestore.statusCode).toBe(404);
+        expect(missingRestore.json()).toEqual({ error: '备份不存在' });
+
+        const brokenBackupName = 'manual_20260328_123456.db';
+        fs.mkdirSync(ctx.backupDir, { recursive: true });
+        fs.writeFileSync(path.join(ctx.backupDir, brokenBackupName), 'not-a-real-sqlite-db', 'utf8');
+
+        const brokenRestore = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/backups/restore',
+            headers: ctx.authHeaders,
+            payload: { name: brokenBackupName },
+        });
+        expect(brokenRestore.statusCode).toBe(500);
+        expect(brokenRestore.json().error).toContain('还原失败:');
+
+        const deleteResponse = await ctx.app.inject({
+            method: 'DELETE',
+            url: `/api/backups/${backupName}`,
+            headers: ctx.authHeaders,
+        });
+
+        expect(deleteResponse.statusCode).toBe(200);
+        expect(deleteResponse.json()).toEqual({ success: true });
+        expect(fs.existsSync(backupPath)).toBe(false);
+    });
+});
