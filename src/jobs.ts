@@ -189,6 +189,7 @@ export class JobQueue {
   private queue: Array<{ jobId: string; fn: () => Promise<void> }> = [];
   private currentJobId: string | null = null;
   private canceledJobs = new Set<string>();
+  private idleResolvers = new Set<() => void>();
 
   enqueue(jobId: string, fn: () => Promise<void>): void {
     this.queue.push({ jobId, fn });
@@ -200,7 +201,8 @@ export class JobQueue {
   cancelJob(jobId: string): void {
     this.canceledJobs.add(jobId);
     // 从队列中移除
-    this.queue = this.queue.filter(item => item.jobId !== jobId);
+    this.queue = this.queue.filter((item) => item.jobId !== jobId);
+    this.resolveIdle();
   }
 
   cancelAll(): void {
@@ -208,11 +210,41 @@ export class JobQueue {
     for (const item of this.queue) {
       this.canceledJobs.add(item.jobId);
     }
+
     this.queue = [];
+
     // 标记当前正在运行的任务为取消
     if (this.currentJobId) {
       this.canceledJobs.add(this.currentJobId);
     }
+
+    this.resolveIdle();
+  }
+
+  onIdle(): Promise<void> {
+    if (this.isIdle()) return Promise.resolve();
+
+    return new Promise((resolve) => {
+      this.idleResolvers.add(resolve);
+    });
+  }
+
+  clearForTests(): void {
+    this.queue = [];
+    this.currentJobId = null;
+    this.canceledJobs.clear();
+    this.running = false;
+    this.resolveIdle();
+  }
+
+  private isIdle(): boolean {
+    return !this.running && this.queue.length === 0 && this.currentJobId === null;
+  }
+
+  private resolveIdle(): void {
+    if (!this.isIdle()) return;
+    for (const resolve of this.idleResolvers) resolve();
+    this.idleResolvers.clear();
   }
 
   isCanceled(jobId: string): boolean {
@@ -254,3 +286,15 @@ export class JobQueue {
 }
 
 export const jobQueue = new JobQueue();
+
+export function clearJobSubscriptionsForTests(): void {
+  subscribers.clear();
+  eventSubscribers.clear();
+}
+
+export async function resetJobRuntimeForTests(): Promise<void> {
+  jobQueue.cancelAll();
+  await jobQueue.onIdle();
+  jobQueue.clearForTests();
+  clearJobSubscriptionsForTests();
+}

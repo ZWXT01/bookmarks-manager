@@ -70,7 +70,35 @@ export interface BuildAppOptions {
 
 export interface BuildAppResult {
   app: FastifyInstance;
+  db: Db;
+  dbPath: string;
+  envFilePath: string;
+  backupDir: string;
+  snapshotsDir: string;
   startBackgroundJobs: () => void;
+}
+
+export function loadDotEnvFileIfPresent(envFilePath: string): void {
+  try {
+    if (!fs.existsSync(envFilePath)) return;
+    const raw = fs.readFileSync(envFilePath, 'utf8');
+    const lines = raw.split(/\r?\n/);
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed || trimmed.startsWith('#')) continue;
+      const eq = trimmed.indexOf('=');
+      if (eq <= 0) continue;
+      const key = trimmed.slice(0, eq).trim();
+      if (!key) continue;
+      if (process.env[key] !== undefined) continue;
+      let value = trimmed.slice(eq + 1).trim();
+      if ((value.startsWith('"') && value.endsWith('"')) || (value.startsWith("'") && value.endsWith("'"))) {
+        value = value.slice(1, -1);
+      }
+      process.env[key] = value;
+    }
+  } catch {
+  }
 }
 
 function writeDotEnvFile(envFilePath: string, updates: Record<string, string>): void {
@@ -118,6 +146,8 @@ function writeDotEnvFile(envFilePath: string, updates: Record<string, string>): 
 
 export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppResult> {
   const envFilePath = options.envFilePath ?? path.join(process.cwd(), '.env');
+
+  loadDotEnvFileIfPresent(envFilePath);
   const dbPath = options.dbPath ?? process.env.DB_PATH ?? path.join(process.cwd(), 'data', 'app.db');
 
   const backupEnabled = options.backupEnabled ?? (process.env.BACKUP_ENABLED === '1' || process.env.BACKUP_ENABLED === 'true');
@@ -846,5 +876,5 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     }
   };
 
-  return { app, startBackgroundJobs };
+  return { app, db, dbPath, envFilePath, backupDir, snapshotsDir, startBackgroundJobs };
 }

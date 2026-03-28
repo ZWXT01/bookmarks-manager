@@ -98,6 +98,11 @@ export function clearIpAttempts(ip: string): void {
   ipAttempts.delete(ip);
 }
 
+// 测试辅助：清空 IP 限流状态
+export function resetAuthStateForTests(): void {
+  ipAttempts.clear();
+}
+
 // 验证凭据（基于IP限制，不锁定账号）
 export function validateCredentials(db: Db, username: string, password: string, ip: string): { valid: boolean; error?: string; userId?: number } {
   // 先检查IP是否被锁定

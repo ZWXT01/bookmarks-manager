@@ -1,184 +1,32 @@
 import fs from 'fs';
-import os from 'os';
 import path from 'path';
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import type { FastifyInstance } from 'fastify';
 
-import { buildApp } from '../src/app';
-import type { Db } from '../src/db';
-import { seedBookmarks, seedCategory } from './helpers/db';
+import { createTestApp, type TestAppContext } from '../helpers/app';
+import { seedBookmarks, seedCategory } from '../helpers/factories';
 
-interface TestContext {
-    app: FastifyInstance;
-    db: Db;
-    rootDir: string;
+interface TestContext extends TestAppContext {
     backupDir: string;
     snapshotsDir: string;
     envFilePath: string;
     authHeaders: Record<string, string>;
-    cleanup: () => Promise<void>;
-}
-
-let tempCounter = 0;
-
-function writeEnvFile(envFilePath: string, values: Record<string, string>): void {
-    fs.mkdirSync(path.dirname(envFilePath), { recursive: true });
-    const body = Object.entries(values)
-        .map(([key, value]) => `${key}=${value}`)
-        .join('\n')
-        .concat('\n');
-    fs.writeFileSync(envFilePath, body, 'utf8');
-}
-
-function applyEnv(values: Record<string, string>): () => void {
-    const previous = new Map<string, string | undefined>();
-
-    for (const [key, value] of Object.entries(values)) {
-        previous.set(key, process.env[key]);
-        process.env[key] = value;
-    }
-
-    return () => {
-        for (const [key, value] of previous.entries()) {
-            if (value === undefined) delete process.env[key];
-            else process.env[key] = value;
-        }
-    };
-}
-
-function createOriginHeaders(baseUrl: string = 'http://127.0.0.1'): Record<string, string> {
-    const url = new URL(baseUrl);
-    return {
-        host: url.host,
-        origin: url.origin,
-        referer: `${url.origin}/`,
-    };
-}
-
-function extractSessionCookie(response: Awaited<ReturnType<FastifyInstance['inject']>>): string {
-    const raw = response.headers['set-cookie'];
-    const items = Array.isArray(raw) ? raw : typeof raw === 'string' ? [raw] : [];
-    const cookies = items
-        .map((value) => value.split(';', 1)[0])
-        .filter(Boolean);
-
-    if (cookies.length === 0) {
-        throw new Error('Login response did not include a session cookie');
-    }
-
-    return cookies.join('; ');
-}
-
-async function loginWithSession(app: FastifyInstance, username: string, password: string, baseUrl: string): Promise<Record<string, string>> {
-    const response = await app.inject({
-        method: 'POST',
-        url: '/login',
-        headers: {
-            'content-type': 'application/x-www-form-urlencoded',
-            ...createOriginHeaders(baseUrl),
-        },
-        payload: new URLSearchParams({ username, password }).toString(),
-    });
-
-    if (response.statusCode >= 400) {
-        throw new Error(`Login failed: ${response.statusCode} ${response.body}`);
-    }
-
-    return {
-        ...createOriginHeaders(baseUrl),
-        cookie: extractSessionCookie(response),
-    };
 }
 
 async function createTestContext(): Promise<TestContext> {
-    tempCounter += 1;
-    const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), `bm-r1-api-02-${tempCounter}-`));
-    const dbPath = path.join(rootDir, 'data', 'app.db');
-    const backupDir = path.join(rootDir, 'data', 'backups');
-    const snapshotsDir = path.join(rootDir, 'data', 'snapshots');
-    const envFilePath = path.join(rootDir, '.env.test');
-    const baseUrl = 'http://127.0.0.1';
-    const username = 'test-admin';
-    const password = 'test-password';
+    const ctx = await createTestApp();
+    const session = await ctx.login();
 
-    const envValues = {
-        ENV_FILE_PATH: envFilePath,
-        DB_PATH: dbPath,
-        BACKUP_DIR: backupDir,
-        SNAPSHOTS_DIR: snapshotsDir,
-        AUTH_USERNAME: username,
-        AUTH_PASSWORD: password,
-        SESSION_SECRET: 'test-session-secret-must-be-at-least-32-characters-long',
-        API_TOKEN: 'test-static-api-token',
+    return {
+        ...ctx,
+        backupDir: ctx.paths.backupDir,
+        snapshotsDir: ctx.paths.snapshotsDir,
+        envFilePath: ctx.paths.envFilePath,
+        authHeaders: session.headers,
     };
-
-    writeEnvFile(envFilePath, envValues);
-    const restoreEnv = applyEnv(envValues);
-
-    try {
-        const { app, db } = await buildApp({
-            dbPath,
-            envFilePath,
-            backupDir,
-            snapshotsDir,
-            staticApiToken: envValues.API_TOKEN,
-            sessionSecret: envValues.SESSION_SECRET,
-            backupEnabled: false,
-            periodicCheckEnabled: false,
-            logLevel: 'error',
-        });
-
-        const authHeaders = await loginWithSession(app, username, password, baseUrl);
-        let cleaned = false;
-
-        return {
-            app,
-            db,
-            rootDir,
-            backupDir,
-            snapshotsDir,
-            envFilePath,
-            authHeaders,
-            cleanup: async () => {
-                if (cleaned) return;
-                cleaned = true;
-
-                try {
-                    await app.close();
-                } finally {
-                    restoreEnv();
-                    fs.rmSync(rootDir, { recursive: true, force: true });
-                }
-            },
-        };
-    } catch (error) {
-        restoreEnv();
-        fs.rmSync(rootDir, { recursive: true, force: true });
-        throw error;
-    }
 }
 
-function insertSnapshot(db: Db, snapshotsDir: string, options: { url?: string; title?: string; filename?: string; content?: string; bookmarkId?: number | null } = {}): number {
-    const url = options.url ?? 'https://example.com/snapshot';
-    const title = options.title ?? 'Example Snapshot';
-    const filename = options.filename ?? `snapshot-${Date.now()}.html`;
-    const content = options.content ?? '<!doctype html><html><body>snapshot</body></html>';
-    const filePath = path.join(snapshotsDir, filename);
-
-    fs.mkdirSync(snapshotsDir, { recursive: true });
-    fs.writeFileSync(filePath, content, 'utf8');
-    const fileSize = fs.statSync(filePath).size;
-
-    const result = db.prepare(`
-        INSERT INTO snapshots (bookmark_id, url, title, filename, file_size, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-    `).run(options.bookmarkId ?? null, url, title, filename, fileSize, '2026-03-28T00:00:00.000Z');
-
-    return Number(result.lastInsertRowid);
-}
-
-describe('R1-API-02 integration coverage', () => {
+describe('integration: ops routes', () => {
     let ctx: TestContext;
 
     beforeEach(async () => {
