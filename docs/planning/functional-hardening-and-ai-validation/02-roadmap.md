@@ -10,6 +10,7 @@
 - [Agent 进度台账](./05-agent-status.md)
 - [风险台账](./06-risk-log.md)
 - [功能覆盖矩阵](./07-functional-baseline-matrix.md)
+- [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)
 
 ## 1. 文档目标
 
@@ -194,6 +195,10 @@
 - 设置、模板、快照、备份路径有自动化测试。
 - 备份 / 还原与快照资产合同写清并落地到测试。
 - README 与代码表述一致，不再承诺当前不存在的接口。
+
+当前基线补充：
+
+- `R1-QA-01` 已将最小 UI smoke checklist 固化到 [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)。
 
 ### R1.5
 

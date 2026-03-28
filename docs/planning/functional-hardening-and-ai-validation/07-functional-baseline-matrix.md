@@ -16,7 +16,7 @@
 | 构建基线 | `npm run build` 于 2026-03-28 通过。 | 当前工作区执行通过。 |
 | 自动化测试基线 | `npm test` 于 2026-03-28 通过，`13` 个测试文件、`119` 条测试全部通过。 | 当前工作区执行通过。 |
 | 仓库内 Playwright 资产 | `e2e/` 中存在 `3` 个 spec 文件、`11` 条用例。 | `bookmarks.spec.ts`、`categories.spec.ts`、`search-and-shortcuts.spec.ts`。 |
-| UI 验证主路径 | 当前主路径不是仓库内 Playwright，而是后续要在 `R1-QA-01` 固化的内置 Playwright MCP smoke。 | [执行路线图](./02-roadmap.md) 与 [Agent 执行手册](./04-agent-runbook.md) 已冻结该约束。 |
+| UI 验证主路径 | 当前主路径不是仓库内 Playwright，而是已在 `R1-QA-01` 固化的内置 Playwright MCP smoke。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)。 |
 
 ## 2. Gate 冻结结论
 
@@ -49,5 +49,6 @@
 
 - `G1` 只负责冻结范围、合同和验证矩阵，不修业务实现。
 - `R1` 的 release gate 以 `npm run build`、`npm test` 和内置 Playwright MCP 最小 smoke 为准。
+- 最小 smoke 当前已验证 `登录 -> 首页 -> 设置 -> 任务 -> 快照 -> 退出` 旅程，并明确不依赖仓库内 `e2e/` 和 `playwright.config.ts`。
 - `R1.5` 的 AI gate 必须同时具备离线 mock / fixture 自动化和 `H1` 真实 provider 人工验收。
 - `R2` 结束时，扩展 round-trip、MCP UI smoke、最终回归与交接文档必须全部闭环。
