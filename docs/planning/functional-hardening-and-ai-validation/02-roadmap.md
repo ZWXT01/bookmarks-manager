@@ -41,8 +41,8 @@
 - 备份 / 还原合同
   - 本轮先冻结为“显式部分恢复”路线，而不是默认承诺“完整恢复”。
   - 当前保证恢复范围仅为 `categories` 与 `bookmarks`；`settings`、`api_tokens`、`jobs`、`templates`、`snapshots` 元数据和快照文件资产暂不计入保证恢复范围。
-  - 依据：当前备份文件是整库 `.db`，但 `src/routes/backups.ts` 的恢复实现只清空并回灌 `categories` 和 `bookmarks`。
-  - 后续动作：由 `R1-BE-03` 将代码、文档、临时副本演练和回滚路径全部对齐到显式部分恢复合同。
+  - 依据：当前备份文件仍是整库 `.db`，但 restore 已明确为“校验通过后只事务性替换 `categories` 与 `bookmarks`”，并在变更前创建 `pre_restore_*.db` 回滚点。
+  - 当前状态：`R1-BE-03` 已将代码、文档、临时副本演练和回滚路径对齐到显式部分恢复合同，具体施工说明见 [备份 / 还原与快照资产合同](./09-backup-restore-contract.md)。
 - 浏览器扩展 release gate
   - `extension-new/` 纳入最终 `R2` release gate，但不作为 `R1` / `R1.5` 的阻塞项。
   - 依据：扩展是当前产品面的一部分，负责 token 配置、保存书签、保存快照和同时保存；若不纳入最终 gate，服务端 contract 无法闭环。
@@ -201,6 +201,7 @@
 当前基线补充：
 
 - `R1-QA-01` 已将最小 UI smoke checklist 固化到 [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)。
+- `R1-BE-03` 的备份 / 还原与快照资产施工合同固化到 [备份 / 还原与快照资产合同](./09-backup-restore-contract.md)。
 
 ### R1.5
 

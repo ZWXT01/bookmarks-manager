@@ -66,12 +66,24 @@ export function openDb(dbPath: string): Db {
       value TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      bookmark_id INTEGER REFERENCES bookmarks(id) ON DELETE SET NULL,
+      url TEXT NOT NULL,
+      title TEXT NOT NULL,
+      filename TEXT NOT NULL UNIQUE,
+      file_size INTEGER NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
     -- 性能优化索引
     CREATE INDEX IF NOT EXISTS idx_bookmarks_check_status ON bookmarks(check_status);
     CREATE INDEX IF NOT EXISTS idx_bookmarks_created_at ON bookmarks(created_at);
     CREATE INDEX IF NOT EXISTS idx_jobs_status ON jobs(status);
     CREATE INDEX IF NOT EXISTS idx_jobs_created_at ON jobs(created_at);
     CREATE INDEX IF NOT EXISTS idx_categories_name ON categories(name);
+    CREATE INDEX IF NOT EXISTS idx_snapshots_bookmark_id ON snapshots(bookmark_id);
+    CREATE INDEX IF NOT EXISTS idx_snapshots_created_at ON snapshots(created_at);
 
     -- API Tokens 表
     CREATE TABLE IF NOT EXISTS api_tokens (

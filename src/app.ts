@@ -15,6 +15,7 @@ import ejs from 'ejs';
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 
 import { toInt, toIntClamp, withFlash, safeRedirectTarget } from './utils/helpers';
+import { allocateBackupFile, createSqliteBackup } from './backup-contract';
 
 import { initUserTable, validateApiToken, cleanupExpiredTokens } from './auth';
 
@@ -239,23 +240,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     return getIntSetting('backup_retention', 1, 365, fallback);
   }
 
-  function formatBackupTimestamp(now: Date): string {
-    const pad = (n: number) => String(n).padStart(2, '0');
-    return (
-      now.getFullYear() +
-      pad(now.getMonth() + 1) +
-      pad(now.getDate()) +
-      '_' +
-      pad(now.getHours()) +
-      pad(now.getMinutes()) +
-      pad(now.getSeconds())
-    );
-  }
-
-  function escapeSqlString(input: string): string {
-    return input.replace(/'/g, "''");
-  }
-
   function pruneBackups(): void {
     try {
       if (!fs.existsSync(backupDir)) return;
@@ -284,13 +268,8 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       return { fileName: '', fullPath: '', skipped: true };
     }
 
-    fs.mkdirSync(backupDir, { recursive: true });
-    const ts = formatBackupTimestamp(new Date());
-    const prefix = manual ? 'manual_' : 'backup_';
-    const fileName = prefix + ts + '.db';
-    const fullPath = path.join(backupDir, fileName);
-    const sqlPath = escapeSqlString(fullPath);
-    db.exec('VACUUM INTO \'' + sqlPath + '\'');
+    const { fileName, fullPath } = allocateBackupFile(backupDir, manual ? 'manual_' : 'backup_');
+    createSqliteBackup(db, fullPath);
     if (!manual) {
       pruneBackups();
     }

@@ -15,19 +15,6 @@ export interface SnapshotRoutesOptions {
 export const snapshotRoutes: FastifyPluginCallback<SnapshotRoutesOptions> = (app, opts, done) => {
     const { db, snapshotsDir, staticApiToken } = opts;
 
-    // 确保快照表存在
-    db.exec(`
-    CREATE TABLE IF NOT EXISTS snapshots (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      bookmark_id INTEGER REFERENCES bookmarks(id) ON DELETE SET NULL,
-      url TEXT NOT NULL,
-      title TEXT NOT NULL,
-      filename TEXT NOT NULL UNIQUE,
-      file_size INTEGER NOT NULL,
-      created_at TEXT NOT NULL
-    );
-  `);
-
     // GET /snapshots - 快照管理页面
     app.get('/snapshots', async (req: FastifyRequest, reply: FastifyReply) => {
         const total = (db.prepare('SELECT COUNT(*) as count FROM snapshots').get() as { count: number }).count;

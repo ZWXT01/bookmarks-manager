@@ -501,7 +501,7 @@ describe('integration: ops routes', () => {
         expect(missingIds.json()).toEqual({ error: '缺少 ids 参数' });
     });
 
-    it('covers backup list/run/download/delete and restore error paths with isolated data', async () => {
+    it('covers backup list/run/delete and partial-restore contract with isolated data', async () => {
         const emptyListResponse = await ctx.app.inject({
             method: 'GET',
             url: '/api/backups',
@@ -524,7 +524,10 @@ describe('integration: ops routes', () => {
             message: '当前无书签，跳过备份',
         });
 
-        seedBookmarks(ctx.db, [{ url: 'https://backup.example.com', title: 'Backup target' }]);
+        const originalCategoryId = seedCategory(ctx.db, 'Original Category');
+        const [originalBookmarkId] = seedBookmarks(ctx.db, [
+            { url: 'https://backup.example.com', title: 'Backup target', categoryId: originalCategoryId },
+        ]);
 
         const createdBackup = await ctx.app.inject({
             method: 'POST',
@@ -538,19 +541,6 @@ describe('integration: ops routes', () => {
         const backupName = createdBackup.json().backup as string;
         const backupPath = path.join(ctx.backupDir, backupName);
         expect(fs.existsSync(backupPath)).toBe(true);
-
-        const listResponse = await ctx.app.inject({
-            method: 'GET',
-            url: '/api/backups',
-            headers: ctx.authHeaders,
-        });
-
-        expect(listResponse.statusCode).toBe(200);
-        expect(listResponse.json().backups).toHaveLength(1);
-        expect(listResponse.json().backups[0]).toMatchObject({
-            name: backupName,
-            type: 'manual',
-        });
 
         const invalidDownload = await ctx.app.inject({
             method: 'GET',
@@ -594,6 +584,32 @@ describe('integration: ops routes', () => {
         expect(missingDelete.statusCode).toBe(404);
         expect(missingDelete.json()).toEqual({ error: '备份不存在' });
 
+        ctx.db.prepare(`
+            INSERT INTO settings (key, value)
+            VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        `).run('check_retries', '9');
+
+        const snapshotResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/snapshots',
+            headers: ctx.authHeaders,
+            payload: {
+                url: 'https://snapshot-only.example.com/article',
+                title: 'Preserved Snapshot',
+                content: '<!doctype html><html><body>snapshot-only</body></html>',
+            },
+        });
+        expect(snapshotResponse.statusCode).toBe(200);
+        const preservedSnapshot = snapshotResponse.json().snapshot as { id: number; filename: string; bookmark_id: number | null };
+        expect(preservedSnapshot.bookmark_id).toBe(null);
+        expect(fs.existsSync(path.join(ctx.snapshotsDir, preservedSnapshot.filename))).toBe(true);
+
+        const transientCategoryId = seedCategory(ctx.db, 'Transient Category');
+        const [transientBookmarkId] = seedBookmarks(ctx.db, [
+            { url: 'https://transient.example.com', title: 'Transient Bookmark', categoryId: transientCategoryId },
+        ]);
+
         const invalidRestoreName = await ctx.app.inject({
             method: 'POST',
             url: '/api/backups/restore',
@@ -611,6 +627,72 @@ describe('integration: ops routes', () => {
         });
         expect(missingRestore.statusCode).toBe(404);
         expect(missingRestore.json()).toEqual({ error: '备份不存在' });
+
+        const restoreResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/backups/restore',
+            headers: ctx.authHeaders,
+            payload: { name: backupName },
+        });
+        expect(restoreResponse.statusCode).toBe(200);
+        expect(restoreResponse.json()).toMatchObject({
+            success: true,
+            message: `已从 ${backupName} 还原分类与书签`,
+            restored_tables: ['categories', 'bookmarks'],
+            preserved_assets: ['snapshots/*.html'],
+        });
+        expect(restoreResponse.json().preserved_tables).toEqual(expect.arrayContaining(['settings', 'snapshots']));
+        expect(restoreResponse.json().pre_restore_backup).toMatch(/^pre_restore_\d{8}_\d{6}\.db$/);
+
+        const preRestoreBackupName = restoreResponse.json().pre_restore_backup as string;
+        const preRestoreBackupPath = path.join(ctx.backupDir, preRestoreBackupName);
+        expect(fs.existsSync(preRestoreBackupPath)).toBe(true);
+
+        expect(ctx.db.prepare('SELECT name FROM categories ORDER BY id').all()).toEqual([
+            { name: 'Original Category' },
+        ]);
+        expect(ctx.db.prepare('SELECT id, title FROM bookmarks ORDER BY id').all()).toEqual([
+            { id: originalBookmarkId, title: 'Backup target' },
+        ]);
+        expect(ctx.db.prepare('SELECT value FROM settings WHERE key = ?').get('check_retries')).toEqual({ value: '9' });
+        expect(ctx.db.prepare('SELECT id, filename, bookmark_id FROM snapshots WHERE id = ?').get(preservedSnapshot.id)).toEqual({
+            id: preservedSnapshot.id,
+            filename: preservedSnapshot.filename,
+            bookmark_id: null,
+        });
+        expect(fs.existsSync(path.join(ctx.snapshotsDir, preservedSnapshot.filename))).toBe(true);
+        expect(ctx.db.prepare('SELECT id FROM bookmarks WHERE id = ?').get(transientBookmarkId)).toBeUndefined();
+        expect(ctx.db.prepare('SELECT id FROM categories WHERE id = ?').get(transientCategoryId)).toBeUndefined();
+
+        const listAfterRestore = await ctx.app.inject({
+            method: 'GET',
+            url: '/api/backups',
+            headers: ctx.authHeaders,
+        });
+
+        expect(listAfterRestore.statusCode).toBe(200);
+        expect(listAfterRestore.json().backups).toEqual(expect.arrayContaining([
+            expect.objectContaining({ name: backupName, type: 'manual' }),
+            expect.objectContaining({ name: preRestoreBackupName, type: 'pre_restore' }),
+        ]));
+
+        const rollbackResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/backups/restore',
+            headers: ctx.authHeaders,
+            payload: { name: preRestoreBackupName },
+        });
+        expect(rollbackResponse.statusCode).toBe(200);
+        expect(ctx.db.prepare('SELECT id, title FROM bookmarks WHERE id = ?').get(transientBookmarkId)).toEqual({
+            id: transientBookmarkId,
+            title: 'Transient Bookmark',
+        });
+        expect(ctx.db.prepare('SELECT id, name FROM categories WHERE id = ?').get(transientCategoryId)).toEqual({
+            id: transientCategoryId,
+            name: 'Transient Category',
+        });
+        expect(ctx.db.prepare('SELECT value FROM settings WHERE key = ?').get('check_retries')).toEqual({ value: '9' });
+        expect(fs.existsSync(path.join(ctx.snapshotsDir, preservedSnapshot.filename))).toBe(true);
 
         const brokenBackupName = 'manual_20260328_123456.db';
         fs.mkdirSync(ctx.backupDir, { recursive: true });
