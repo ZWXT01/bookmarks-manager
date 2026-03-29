@@ -1,6 +1,6 @@
 # bookmarks-manager Issue 级任务拆分
 
-更新时间：2026-03-29
+更新时间：2026-03-30
 
 配套文档：
 
@@ -411,6 +411,24 @@
   - `scripts/generate-static-tailwind.ts` 可复跑并稳定生成完整静态样式资产。
   - `tests/integration/page-assets.test.ts`、`npx tsx scripts/category-interaction-validate.ts`、`npx tsc --noEmit`、`npm test`、`npm run build` 通过。
 
+## R5-AI-02 强化单条 classify 语义择优与样本回归
+
+- 目标：在 `R5-AI-01` 的 taxonomy guardrail 之上，再补一层本地 deterministic 语义择优，降低单条 `/api/ai/classify` 在模板内候选之间选错合法分类的概率。
+- 范围：
+  - 基于 `title`、`url`、可选 `description`、常见 host/path 信号和分类别名，对单条 classify 候选路径做本地 rerank。
+  - 覆盖常见的“文档 / 教程 / 课程 / 书籍 / 示例 / 社区 host”语义信号，避免模型把文档页错误落到框架 / 技术主题桶里。
+  - 对完全不可映射但内容信号足够强的返回结果，允许在当前模板内做 deterministic rescue，而不是直接失败。
+  - 新增纯函数语义样本回归，并补足 HTTP 合同测试与离线 harness 验证。
+- 非目标：
+  - 不在本 issue 中重新引入模板外分类输出。
+  - 不把这层语义择优扩展到 `classify-batch` / `organize` 的批量分配链路。
+  - 不以本 issue 替代真实 provider 的后续抽样人工验收。
+- 依赖：`R5-AI-01`。
+- 验收：
+  - 单条 `/api/ai/classify` 在文档 / 示例 / 社区 host 等高信号场景下，能稳定落到模板内更合适的子分类，而不是停留在宽泛但合法的主题桶。
+  - `description` 可作为可选上下文参与 prompt 和本地 rerank，但不破坏现有调用方。
+  - `tests/ai-classify-guardrail.test.ts`、`tests/integration/ai-routes.test.ts`、`tests/integration/ai-harness.test.ts`、`npx tsc --noEmit`、`npm test`、`npm run build` 通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -434,3 +452,4 @@
 19. `R5-EXT-02`
 20. `R5-EXT-03`
 21. `R5-UI-04`
+22. `R5-AI-02`
