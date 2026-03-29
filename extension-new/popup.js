@@ -26,6 +26,39 @@
     let isConnected = false;
     let lastConnectedAt = 0;
 
+    // Real-runtime validation opens popup.html as a normal extension page tab,
+    // so it needs an explicit target page hint to resolve the tab under test.
+    function getRuntimeTestState() {
+        const state = window.__BOOKMARKS_MANAGER_RUNTIME_TEST__;
+        return state && typeof state === 'object' ? state : null;
+    }
+
+    async function resolveTargetTab() {
+        const runtimeState = getRuntimeTestState();
+
+        if (runtimeState && Number.isInteger(runtimeState.targetTabId)) {
+            try {
+                const tab = await chrome.tabs.get(runtimeState.targetTabId);
+                if (tab) return tab;
+            } catch (_error) {
+                // Fall through to URL / active-tab lookup.
+            }
+        }
+
+        if (runtimeState && runtimeState.targetUrl) {
+            try {
+                const matches = await chrome.tabs.query({ url: runtimeState.targetUrl });
+                const matchedTab = matches.find((tab) => tab.url === runtimeState.targetUrl) || matches[0];
+                if (matchedTab) return matchedTab;
+            } catch (_error) {
+                // Fall through to active-tab lookup.
+            }
+        }
+
+        const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+        return tab || null;
+    }
+
     // Initialize
     async function init() {
         await loadSettings();
@@ -99,14 +132,19 @@
 
     // Get current tab info
     async function getCurrentTab() {
+        const runtimeState = getRuntimeTestState();
+
         try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            const tab = await resolveTargetTab();
             if (tab) {
-                titleInput.value = tab.title || '';
-                urlInput.value = tab.url || '';
+                titleInput.value = tab.title || runtimeState?.targetTitle || '';
+                urlInput.value = tab.url || runtimeState?.targetUrl || '';
             }
         } catch (e) {
-            // Ignore errors
+            if (runtimeState) {
+                titleInput.value = runtimeState.targetTitle || '';
+                urlInput.value = runtimeState.targetUrl || '';
+            }
         }
     }
 
@@ -290,7 +328,7 @@
         saveAllBtn.disabled = true;
 
         try {
-            const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+            const tab = await resolveTargetTab();
             if (!tab || !tab.id) {
                 throw new Error('无法获取当前标签页');
             }
