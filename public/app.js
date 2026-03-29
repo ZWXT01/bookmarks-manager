@@ -135,7 +135,11 @@ function bookmarkApp() {
     _templateLoadSeq: 0,
     _categoryAbortController: null,
     _templateAbortController: null,
-    _overlayScrollbarsInstance: null,
+    _categoryTabsDragging: false,
+    _categoryTabsPointerId: null,
+    _categoryTabsDragStartX: 0,
+    _categoryTabsDragStartScrollLeft: 0,
+    _suppressCategoryTabsClick: false,
 
     get presetTemplates() { return this.templates.filter(t => t.type === 'preset'); },
     get customTemplates() { return this.templates.filter(t => t.type === 'custom'); },
@@ -155,10 +159,6 @@ function bookmarkApp() {
       this.restoreLastJob();
       this.pollCurrentJob();
 
-      // Initialize OverlayScrollbars for consistent cross-browser scrollbar behavior
-      this.$nextTick(() => {
-        this.initCategoryTabsScrollbar();
-      });
     },
 
     initTheme() {
@@ -183,12 +183,6 @@ function bookmarkApp() {
         this.theme = 'dark';
         document.documentElement.setAttribute('data-theme', 'dark');
         localStorage.setItem('theme', 'dark');
-      }
-
-      // Update OverlayScrollbars theme if instance exists
-      if (this._overlayScrollbarsInstance) {
-        const newTheme = this.theme === 'dark' ? 'os-theme-dark' : 'os-theme-light';
-        this._overlayScrollbarsInstance.options({ scrollbars: { theme: newTheme } });
       }
     },
 
@@ -1321,55 +1315,88 @@ function bookmarkApp() {
       }, 300);
     },
 
-    initCategoryTabsScrollbar() {
-      // Initialize OverlayScrollbars for consistent cross-browser scrollbar behavior
-      const container = this.$refs.categoryTabsContainer;
-      if (!container || typeof OverlayScrollbarsGlobal === 'undefined') return;
-
-      // Clean up existing instance before creating a new one
-      this.destroyCategoryTabsScrollbar();
-
-      const { OverlayScrollbars } = OverlayScrollbarsGlobal;
-
-      // Determine theme based on current setting
-      const theme = this.theme === 'dark' ||
-                    (this.theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-                    ? 'os-theme-dark' : 'os-theme-light';
-
-      // Apply OverlayScrollbars to the category tabs container
-      this._overlayScrollbarsInstance = OverlayScrollbars(container, {
-        scrollbars: {
-          theme: theme,
-          autoHide: 'leave',
-          autoHideDelay: 300,
-        },
-        overflow: {
-          x: 'scroll',
-          y: 'hidden',
-        },
-      });
+    getCategoryTabsScrollTarget() {
+      return this.$refs.categoryTabsContainer || null;
     },
 
-    destroyCategoryTabsScrollbar() {
-      // Clean up OverlayScrollbars instance to prevent memory leaks
-      if (this._overlayScrollbarsInstance) {
-        this._overlayScrollbarsInstance.destroy();
-        this._overlayScrollbarsInstance = null;
+    // Keep the tab strip on native horizontal scrolling so flex layout stays stable after hydration.
+    startCategoryTabsDrag(event) {
+      const container = this.getCategoryTabsScrollTarget();
+      if (!container || event.pointerType === 'touch' || event.button !== 0) return;
+      if (container.scrollWidth <= container.clientWidth) return;
+
+      this._categoryTabsDragging = true;
+      this._categoryTabsPointerId = event.pointerId;
+      this._categoryTabsDragStartX = event.clientX;
+      this._categoryTabsDragStartScrollLeft = container.scrollLeft;
+
+      if (typeof container.setPointerCapture === 'function') {
+        container.setPointerCapture(event.pointerId);
       }
+    },
+
+    handleCategoryTabsDrag(event) {
+      if (!this._categoryTabsDragging || this._categoryTabsPointerId !== event.pointerId) return;
+
+      const container = this.getCategoryTabsScrollTarget();
+      if (!container) return;
+
+      const deltaX = event.clientX - this._categoryTabsDragStartX;
+      if (Math.abs(deltaX) > 4) {
+        this._suppressCategoryTabsClick = true;
+      }
+
+      container.scrollLeft = this._categoryTabsDragStartScrollLeft - deltaX;
+
+      if (this._suppressCategoryTabsClick) {
+        event.preventDefault();
+      }
+    },
+
+    stopCategoryTabsDrag(event) {
+      if (!this._categoryTabsDragging) return;
+      if (event && this._categoryTabsPointerId !== null && event.pointerId !== this._categoryTabsPointerId) return;
+
+      const container = this.getCategoryTabsScrollTarget();
+      if (container && this._categoryTabsPointerId !== null && typeof container.releasePointerCapture === 'function') {
+        try {
+          container.releasePointerCapture(this._categoryTabsPointerId);
+        } catch {
+        }
+      }
+
+      this._categoryTabsDragging = false;
+      this._categoryTabsPointerId = null;
+      this._categoryTabsDragStartX = 0;
+      this._categoryTabsDragStartScrollLeft = 0;
+
+      if (this._suppressCategoryTabsClick) {
+        setTimeout(() => {
+          this._suppressCategoryTabsClick = false;
+        }, 0);
+      }
+    },
+
+    handleCategoryTabsClickCapture(event) {
+      if (!this._suppressCategoryTabsClick) return;
+      this._suppressCategoryTabsClick = false;
+      event.preventDefault();
+      event.stopPropagation();
+    },
+
+    handleCategoryTabsWheel(event) {
+      const container = this.getCategoryTabsScrollTarget();
+      if (!container || container.scrollWidth <= container.clientWidth) return;
+
+      const dominantDelta = Math.abs(event.deltaX) > Math.abs(event.deltaY) ? event.deltaX : event.deltaY;
+      if (dominantDelta === 0) return;
+
+      container.scrollLeft += dominantDelta;
+      event.preventDefault();
     },
 
     scrollCategoryTabs(direction) {
-      // Use OverlayScrollbars instance if available, otherwise fallback to direct DOM manipulation
-      let scrollTarget;
-
-      if (this._overlayScrollbarsInstance) {
-        // Get the viewport element from OverlayScrollbars instance
-        scrollTarget = this._overlayScrollbarsInstance.elements().viewport;
-      } else {
-        // Fallback to direct reference
-        scrollTarget = this.$refs.categoryTabsContainer;
-      }
-
+      const scrollTarget = this.getCategoryTabsScrollTarget();
       if (!scrollTarget) return;
 
       const scrollAmount = 300; // 每次滚动 300px

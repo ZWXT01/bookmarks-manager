@@ -636,9 +636,13 @@ input[type="checkbox"] {
   overflow-y: hidden; /* 防止垂直滚动 */
   scroll-behavior: smooth;
   scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
   padding: 0.75rem 0;
   gap: 0.5rem;
   flex-wrap: nowrap; /* 强制单行显示 */
+  align-items: center;
+  touch-action: pan-x;
+  cursor: grab;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -650,6 +654,15 @@ input[type="checkbox"] {
 /* 确保所有直接子元素不收缩 */
 .category-tabs > * {
   flex-shrink: 0;
+}
+
+.category-tabs.is-dragging {
+  cursor: grabbing;
+  scroll-behavior: auto;
+}
+
+.category-tabs.is-dragging * {
+  user-select: none;
 }
 
 .category-tabs-scroll-btn {

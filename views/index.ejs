@@ -241,7 +241,18 @@
                             ◀
                         </button>
 
-                        <div class="category-tabs" role="tablist" aria-label="分类导航" x-ref="categoryTabsContainer">
+                        <div class="category-tabs"
+                             :class="{ 'is-dragging': _categoryTabsDragging }"
+                             role="tablist"
+                             aria-label="分类导航"
+                             x-ref="categoryTabsContainer"
+                             @pointerdown="startCategoryTabsDrag($event)"
+                             @pointermove="handleCategoryTabsDrag($event)"
+                             @pointerup="stopCategoryTabsDrag($event)"
+                             @pointercancel="stopCategoryTabsDrag($event)"
+                             @lostpointercapture="stopCategoryTabsDrag($event)"
+                             @click.capture="handleCategoryTabsClickCapture($event)"
+                             @wheel="handleCategoryTabsWheel($event)">
                             <!-- All -->
                             <button @click="loadCategory(null)"
                                     @focus="closeCategoryDropdown()"
