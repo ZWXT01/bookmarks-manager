@@ -24,7 +24,7 @@
 
 | 主题 | 冻结结论 | 依据 | 后续 issue |
 |---|---|---|---|
-| `ai_simplify` | 视为历史遗留 / backlog，不纳入本轮 release gate。 | 当前活跃路由面没有 `/api/ai/simplify` 或 `/api/ai/apply-simplify`；仅剩 README、任务页与类型定义遗留。 | `R1-DOC-04` |
+| `ai_simplify` | 视为历史遗留 / backlog，不纳入本轮 release gate。 | 当前活跃路由面没有 `/api/ai/simplify` 或 `/api/ai/apply-simplify`；`R4-CLEAN-01` 后仅保留历史任务兼容类型和旧表迁移清理。 | `R1-DOC-04`、`R4-CLEAN-01` |
 | 备份 / 还原合同 | 本轮冻结为“显式部分恢复”路线。 | 当前恢复实现只处理 `categories` 与 `bookmarks`，不恢复其他表和文件资产。 | `R1-BE-03` |
 | 浏览器扩展 | `extension-new/` 纳入最终 `R2` release gate。 | 扩展仍承担 token 配置、保存书签、保存快照和同时保存功能。 | `R2-EXT-02`、`R2-REL-03` |
 | UI 验证主路径 | 内置 Playwright MCP 为主；仓库内 Playwright 为历史资产。 | 规划包和执行手册已明确切换。 | `R1-QA-01` |
@@ -45,7 +45,7 @@
 | AI classify / test / classify-batch | `src/routes/ai.ts` | 无专门测试 | 无正式 H1 验收记录 | 缺 mock / fixture、HTTP 合同测试与真实 provider 验收 | `R15-AI-01`、`R15-AI-02`、`R15-H1-04` |
 | AI organize 生命周期 | `src/routes/ai.ts`、`src/ai-organize.ts`、`src/ai-organize-plan.ts`、`src/routes/pages.ts` | `tests/ai-organize-plan.test.ts` 仅覆盖状态机与日志 | 任务详情页可展示 organize 计划 | 缺 organize HTTP 合同、apply / rollback / stale recovery 回归 | `R15-AI-03` |
 | 浏览器扩展 round-trip | `extension-new/` | 无正式自动化 | 仅人工点测说明 | 保存书签 / 快照 / 同时保存缺正式验收 | `R2-EXT-02` |
-| `ai_simplify` 遗留面 | `views/job.ejs`、`src/routes/pages.ts`、`src/jobs.ts`、README | 无，因为它已不是活跃功能 | 仅遗留文案和类型存在 | 需要明确下线 / backlog 身份并清理漂移 | `R1-DOC-04` |
+| `ai_simplify` 遗留面 | `src/db.ts`、`src/jobs.ts` | 无，因为它已不是活跃功能 | 仅保留历史任务兼容读取与旧表迁移清理 | 不再保留专属 UI 分支；若要恢复需新立项 | `R1-DOC-04`、`R4-CLEAN-01` |
 
 ## 4. 当前 release gate 口径
 
@@ -63,5 +63,6 @@
 | AI classify / test / classify-batch | `tests/integration/ai-routes.test.ts`、`tests/integration/ai-harness.test.ts` + H1 实测 | 已纳入回归与人工验收 | 单条 `/api/ai/classify` 在真实 provider 下仍可能返回模板外层级，需保留人工复核。 |
 | AI organize 生命周期 | `tests/integration/ai-organize-routes.test.ts` + MCP UI + H1 apply / rollback | 已纳入回归 | 真实 provider 质量以“可解释、可回退”为准，不承诺零误判。 |
 | 浏览器扩展 | `scripts/extension-roundtrip-validate.ts` + [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) | 已纳入 `R2` gate | 当前 smoke 覆盖 popup-harness，不是浏览器工具栏中的真实 unpacked extension target。 |
-| 文档 / 页面漂移 | README、设置说明、任务详情页 simplify 遗留已清理；本地 MCP 已补验 `/login`、`/jobs` | `R1-DOC-04` 可关闭 | `ai_simplify` 只保留 backlog / 历史任务类型语义，不再视为活跃功能。 |
+| 文档 / 页面漂移 | README、设置说明、任务详情页 simplify 遗留已清理；`R4-CLEAN-01` 又移除了 `ai_simplify` 专属任务页分支 | `R1-DOC-04`、`R4-CLEAN-01` 可关闭 | `ai_simplify` 只保留 backlog / 历史任务兼容类型与旧表迁移清理，不再视为活跃功能。 |
+| 跨页面交互 UI gate | `scripts/category-interaction-validate.ts` + [16-category-interaction-validation.md](./16-category-interaction-validation.md) + [17-cross-view-interaction-validation.md](./17-cross-view-interaction-validation.md) | 已扩展到排序、删除分类、移动子分类、单条 / 批量书签移动、模板切换与刷新保持 | 后续若继续改分类导航、模板切换或书签移动链路，应只在同一 harness 上继续加场景。 |
 | UI gate 归属 | 内置 Playwright MCP 是唯一 UI gate；仓库内 `e2e/` 只做历史资产保留 | 基线稳定 | 后续若继续扩展 UI 验收，只追加 MCP 旅程，不恢复仓库内 Playwright 为主 gate。 |
