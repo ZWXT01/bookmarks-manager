@@ -1,6 +1,7 @@
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { createOpenAIClient, type AIClientFactory } from '../ai-client';
+import { getSingleClassifyAllowedPaths, normalizeClassifyPath, resolveSingleClassifyCategory } from '../ai-classify-guardrail';
 import { getConfiguredAiBatchSize, parseAiBatchSize } from '../ai-batch-size';
 
 export interface AIRoutesOptions {
@@ -48,28 +49,40 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
         if (!title && !url) return reply.code(400).send({ error: '请提供标题或URL' });
 
-        const cats = db.prepare('SELECT name FROM categories').all() as { name: string }[];
-        const topCats = [...new Set(cats.map(c => c.name.split('/')[0]).filter(Boolean))].slice(0, 15);
-        const hint = topCats.length ? `\n已有一级分类：${topCats.join('、')}` : '';
+        const allowedPaths = getSingleClassifyAllowedPaths(db);
+        const candidateHint = allowedPaths.length > 0
+            ? '\n候选分类（必须原样选择其一，禁止输出候选之外的分类）：\n- ' + allowedPaths.join('\n- ')
+            : '\n标准一级分类：技术开发、学习资源、工具软件、购物电商、娱乐影音、社交媒体、新闻资讯、设计素材、生活服务、游戏、成人内容、其他';
 
         const prompt = '你是书签分类助手。通过联网访问网页了解内容后分类。\n' +
-            '规则：1.分类最多2级(如:技术/编程)，禁止3级！2.优先使用已有一级分类\n' +
-            '标准一级分类：技术开发、学习资源、工具软件、购物电商、娱乐影音、社交媒体、新闻资讯、设计素材、生活服务、游戏、成人内容、其他' +
-            hint + '\n只输出分类路径，不要解释。\n' +
+            '规则：1.分类最多2级(如:技术/编程)，禁止3级！2.如果提供了候选分类，必须从候选分类中精确选择一个最合适的结果并原样输出\n' +
+            candidateHint + '\n只输出分类路径，不要解释。\n' +
             (title ? '标题: ' + title + '\n' : '') + (url ? '网址: ' + url + '\n' : '');
 
         try {
             const aiClient = createAIClient(config, 60000);
             const completion = await aiClient.createChatCompletion({
                 model: config.model,
-                messages: [{ role: 'system', content: '只输出分类路径（最多2级），不要解释。' }, { role: 'user', content: prompt }],
+                messages: [{
+                    role: 'system',
+                    content: allowedPaths.length > 0
+                        ? '你只能从用户提供的候选分类中选择一个最合适的分类路径，并原样输出；不要解释。'
+                        : '只输出分类路径（最多2级），不要解释。',
+                }, { role: 'user', content: prompt }],
                 temperature: 0.2,
             });
-            let content = completion.choices?.[0]?.message?.content?.trim() || '';
-            if (!content) return reply.code(502).send({ error: 'AI 未返回分类结果' });
-            const parts = content.split('/').filter((p: string) => p.trim());
-            if (parts.length > 2) content = parts.slice(0, 2).join('/');
-            return reply.send({ category: content });
+            const rawContent = completion.choices?.[0]?.message?.content?.trim() || '';
+            if (!rawContent) return reply.code(502).send({ error: 'AI 未返回分类结果' });
+
+            const resolvedCategory = resolveSingleClassifyCategory(rawContent, allowedPaths);
+            if (!resolvedCategory) {
+                req.log.warn({ rawCategory: rawContent, allowedPaths }, 'ai classify returned unmapped category');
+                return reply.code(502).send({ error: 'AI 返回的分类不在当前分类树中' });
+            }
+
+            const normalized = normalizeClassifyPath(resolvedCategory);
+            if (!normalized) return reply.code(502).send({ error: 'AI 未返回分类结果' });
+            return reply.send({ category: normalized });
         } catch (e: any) {
             req.log.error({ err: e }, 'ai classify failed');
             return reply.code(500).send({ error: e.message || 'AI 请求失败' });

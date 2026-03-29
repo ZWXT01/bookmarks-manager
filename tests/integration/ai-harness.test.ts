@@ -75,6 +75,27 @@ describe('integration: AI deterministic harness', () => {
         expect(harness.remainingSteps()).toBe(0);
     });
 
+    it('normalizes a single classify result back into the active template taxonomy', async () => {
+        const { ctx: appCtx, authHeaders } = await createHarnessApp([
+            textCompletion('学习资源/React'),
+        ]);
+        activateAiTestTemplate(appCtx.db);
+        seedAISettings(appCtx.db);
+
+        const response = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify',
+            headers: authHeaders,
+            payload: {
+                title: 'React 官方文档',
+                url: 'https://react.dev',
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({ category: '学习资源/文档' });
+    });
+
     it('runs classify-batch fully offline and persists a preview plan', async () => {
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
             jsonCompletion({

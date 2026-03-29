@@ -90,7 +90,7 @@ describe('integration: ai route contracts', () => {
         expect(failureResponse.json()).toEqual({ error: 'fixture test failure' });
     });
 
-    it('covers /api/ai/classify validation, URL-only dependent path, empty results, and provider failures', async () => {
+    it('covers /api/ai/classify validation, taxonomy guardrails, empty results, and provider failures', async () => {
         const { ctx: appCtx, authHeaders } = await createHarnessApp();
 
         const missingConfig = await appCtx.app.inject({
@@ -133,6 +133,47 @@ describe('integration: ai route contracts', () => {
         });
         expect(successResponse.statusCode).toBe(200);
         expect(successResponse.json()).toEqual({ category: '技术开发/后端' });
+        expect(successHarness.calls[0].messages[1].content).toContain('候选分类（必须原样选择其一');
+        expect(successHarness.calls[0].messages[1].content).toContain('技术开发/前端');
+        expect(successHarness.calls[0].messages[1].content).toContain('学习资源/文档');
+
+        const normalizedHarness = createQueuedAIHarness([textCompletion('学习资源/React')]);
+        await ctx.cleanup();
+        ctx = await createTestApp({ aiClientFactory: normalizedHarness.aiClientFactory });
+        const normalizedSession = await ctx.login();
+        seedAISettings(ctx.db);
+        activateAiTestTemplate(ctx.db);
+
+        const normalizedResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify',
+            headers: normalizedSession.headers,
+            payload: {
+                title: 'React 官方文档',
+                url: 'https://react.dev',
+            },
+        });
+        expect(normalizedResponse.statusCode).toBe(200);
+        expect(normalizedResponse.json()).toEqual({ category: '学习资源/文档' });
+
+        const unmappedHarness = createQueuedAIHarness([textCompletion('完全不存在/随便')]);
+        await ctx.cleanup();
+        ctx = await createTestApp({ aiClientFactory: unmappedHarness.aiClientFactory });
+        const unmappedSession = await ctx.login();
+        seedAISettings(ctx.db);
+        activateAiTestTemplate(ctx.db);
+
+        const unmappedResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify',
+            headers: unmappedSession.headers,
+            payload: {
+                title: 'Unknown',
+                url: 'https://unknown.example.test',
+            },
+        });
+        expect(unmappedResponse.statusCode).toBe(502);
+        expect(unmappedResponse.json()).toEqual({ error: 'AI 返回的分类不在当前分类树中' });
 
         const emptyHarness = createQueuedAIHarness([textCompletion('   ')]);
         await ctx.cleanup();
