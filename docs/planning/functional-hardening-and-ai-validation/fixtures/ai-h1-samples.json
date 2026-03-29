@@ -1,0 +1,59 @@
+{
+  "template": {
+    "name": "H1 AI 验收模板",
+    "tree": [
+      {
+        "name": "技术开发",
+        "children": [
+          { "name": "前端" },
+          { "name": "后端" }
+        ]
+      },
+      {
+        "name": "学习资源",
+        "children": [
+          { "name": "文档" },
+          { "name": "课程" }
+        ]
+      },
+      {
+        "name": "工具软件",
+        "children": [
+          { "name": "AI" },
+          { "name": "效率" }
+        ]
+      }
+    ]
+  },
+  "singleClassify": [
+    "react-docs"
+  ],
+  "bookmarks": [
+    {
+      "id": "react-docs",
+      "title": "React 官方文档",
+      "url": "https://react.dev/",
+      "acceptedCategories": [
+        "技术开发/前端",
+        "学习资源/文档"
+      ]
+    },
+    {
+      "id": "mdn-web-docs",
+      "title": "MDN Web Docs",
+      "url": "https://developer.mozilla.org/en-US/",
+      "acceptedCategories": [
+        "学习资源/文档",
+        "技术开发/前端"
+      ]
+    },
+    {
+      "id": "chatgpt",
+      "title": "ChatGPT",
+      "url": "https://chatgpt.com/",
+      "acceptedCategories": [
+        "工具软件/AI"
+      ]
+    }
+  ]
+}

@@ -1,6 +1,6 @@
 # bookmarks-manager 风险点台账
 
-更新时间：2026-03-28
+更新时间：2026-03-29
 
 关联文档：
 
@@ -44,7 +44,7 @@
 
 | risk_id | date | issue_id | area | risk_status | fix_status | fix_issue_id | git_commit | started_at | completed_at | blocked_reason | risk | current_mitigation | follow_up |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `RISK-001` | 2026-03-28 | `R15-AI-01` | AI provider contract | mitigated | done | `R15-AI-01` | `061bb0f` | 2026-03-28 20:50:01 +0800 | 2026-03-28 21:01:24 +0800 |  | 真实 OpenAI 兼容模型可能不支持“联网浏览”或稳定 JSON 输出，导致 `classify` / `organize` 质量和回归结果不可重复。 | `R15-AI-01` 已引入可注入 AI client factory、队列式 fixture harness，并用离线用例覆盖单条 classify、classify-batch 预览成功和 organize 批次失败回放；默认回归不再依赖真实 provider。 | 在 `R15-H1-04` 用固定数据集做真实 provider 验收，记录模型、输入、输出和人工复核成本。 |
+| `RISK-001` | 2026-03-28 | `R15-AI-01` | AI provider contract | mitigated | done | `R15-AI-01` | `061bb0f` | 2026-03-28 20:50:01 +0800 | 2026-03-28 21:01:24 +0800 |  | 真实 OpenAI 兼容模型可能不支持“联网浏览”或稳定 JSON 输出，导致 `classify` / `organize` 质量和回归结果不可重复。 | `R15-AI-01` 已引入可注入 AI client factory、队列式 fixture harness；`R15-H1-04` 又用固定 3 条书签样本完成真实 provider 验收，确认 `/api/ai/test`、`classify-batch`、`organize`、`apply/rollback` 均可用，且验收记录已写入 `10-ai-provider-h1-validation.md`。 | 单条 `/api/ai/classify` 在真实 provider 下仍可能返回模板外层级；本次 `React 官方文档` 得到 `学习资源/React`。若未来要把单条 classify 当作强合同入口，必须增加 taxonomy normalization / guardrail，或明确保留人工复核。 |
 | `RISK-002` | 2026-03-28 | `R1-QA-01` | UI verification drift | resolved | done | `R1-QA-01` | `e719860` | 2026-03-28 15:28:57 +0800 | 2026-03-28 15:37:03 +0800 |  | 仓库内 `e2e/` 仍然存在，但当前执行策略已切换为内置 Playwright MCP；若不明确主次，后续会出现两套 UI 验证标准并行漂移。 | `R1-QA-01` 已完成：最小 smoke checklist 已固化到 `08-playwright-mcp-smoke-baseline.md`，仓库内 Playwright 也已明确为非 release gate 历史资产。 | 后续扩展 UI 验证时，只在内置 Playwright MCP 基线上追加旅程，不再把仓库内 Playwright 恢复为当前主 gate。 |
 | `RISK-003` | 2026-03-28 | `R1-BE-03` | Backup / restore contract | resolved | done | `R1-BE-03` | `741d81e` | 2026-03-28 16:21:20 +0800 | 2026-03-28 16:49:56 +0800 |  | 当前备份生成的是整库文件，但还原实现只复制 `categories` 和 `bookmarks`，其余表和资产不在显式恢复范围内。 | `R1-BE-03` 已将 restore 固化为“临时副本校验 + `pre_restore_*.db` 回滚点 + 事务性替换 `categories` / `bookmarks`”的显式部分恢复合同，并用临时目录集成测试覆盖命名备份、restore 与 rollback。 | 若未来要把 restore 扩展到完整恢复或更多业务表，必须另立新 issue，不得在当前 partial-restore 合同内隐式扩大范围。 |
 | `RISK-004` | 2026-03-28 | `R1-BE-03` | Snapshot storage | resolved | done | `R1-BE-03` | `741d81e` | 2026-03-28 16:21:20 +0800 | 2026-03-28 16:49:56 +0800 |  | `snapshots` 表在路由层懒初始化，HTML 快照文件在文件系统中，和数据库 schema / 备份逻辑分离。 | `R1-BE-03` 已把 `snapshots` schema 收口到 `src/db.ts`，并在合同文档中明确：快照元数据与 HTML 文件资产当前保留但不纳入 restore 覆盖范围，restore 后原书签绑定也不再被自动保证。 | 若未来需要快照文件随备份一起灾备，或需要 restore 后自动重建快照与书签绑定关系，应另立后续 issue。 |
