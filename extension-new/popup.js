@@ -200,12 +200,23 @@
     }
 
     // Update category select
+    function getSelectedCategoryId() {
+        const raw = categorySelect.value;
+        if (!raw) return null;
+
+        const parsed = Number(raw);
+        if (Number.isInteger(parsed)) return parsed;
+
+        const matched = categories.find((cat) => String(cat.id) === raw || cat.fullPath === raw || cat.name === raw);
+        return matched ? matched.id : null;
+    }
+
     function updateCategorySelect() {
         categorySelect.innerHTML = '<option value="">-- 选择分类 --</option>';
         categories.forEach((cat) => {
             const option = document.createElement('option');
-            option.value = cat.name;
-            option.textContent = cat.name;
+            option.value = String(cat.id);
+            option.textContent = cat.fullPath || cat.name;
             categorySelect.appendChild(option);
         });
     }
@@ -224,7 +235,7 @@
     async function saveBookmark() {
         const url = urlInput.value.trim();
         const title = titleInput.value.trim();
-        const category = categorySelect.value;
+        const categoryId = getSelectedCategoryId();
 
         if (!url) {
             showStatus('请输入网址', 'error');
@@ -242,7 +253,7 @@
             const res = await fetch(`${getServerUrl()}/api/bookmarks`, {
                 method: 'POST',
                 headers: getHeaders(),
-                body: JSON.stringify({ url, title, category }),
+                body: JSON.stringify({ url, title, category_id: categoryId }),
             });
 
             const data = await res.json();
