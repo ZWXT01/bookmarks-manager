@@ -27,13 +27,14 @@
 
 | 项目 | 证据 | 结果 |
 |---|---|---|
-| 自动化测试 | `npm test` 于 2026-03-30 通过，`18` 个测试文件、`151` 条测试全部通过。 | 通过 |
+| 自动化测试 | `npm test` 于 2026-03-30 通过，`19` 个测试文件、`152` 条测试全部通过。 | 通过 |
 | 构建 | `npm run build` 于 2026-03-30 通过。 | 通过 |
 | `R1-DOC-04` 浏览器补验收 | 本地临时环境 `http://127.0.0.1:45577` 通过内置 Playwright MCP 访问 `/login` 与 `/jobs`；标题分别为“登录 - 书签管理器”和“任务列表 - 书签管理器”，`warning/error` 计数为 `0`。 | 通过 |
 | MCP 关键业务旅程 | [11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md) 已覆盖登录、首页、设置、模板、快照、备份、任务 / SSE 与 mock AI UI 联动。 | 通过 |
 | 浏览器扩展 round-trip | [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) 已 clean run，覆盖 token、保存书签、保存快照、同时保存与失败提示。 | 通过 |
 | `H1` 真实 provider AI 验收 | [10-ai-provider-h1-validation.md](./10-ai-provider-h1-validation.md) 已完成 `test`、`classify-batch`、`organize`、`apply/rollback`。 | 通过 |
 | 单条 classify 语义择优 | [22-single-classify-semantic-validation.md](./22-single-classify-semantic-validation.md) 已补齐本地语义 rerank、样本回归和 `description` 上下文。 | 通过 |
+| 单条 classify 样本集 gate | [23-single-classify-sample-gate-validation.md](./23-single-classify-sample-gate-validation.md) 已固化固定样本集、复验脚本和 `npm test` 自动化入口。 | 通过 |
 
 ## 3. 发布级结论
 
@@ -41,6 +42,7 @@
 - `R1-DOC-04` 的历史阻塞已解除，文档 / 页面漂移不再是发布阻塞项。
 - 当前风险台账中已无 `open + blocked` 的遗留项。
 - 单条 `/api/ai/classify` 已从“只保证模板内输出”继续收口到“对常见文档 / 教程 / 示例 / 社区 host 场景也有本地 deterministic 语义择优”。
+- 单条 `/api/ai/classify` 现在还具备固定语义样本集与复验脚本；模板调整或 provider / model 切换后不再需要靠零散手工样本复测。
 
 ## 4. 保留风险
 
@@ -62,6 +64,7 @@
 | 自动化回归 | `npm test` |
 | 构建验证 | `npm run build` |
 | 单条 classify 语义回归 | `npm test -- tests/ai-classify-guardrail.test.ts tests/integration/ai-routes.test.ts tests/integration/ai-harness.test.ts` |
+| 单条 classify 样本集 gate | `npx tsx scripts/ai-classify-semantic-validate.ts` |
 | MCP UI gate | `npx tsx scripts/playwright-mcp-smoke-env.ts` 启动临时服务，再按 [08](./08-playwright-mcp-smoke-baseline.md) 与 [11](./11-playwright-mcp-release-journeys.md) 用内置 Playwright MCP 复跑 |
 | 扩展 round-trip | `npx tsx scripts/extension-roundtrip-validate.ts` |
 | 真实 AI `H1` | 按 [10](./10-ai-provider-h1-validation.md) 的步骤，用人工提供的临时凭证复跑，结束后清理临时环境 |

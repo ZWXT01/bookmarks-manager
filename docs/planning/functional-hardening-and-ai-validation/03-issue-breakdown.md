@@ -429,6 +429,23 @@
   - `description` 可作为可选上下文参与 prompt 和本地 rerank，但不破坏现有调用方。
   - `tests/ai-classify-guardrail.test.ts`、`tests/integration/ai-routes.test.ts`、`tests/integration/ai-harness.test.ts`、`npx tsc --noEmit`、`npm test`、`npm run build` 通过。
 
+## R5-AI-03 固化单条 classify 语义样本集与复验脚本
+
+- 目标：把 `R5-AI-02` 补上的单条 classify 语义择优从“几条散落断言”升级为“固定样本集 + 可复跑脚本 + 自动化 gate”，降低后续模板调整或 provider 切换时的回归盲区。
+- 范围：
+  - 新增覆盖文档、教程、课程、代码示例、GitHub issues/releases、技术社区 host、浏览器插件商店 host 的固定语义样本集。
+  - 新增可复跑的 `npx tsx scripts/ai-classify-semantic-validate.ts`，输出通过率与逐样本结果。
+  - 将这份样本集纳入 `npm test`，避免以后只在零散用例里验证单条 classify。
+  - 补齐因新样本暴露出的更具体 host 规则，例如 `GitHub releases/issues` 与 `Chrome Web Store`。
+- 非目标：
+  - 不在本 issue 中做真实 provider `H1` 复验。
+  - 不把单条 classify 的样本 gate 扩展到 `classify-batch` / `organize` 批量链路。
+- 依赖：`R5-AI-02`。
+- 验收：
+  - 固定语义样本集可 clean run，且样本脚本会对失败样本输出逐条结果。
+  - `tests/ai-classify-semantic-samples.test.ts` 已将这份样本集纳入 `npm test`。
+  - `npx tsx scripts/ai-classify-semantic-validate.ts`、`npx tsc --noEmit`、`npm test`、`npm run build` 通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -453,3 +470,4 @@
 20. `R5-EXT-03`
 21. `R5-UI-04`
 22. `R5-AI-02`
+23. `R5-AI-03`
