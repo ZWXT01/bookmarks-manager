@@ -90,7 +90,7 @@ describe('integration: ai route contracts', () => {
         expect(failureResponse.json()).toEqual({ error: 'fixture test failure' });
     });
 
-    it('covers /api/ai/classify validation, taxonomy guardrails, empty results, and provider failures', async () => {
+    it('covers /api/ai/classify validation, taxonomy guardrails, empty results, timeout fallback, and provider failures', async () => {
         const { ctx: appCtx, authHeaders } = await createHarnessApp();
 
         const missingConfig = await appCtx.app.inject({
@@ -237,6 +237,25 @@ describe('integration: ai route contracts', () => {
         });
         expect(emptyResponse.statusCode).toBe(502);
         expect(emptyResponse.json()).toEqual({ error: 'AI 未返回分类结果' });
+
+        const timeoutHarness = createQueuedAIHarness([new Error('Request timed out.')]);
+        await ctx.cleanup();
+        ctx = await createTestApp({ aiClientFactory: timeoutHarness.aiClientFactory });
+        const timeoutSession = await ctx.login();
+        seedAISettings(ctx.db);
+        activateAiTestTemplate(ctx.db);
+
+        const timeoutResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify',
+            headers: timeoutSession.headers,
+            payload: {
+                title: 'React useState Reference',
+                url: 'https://react.dev/reference/react/useState',
+            },
+        });
+        expect(timeoutResponse.statusCode).toBe(200);
+        expect(timeoutResponse.json()).toEqual({ category: '学习资源/文档' });
 
         const failureHarness = createQueuedAIHarness([new Error('fixture classify failure')]);
         await ctx.cleanup();

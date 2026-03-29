@@ -1,7 +1,12 @@
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { createOpenAIClient, type AIClientFactory } from '../ai-client';
-import { getSingleClassifyAllowedPaths, normalizeClassifyPath, selectSingleClassifyCategory } from '../ai-classify-guardrail';
+import {
+    getSingleClassifyAllowedPaths,
+    normalizeClassifyPath,
+    selectDeterministicSingleClassifyCategory,
+    selectSingleClassifyCategory,
+} from '../ai-classify-guardrail';
 import { getConfiguredAiBatchSize, parseAiBatchSize } from '../ai-batch-size';
 
 export interface AIRoutesOptions {
@@ -38,6 +43,22 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         if (rawValue === undefined || rawValue === null) return getDefaultBatchSize();
         if (typeof rawValue === 'string' && rawValue.trim() === '') return getDefaultBatchSize();
         return parseAiBatchSize(rawValue);
+    }
+
+    function isSingleClassifyRecoverableProviderError(error: unknown) {
+        if (!error || typeof error !== 'object') return false;
+        const message = typeof (error as { message?: unknown }).message === 'string'
+            ? (error as { message: string }).message
+            : '';
+        const normalized = message.toLowerCase();
+        return normalized.includes('timed out')
+            || normalized.includes('timeout')
+            || normalized.includes('etimedout')
+            || normalized.includes('econn')
+            || normalized.includes('enotfound')
+            || normalized.includes('socket hang up')
+            || normalized.includes('network')
+            || normalized.includes('connection');
     }
 
     // POST /api/ai/classify - 单个书签分类（保留，浏览器扩展依赖）
@@ -93,6 +114,21 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             if (!normalized) return reply.code(502).send({ error: 'AI 未返回分类结果' });
             return reply.send({ category: normalized });
         } catch (e: any) {
+            if (isSingleClassifyRecoverableProviderError(e)) {
+                const fallbackCategory = selectDeterministicSingleClassifyCategory({
+                    allowedPaths,
+                    title,
+                    url,
+                    description,
+                });
+                if (fallbackCategory) {
+                    const normalized = normalizeClassifyPath(fallbackCategory);
+                    if (normalized) {
+                        req.log.warn({ err: e, fallbackCategory: normalized, title, url }, 'ai classify degraded to deterministic fallback');
+                        return reply.send({ category: normalized });
+                    }
+                }
+            }
             req.log.error({ err: e }, 'ai classify failed');
             return reply.code(500).send({ error: e.message || 'AI 请求失败' });
         }

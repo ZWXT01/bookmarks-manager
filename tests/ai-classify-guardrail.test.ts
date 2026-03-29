@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { selectSingleClassifyCategory } from '../src/ai-classify-guardrail';
+import { selectDeterministicSingleClassifyCategory, selectSingleClassifyCategory } from '../src/ai-classify-guardrail';
 
 describe('single classify semantic guardrail', () => {
     const developerPaths = [
@@ -48,5 +48,13 @@ describe('single classify semantic guardrail', () => {
             title: 'facebook/react',
             url: 'https://github.com/facebook/react',
         })).toBe('技术社区/GitHub');
+    });
+
+    it('can classify from deterministic signals alone when the provider is unavailable', () => {
+        expect(selectDeterministicSingleClassifyCategory({
+            allowedPaths: developerPaths,
+            title: 'React useState Reference',
+            url: 'https://react.dev/reference/react/useState',
+        })).toBe('学习资源/官方文档');
     });
 });

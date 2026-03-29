@@ -24,6 +24,13 @@ export interface SingleClassifySelectionInput {
   description?: string | null;
 }
 
+export interface DeterministicSingleClassifyInput {
+  allowedPaths: string[];
+  title?: string;
+  url?: string;
+  description?: string | null;
+}
+
 interface ParsedUrlContext {
   hostname: string;
   pathname: string;
@@ -472,4 +479,17 @@ export function resolveSingleClassifyCategory(rawCategory: string, allowedPaths:
 export function selectSingleClassifyCategory(input: SingleClassifySelectionInput): string | null {
   const resolvedCategory = resolveSingleClassifyCategory(input.rawCategory, input.allowedPaths);
   return pickSemanticCategory(input, resolvedCategory);
+}
+
+export function selectDeterministicSingleClassifyCategory(input: DeterministicSingleClassifyInput): string | null {
+  return pickSemanticCategory(
+    {
+      rawCategory: '',
+      allowedPaths: input.allowedPaths,
+      title: input.title,
+      url: input.url,
+      description: input.description,
+    },
+    null,
+  );
 }
