@@ -45,7 +45,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         return parseAiBatchSize(rawValue);
     }
 
-    function isSingleClassifyRecoverableProviderError(error: unknown) {
+    function isRetryableProviderError(error: unknown) {
         if (!error || typeof error !== 'object') return false;
         const message = typeof (error as { message?: unknown }).message === 'string'
             ? (error as { message: string }).message
@@ -114,7 +114,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             if (!normalized) return reply.code(502).send({ error: 'AI 未返回分类结果' });
             return reply.send({ category: normalized });
         } catch (e: any) {
-            if (isSingleClassifyRecoverableProviderError(e)) {
+            if (isRetryableProviderError(e)) {
                 const fallbackCategory = selectDeterministicSingleClassifyCategory({
                     allowedPaths,
                     title,
@@ -143,8 +143,24 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
         try {
             const aiClient = createAIClient({ apiKey, baseUrl }, 30000);
-            await aiClient.createChatCompletion({ model, messages: [{ role: 'user', content: '你好，请回复"OK"' }], max_tokens: 10 });
-            return reply.send({ success: true, message: 'AI 配置测试成功' });
+            let lastError: unknown = null;
+            for (let attempt = 1; attempt <= 2; attempt += 1) {
+                try {
+                    await aiClient.createChatCompletion({
+                        model,
+                        messages: [{ role: 'user', content: '你好，请回复"OK"' }],
+                        max_tokens: 10,
+                    });
+                    return reply.send({ success: true, message: 'AI 配置测试成功' });
+                } catch (error) {
+                    lastError = error;
+                    if (!isRetryableProviderError(error) || attempt >= 2) {
+                        throw error;
+                    }
+                    req.log.warn({ err: error, attempt }, 'ai test retrying after transient provider failure');
+                }
+            }
+            throw lastError;
         } catch (e: any) {
             req.log.error({ err: e }, 'ai test failed');
             return reply.code(500).send({ error: e.message || 'AI 测试失败' });

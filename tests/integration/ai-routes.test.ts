@@ -41,7 +41,7 @@ describe('integration: ai route contracts', () => {
         }));
     }
 
-    it('covers /api/ai/test validation, success, and provider failures', async () => {
+    it('covers /api/ai/test validation, retries transient failures, success, and provider failures', async () => {
         const { ctx: appCtx, authHeaders } = await createHarnessApp();
 
         const missingConfig = await appCtx.app.inject({
@@ -71,6 +71,25 @@ describe('integration: ai route contracts', () => {
         expect(successResponse.statusCode).toBe(200);
         expect(successResponse.json()).toEqual({ success: true, message: 'AI 配置测试成功' });
 
+        const retryHarness = createQueuedAIHarness([new Error('Request timed out.'), textCompletion('OK')]);
+        await ctx.cleanup();
+        ctx = await createTestApp({ aiClientFactory: retryHarness.aiClientFactory });
+        const retrySession = await ctx.login();
+
+        const retryResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/test',
+            headers: retrySession.headers,
+            payload: {
+                base_url: 'https://mock-ai.example.test/v1',
+                api_key: 'test-key',
+                model: 'mock-model',
+            },
+        });
+        expect(retryResponse.statusCode).toBe(200);
+        expect(retryResponse.json()).toEqual({ success: true, message: 'AI 配置测试成功' });
+        expect(retryHarness.calls).toHaveLength(2);
+
         const failureHarness = createQueuedAIHarness([new Error('fixture test failure')]);
         await ctx.cleanup();
         ctx = await createTestApp({ aiClientFactory: failureHarness.aiClientFactory });
@@ -88,6 +107,7 @@ describe('integration: ai route contracts', () => {
         });
         expect(failureResponse.statusCode).toBe(500);
         expect(failureResponse.json()).toEqual({ error: 'fixture test failure' });
+        expect(failureHarness.calls).toHaveLength(1);
     });
 
     it('covers /api/ai/classify validation, taxonomy guardrails, empty results, timeout fallback, and provider failures', async () => {
