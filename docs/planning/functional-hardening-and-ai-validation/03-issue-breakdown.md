@@ -446,6 +446,22 @@
   - `tests/ai-classify-semantic-samples.test.ts` 已将这份样本集纳入 `npm test`。
   - `npx tsx scripts/ai-classify-semantic-validate.ts`、`npx tsc --noEmit`、`npm test`、`npm run build` 通过。
 
+## R5-AI-04 固化单条 classify H1 语义复验与超时留痕
+
+- 目标：在 `R5-AI-03` 的本地固定样本 gate 之上，再补一条真实 provider focused H1 replay 入口，避免模板、provider 或 model 变化后只剩历史 3 条样本和零散手工复测。
+- 范围：
+  - 新增可选择样本子集、可跳过 `/api/ai/test`、可记录 `attempts` 与临时清理状态的 `scripts/ai-h1-classify-semantic-validate.ts`。
+  - 将脚本默认 `timeout_cap_ms` 对齐到真实单条 classify 路由合同，避免脚本自身的过低超时上限制造假阴性。
+  - 使用当前本地 provider 配置至少执行一次 focused H1 replay，并把 `/api/ai/test` 与单条 `/api/ai/classify` 的真实结果或阻塞样式写入独立验收文档。
+- 非目标：
+  - 不在本 issue 中修改生产 classify prompt、taxonomy guardrail 或 batch / organize 合同。
+  - 不在本 issue 中修复 provider 侧网络、SLA 或模型可用性。
+- 依赖：`R5-AI-03`、`R15-H1-04`。
+- 验收：
+  - `scripts/ai-h1-classify-semantic-validate.ts` 可 `--help`，并支持 `--ids`、`--skip-test`、`--retries` 和自动清理。
+  - focused H1 replay 至少对当前 provider 跑过一次，且结果和阻塞原因已写入独立验收记录。
+  - `npx tsc --noEmit`、`npm test`、`npm run build` 通过，且未遗留临时目录、临时 DB 或后台验证进程。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -471,3 +487,4 @@
 21. `R5-UI-04`
 22. `R5-AI-02`
 23. `R5-AI-03`
+24. `R5-AI-04`
