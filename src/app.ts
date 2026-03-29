@@ -348,6 +348,10 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
     prefix: '/public/',
   });
 
+  app.get('/favicon.ico', async (_req: FastifyRequest, reply: FastifyReply) => {
+    return reply.redirect('/public/favicon.svg');
+  });
+
   await app.register(bookmarkRoutes, { db });
   await app.register(categoryRoutes, { db });
   await app.register(snapshotRoutes, { db, snapshotsDir, staticApiToken });

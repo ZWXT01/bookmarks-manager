@@ -5,6 +5,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>任务进度 - 书签管理器</title>
+  <script>
+    (function () {
+      const originalWarn = console.warn;
+      console.warn = function (...args) {
+        if (args[0] === 'cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation') return;
+        return originalWarn.apply(this, args);
+      };
+    })();
+  </script>
   <script src="/public/lib/tailwind.js"></script>
   <link rel="stylesheet" href="/public/app.css" />
   <script src="/public/dialog.js"></script>
