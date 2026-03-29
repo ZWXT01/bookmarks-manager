@@ -479,6 +479,23 @@
   - 普通 provider 错误仍保持 `500`，不发生错误吞没。
   - `npx tsc --noEmit`、定向 classify 回归、focused H1 replay、`npm test`、`npm run build` 通过。
 
+## R5-AI-06 收口 `/api/ai/test` 瞬时重试与残余留痕
+
+- 目标：为 `/api/ai/test` 增加最小但明确的瞬时抗抖动能力，避免一次 timeout 就把 AI 配置判成死路，同时验证这条改动是否足以把当前真实 provider 拉回绿色。
+- 范围：
+  - `/api/ai/test` 对 timeout / 连接型故障增加 1 次重试。
+  - 补 route 合同测试，证明“瞬时 timeout 后第二次成功”会返回 `200`，普通 provider 失败仍保持 `500`。
+  - 对当前本地 provider 补 focused H1 replay，并把成功 / 失败样式写入独立验收文档。
+- 非目标：
+  - 不在本 issue 中继续扩大到 `classify-batch` / `organize` 的 provider retry 策略。
+  - 不承诺一次重试就能修复 provider 侧真实可用性问题。
+  - 不修改设置页字段或 AI 配置存储合同。
+- 依赖：`R5-AI-05`。
+- 验收：
+  - `/api/ai/test` 在 timeout / 连接型瞬时故障下会自动重试 1 次。
+  - 本地合同测试已证明瞬时 timeout 可恢复，而普通 provider 失败仍保持原样。
+  - `npx tsc --noEmit`、定向 `/api/ai/test` 回归、focused H1 replay、`npm test`、`npm run build` 通过；若真实 provider 仍未恢复绿色，必须在文档中明确保留为残余风险。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -506,3 +523,4 @@
 23. `R5-AI-03`
 24. `R5-AI-04`
 25. `R5-AI-05`
+26. `R5-AI-06`
