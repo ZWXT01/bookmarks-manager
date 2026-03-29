@@ -376,6 +376,24 @@
   - 快照文件内容能证明抓取的确实是目标页，而不是 popup 页面或 mock 内容。
   - `npm test`、`npx tsc --noEmit`、`npm run build` 通过，且临时 profile、临时 DB、临时快照和后台进程已清理。
 
+## R5-EXT-03 覆盖真实 action popup 目标绑定
+
+- 目标：把扩展验证继续推进到真实 browser action popup target 本身，证明 popup 在真实宿主中确实绑定到当前活动页，而不是只验证“直接打开 popup.html”或“普通页面里的 popup-harness”。
+- 范围：
+  - 使用 `chrome.action.openPopup()` 打开真实 action popup target。
+  - 使用 Chromium remote debugging + raw CDP 附着到 popup target，读取其 DOM 和 `chrome.tabs.query()` 结果。
+  - 验证 popup 中的标题 / URL 来自当前活动页，而不是扩展页或后台页。
+  - 将这条验证补入扩展 release gate 文档，和 `R5-EXT-02` 形成互补。
+- 非目标：
+  - 不模拟浏览器工具栏图标的物理点击手势。
+  - 不在本 issue 中重复覆盖书签保存、快照保存和 save-all 主链路。
+- 依赖：`R5-EXT-02`。
+- 验收：
+  - `scripts/extension-action-popup-validate.ts` 可 clean run。
+  - 真实 action popup target 可被发现并附着，且其 `#title` / `#url` 与当前活动页一致。
+  - popup 内部可看见当前活动 tab，证明 active-page 绑定合同成立。
+  - `npm test`、`npx tsc --noEmit`、`npm run build` 通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -397,3 +415,4 @@
 17. `R4-QA-02`
 18. `R5-AI-01`
 19. `R5-EXT-02`
+20. `R5-EXT-03`

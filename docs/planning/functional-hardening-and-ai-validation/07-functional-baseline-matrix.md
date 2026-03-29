@@ -17,7 +17,7 @@
 | 自动化测试基线 | `npm test` 于 2026-03-29 通过，`16` 个测试文件、`143` 条测试全部通过。 | 当前工作区在 `R5-EXT-02` 收口回归中执行通过。 |
 | 仓库内 Playwright 资产 | `e2e/` 与 `playwright.config.ts` 仍在仓库中，但已经明确是历史资产，不作为 release gate。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)。 |
 | UI 验证主路径 | 当前主路径是内置 Playwright MCP，已覆盖最小 smoke、关键业务旅程，以及 `R1-DOC-04` 的本地 `/login + /jobs` 补验收。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)、[最终回归与交接说明](./13-release-handoff.md)。 |
-| 扩展 round-trip gate | `npx tsx scripts/extension-runtime-validate.ts` 与 `npx tsx scripts/extension-roundtrip-validate.ts` 于 2026-03-29 clean run 通过。 | [浏览器扩展 round-trip 验收](./12-extension-roundtrip-validation.md)、[真实扩展运行时验收](./19-extension-runtime-validation.md)。 |
+| 扩展 round-trip gate | `npx tsx scripts/extension-roundtrip-validate.ts`、`npx tsx scripts/extension-runtime-validate.ts` 与 `npx tsx scripts/extension-action-popup-validate.ts` 于 2026-03-29 clean run 通过。 | [浏览器扩展 round-trip 验收](./12-extension-roundtrip-validation.md)、[真实扩展运行时验收](./19-extension-runtime-validation.md)、[真实 action popup 验收](./20-extension-action-popup-validation.md)。 |
 | 真实 AI gate | `R15-H1-04` 已完成真实 provider 验收，并完成 organize apply / rollback 演练。 | [真实 AI 提供方联调与人工验收](./10-ai-provider-h1-validation.md)。 |
 
 ## 2. Gate 冻结结论
@@ -44,7 +44,7 @@
 | 备份 / 还原 | `src/routes/backups.ts`、文件系统 `backups/*.db` | 无专门测试 | 仅人工高风险操作 | 当前合同与实现不清，且真实数据路径高风险 | `R1-API-02`、`R1-BE-03` |
 | AI classify / test / classify-batch | `src/routes/ai.ts`、`src/ai-classify-guardrail.ts` | `tests/integration/ai-routes.test.ts`、`tests/integration/ai-harness.test.ts` | `R15-H1-04` 已做真实 provider 验收 | 单条 classify 的语义质量仍可能漂移，但输出合同已收口到当前模板 / 分类树 | `R15-AI-01`、`R15-AI-02`、`R15-H1-04`、`R5-AI-01` |
 | AI organize 生命周期 | `src/routes/ai.ts`、`src/ai-organize.ts`、`src/ai-organize-plan.ts`、`src/routes/pages.ts` | `tests/ai-organize-plan.test.ts` 仅覆盖状态机与日志 | 任务详情页可展示 organize 计划 | 缺 organize HTTP 合同、apply / rollback / stale recovery 回归 | `R15-AI-03` |
-| 浏览器扩展 round-trip | `extension-new/` | `scripts/extension-roundtrip-validate.ts`、`scripts/extension-runtime-validate.ts` | 无需额外人工 gate；真实运行时已可复跑 | 浏览器工具栏 action popup 点击手势本身未自动化 | `R2-EXT-02`、`R5-EXT-02` |
+| 浏览器扩展 round-trip | `extension-new/` | `scripts/extension-roundtrip-validate.ts`、`scripts/extension-runtime-validate.ts`、`scripts/extension-action-popup-validate.ts` | 无需额外人工 gate；真实运行时与 action popup 目标都可复跑 | 无主要功能合同缺口；仅不单独模拟浏览器工具栏的物理点击手势 | `R2-EXT-02`、`R5-EXT-02`、`R5-EXT-03` |
 | `ai_simplify` 遗留面 | `src/db.ts`、`src/jobs.ts` | 无，因为它已不是活跃功能 | 仅保留历史任务兼容读取与旧表迁移清理 | 不再保留专属 UI 分支；若要恢复需新立项 | `R1-DOC-04`、`R4-CLEAN-01` |
 
 ## 4. 当前 release gate 口径
@@ -53,7 +53,7 @@
 - `R1` 的 release gate 以 `npm run build`、`npm test` 和内置 Playwright MCP 最小 smoke 为准。
 - 最小 smoke 已验证 `登录 -> 首页 -> 设置 -> 任务 -> 快照 -> 退出`，并在 2026-03-29 用本地临时环境补验了 `R1-DOC-04` 所需的 `/login` 与 `/jobs` 浏览器渲染闭环。
 - `R1.5` 的 AI gate 必须同时具备离线 mock / fixture 自动化和 `H1` 真实 provider 人工验收。
-- `R2` 的最终 gate 以 `npm test`、`npm run build`、[11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md)、[12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md)、[19-extension-runtime-validation.md](./19-extension-runtime-validation.md)、[10-ai-provider-h1-validation.md](./10-ai-provider-h1-validation.md) 和 [13-release-handoff.md](./13-release-handoff.md) 为准。
+- `R2` 的最终 gate 以 `npm test`、`npm run build`、[11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md)、[12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md)、[19-extension-runtime-validation.md](./19-extension-runtime-validation.md)、[20-extension-action-popup-validation.md](./20-extension-action-popup-validation.md)、[10-ai-provider-h1-validation.md](./10-ai-provider-h1-validation.md) 和 [13-release-handoff.md](./13-release-handoff.md) 为准。
 
 ## 5. 2026-03-29 收口状态
 
@@ -63,7 +63,7 @@
 | AI classify / test / classify-batch | `tests/integration/ai-routes.test.ts`、`tests/integration/ai-harness.test.ts` + H1 实测 | 已纳入回归与人工验收 | 单条 `/api/ai/classify` 的输出合同已被 guardrail 收口；剩余残余只在“模板内语义是否选得足够准”。 |
 | AI classify 输出合同 | `src/ai-classify-guardrail.ts` + `tests/integration/ai-routes.test.ts` / `tests/integration/ai-harness.test.ts` | 已纳入回归 | 单条 `/api/ai/classify` 现在会被强制收口到当前模板 / 分类树；完全不可映射则返回错误。 |
 | AI organize 生命周期 | `tests/integration/ai-organize-routes.test.ts` + MCP UI + H1 apply / rollback | 已纳入回归 | 真实 provider 质量以“可解释、可回退”为准，不承诺零误判。 |
-| 浏览器扩展 | `scripts/extension-roundtrip-validate.ts` + `scripts/extension-runtime-validate.ts` + [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) / [19-extension-runtime-validation.md](./19-extension-runtime-validation.md) | 已纳入 `R2` gate | popup-harness 继续保留作 deterministic 合同层验证；真实 runtime 已覆盖真实 `chrome.storage`、tab 查询、content script 和新标签打开。剩余未自动化的只是浏览器工具栏 action popup 点击手势本身。 |
+| 浏览器扩展 | `scripts/extension-roundtrip-validate.ts` + `scripts/extension-runtime-validate.ts` + `scripts/extension-action-popup-validate.ts` + [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) / [19-extension-runtime-validation.md](./19-extension-runtime-validation.md) / [20-extension-action-popup-validation.md](./20-extension-action-popup-validation.md) | 已纳入 `R2` gate | popup-harness 继续保留作 deterministic 合同层验证；真实 runtime 已覆盖真实 `chrome.storage`、tab 查询、content script、新标签打开，以及真实 action popup 对当前活动页的绑定。浏览器工具栏物理点击手势本身不单独自动化，但相同 popup target 合同已被覆盖。 |
 | 文档 / 页面漂移 | README、设置说明、任务详情页 simplify 遗留已清理；`R4-CLEAN-01` 又移除了 `ai_simplify` 专属任务页分支 | `R1-DOC-04`、`R4-CLEAN-01` 可关闭 | `ai_simplify` 只保留 backlog / 历史任务兼容类型与旧表迁移清理，不再视为活跃功能。 |
 | 跨页面交互 UI gate | `scripts/category-interaction-validate.ts` + [16-category-interaction-validation.md](./16-category-interaction-validation.md) + [17-cross-view-interaction-validation.md](./17-cross-view-interaction-validation.md) | 已扩展到排序、删除分类、移动子分类、单条 / 批量书签移动、模板切换与刷新保持 | 后续若继续改分类导航、模板切换或书签移动链路，应只在同一 harness 上继续加场景。 |
 | UI gate 归属 | 内置 Playwright MCP 是唯一 UI gate；仓库内 `e2e/` 只做历史资产保留 | 基线稳定 | 后续若继续扩展 UI 验收，只追加 MCP 旅程，不恢复仓库内 Playwright 为主 gate。 |
