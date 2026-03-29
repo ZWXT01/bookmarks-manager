@@ -52,6 +52,8 @@ const LABEL_ALIASES: Record<string, string[]> = {
   阅读: ['阅读', 'read', 'book'],
   阅读笔记: ['阅读笔记', 'notes', 'book notes'],
   代码示例: ['代码示例', '示例', 'example', 'examples', 'sample', 'samples', 'demo', 'starter', 'boilerplate', 'snippet'],
+  Issue跟踪: ['issue', 'issues', 'bug', 'bugs', 'tracker'],
+  Release更新: ['release', 'releases', 'changelog', 'release notes'],
   技术开发: ['frontend', 'backend', 'programming', 'developer', 'code'],
   前端: ['前端', 'frontend', 'front end', 'react', 'vue', 'angular', 'svelte', 'next', 'nuxt', 'css', 'html'],
   前端框架: ['react', 'vue', 'angular', 'svelte', 'next', 'nuxt', 'solid'],
@@ -74,7 +76,7 @@ const LABEL_ALIASES: Record<string, string[]> = {
   小红书: ['xiaohongshu', 'xiaohongshu com'],
   Reddit: ['reddit'],
   Discord: ['discord'],
-  浏览器插件: ['chrome extension', 'browser extension', 'firefox add on', 'plugin', 'extension'],
+  浏览器插件: ['chrome extension', 'browser extension', 'firefox add on', 'plugin', 'extension', 'chrome web store', 'chromewebstore', 'addons mozilla'],
   效率工具: ['productivity', 'todo', 'calendar', 'note', 'notion'],
   'AI与数据': ['ai', 'llm', 'machine learning', 'ml', 'data'],
   '大模型LLM': ['llm', 'gpt', 'openai', 'anthropic', 'claude', 'chatgpt', 'rag'],
@@ -310,18 +312,25 @@ function scoreHostBonus(option: CategoryOption, context: SingleClassifySemanticC
   const hostname = context.url.hostname;
   if (!hostname) return 0;
 
+  if (/(^|\.)github\.com$/i.test(hostname)) {
+    const pathname = context.url.pathname;
+    if (option.child === 'Release更新' && pathname.includes('/releases')) return 16;
+    if (option.child === 'Issue跟踪' && pathname.includes('/issues')) return 16;
+    if (option.child === '贡献指南' && pathname.includes('/contributing')) return 16;
+  }
+
+  if (
+    ((/(^|\.)chromewebstore\.google\.com$/i.test(hostname) || /(^|\.)addons\.mozilla\.org$/i.test(hostname))) &&
+    option.child === '浏览器插件'
+  ) {
+    return 14;
+  }
+
   for (const rule of HOST_LABEL_RULES) {
     if (!rule.pattern.test(hostname)) continue;
     if (rule.labels.includes(option.top) || (option.child && rule.labels.includes(option.child))) {
       return 10;
     }
-  }
-
-  if (/(^|\.)github\.com$/i.test(hostname)) {
-    const pathname = context.url.pathname;
-    if (option.child === 'Release更新' && pathname.includes('/releases')) return 14;
-    if (option.child === 'Issue跟踪' && pathname.includes('/issues')) return 14;
-    if (option.child === '贡献指南' && pathname.includes('/contributing')) return 14;
   }
 
   return 0;

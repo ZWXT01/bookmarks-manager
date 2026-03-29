@@ -1,0 +1,158 @@
+{
+  "templates": [
+    {
+      "id": "developer-semantic",
+      "name": "开发者语义样本模板",
+      "tree": [
+        {
+          "name": "框架与库",
+          "children": [
+            { "name": "前端框架" },
+            { "name": "后端框架" }
+          ]
+        },
+        {
+          "name": "学习资源",
+          "children": [
+            { "name": "官方文档" },
+            { "name": "系列教程" },
+            { "name": "在线课程" },
+            { "name": "代码示例" }
+          ]
+        },
+        {
+          "name": "技术社区",
+          "children": [
+            { "name": "GitHub" },
+            { "name": "Stack Overflow" },
+            { "name": "掘金" }
+          ]
+        },
+        {
+          "name": "开源项目",
+          "children": [
+            { "name": "Issue跟踪" },
+            { "name": "Release更新" }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "general-tools",
+      "name": "通用工具样本模板",
+      "tree": [
+        {
+          "name": "工具软件",
+          "children": [
+            { "name": "浏览器插件" },
+            { "name": "效率工具" }
+          ]
+        },
+        {
+          "name": "学习资源",
+          "children": [
+            { "name": "官方文档" }
+          ]
+        },
+        {
+          "name": "新闻资讯",
+          "children": [
+            { "name": "科技资讯" }
+          ]
+        }
+      ]
+    }
+  ],
+  "cases": [
+    {
+      "id": "react-reference-docs",
+      "templateId": "developer-semantic",
+      "title": "React useState Reference",
+      "url": "https://react.dev/reference/react/useState",
+      "description": "",
+      "providerCategory": "框架与库/前端框架",
+      "expectedCategory": "学习资源/官方文档",
+      "notes": "文档页应从合法但偏宽的框架桶 rerank 到官方文档。"
+    },
+    {
+      "id": "nextjs-learn-tutorial",
+      "templateId": "developer-semantic",
+      "title": "Learn Next.js Dashboard Tutorial",
+      "url": "https://nextjs.org/learn/dashboard-app",
+      "description": "",
+      "providerCategory": "框架与库/前端框架",
+      "expectedCategory": "学习资源/系列教程",
+      "notes": "tutorial 和 learn 信号应优先落到系列教程。"
+    },
+    {
+      "id": "egghead-course",
+      "templateId": "developer-semantic",
+      "title": "Build React Apps with TypeScript",
+      "url": "https://egghead.io/courses/build-react-apps-with-typescript",
+      "description": "A complete course for building React apps.",
+      "providerCategory": "框架与库/前端框架",
+      "expectedCategory": "学习资源/在线课程",
+      "notes": "course 信号应优先落到在线课程。"
+    },
+    {
+      "id": "tanstack-examples",
+      "templateId": "developer-semantic",
+      "title": "TanStack Query Examples",
+      "url": "https://tanstack.com/query/latest/docs/framework/react/examples/basic",
+      "description": "",
+      "providerCategory": "完全不存在/随便",
+      "expectedCategory": "学习资源/代码示例",
+      "notes": "provider 输出不可映射时，examples 高信号应能触发 deterministic rescue。"
+    },
+    {
+      "id": "github-release-notes",
+      "templateId": "developer-semantic",
+      "title": "facebook/react releases",
+      "url": "https://github.com/facebook/react/releases",
+      "description": "",
+      "providerCategory": "其他/社区",
+      "expectedCategory": "开源项目/Release更新",
+      "notes": "GitHub releases 页应收口到 Release 更新。"
+    },
+    {
+      "id": "github-issues",
+      "templateId": "developer-semantic",
+      "title": "vercel/next.js issues",
+      "url": "https://github.com/vercel/next.js/issues",
+      "description": "",
+      "providerCategory": "其他/社区",
+      "expectedCategory": "开源项目/Issue跟踪",
+      "notes": "GitHub issues 页应收口到 Issue 跟踪。"
+    },
+    {
+      "id": "stackoverflow-question",
+      "templateId": "developer-semantic",
+      "title": "How to type React props in TypeScript?",
+      "url": "https://stackoverflow.com/questions/12345678/how-to-type-react-props-in-typescript",
+      "description": "",
+      "providerCategory": "其他/问答",
+      "expectedCategory": "技术社区/Stack Overflow",
+      "notes": "Stack Overflow host 应直接映射到技术社区子类。"
+    },
+    {
+      "id": "juejin-article",
+      "templateId": "developer-semantic",
+      "title": "React 性能优化实战",
+      "url": "https://juejin.cn/post/7345678901234567890",
+      "description": "",
+      "providerCategory": "新闻资讯/科技资讯",
+      "expectedCategory": "技术社区/掘金",
+      "notes": "掘金 host 应压过泛化的资讯桶。"
+    },
+    {
+      "id": "chrome-web-store",
+      "templateId": "general-tools",
+      "title": "uBlock Origin - Chrome Web Store",
+      "url": "https://chromewebstore.google.com/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm",
+      "description": "",
+      "providerCategory": "新闻资讯/科技资讯",
+      "expectedCategory": "工具软件/浏览器插件",
+      "notes": "Chrome Web Store host 应收口到浏览器插件。"
+    }
+  ]
+}
