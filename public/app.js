@@ -646,6 +646,7 @@ function bookmarkApp() {
         // 扁平化为兼容旧格式的 categories 数组
         this.categories = this.flattenCategoryTree(this.categoryTree);
         this.initAllCategoryIds();
+        this.normalizeCategoryUiState();
 
         if (this.showCategoryManager) {
           this.$nextTick(() => {
@@ -689,6 +690,32 @@ function bookmarkApp() {
         }
       }
       return result;
+    },
+
+    normalizeCategoryUiState() {
+      const existingIds = new Set((this.categories || []).map((cat) => Number(cat.id)).filter((id) => Number.isFinite(id)));
+      const existingIdStrings = new Set(Array.from(existingIds).map((id) => String(id)));
+
+      if (this.currentCategory !== null && this.currentCategory !== 'uncategorized') {
+        const currentId = Number(this.currentCategory);
+        if (!Number.isFinite(currentId) || !existingIds.has(currentId)) {
+          this.currentCategory = null;
+          this.page = 1;
+        }
+      }
+
+      if (this.activeParentCategory !== null) {
+        const parentId = Number(this.activeParentCategory);
+        if (!Number.isFinite(parentId) || !existingIds.has(parentId)) {
+          this.closeCategoryDropdown();
+        }
+      }
+
+      if (Array.isArray(this.selectedCategories) && this.selectedCategories.length > 0) {
+        this.selectedCategories = this.selectedCategories
+          .map((id) => String(id))
+          .filter((id) => existingIdStrings.has(id));
+      }
     },
 
     // 分类导航辅助方法 (Phase 1)
@@ -1484,9 +1511,6 @@ function bookmarkApp() {
           this.showToast(`分类已删除，${data.movedBookmarks || 0} 个书签移到未分类`, 'success');
           await this.loadCategories();
           await this.loadBookmarks();
-          if (this.currentCategory === categoryId) {
-            this.currentCategory = null;
-          }
         } else {
           this.showToast((data && data.error) ? data.error : '删除失败', 'error');
         }

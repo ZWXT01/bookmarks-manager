@@ -176,8 +176,11 @@
                         </h2>
                         <template x-if="activeTemplate">
                             <div class="flex items-center justify-between gap-2">
-                                <span class="text-sm text-slate-600 truncate" x-text="activeTemplate.name"></span>
+                                <span class="text-sm text-slate-600 truncate"
+                                      data-testid="active-template-name"
+                                      x-text="activeTemplate.name"></span>
                                 <button @click="showTemplateSelectModal = true"
+                                    data-testid="open-template-select"
                                     class="text-xs text-blue-500 hover:text-blue-700 whitespace-nowrap">切换模板</button>
                             </div>
                         </template>
@@ -185,6 +188,7 @@
                             <div class="flex items-center justify-between gap-2">
                                 <span class="text-xs text-slate-400">请先选择分类模板</span>
                                 <button @click="showTemplateSelectModal = true"
+                                    data-testid="open-template-select"
                                     class="text-xs text-blue-500 hover:text-blue-700 whitespace-nowrap">选择模板</button>
                             </div>
                         </template>
@@ -258,6 +262,7 @@
                                     @focus="closeCategoryDropdown()"
                                     type="button"
                                     role="tab"
+                                    data-testid="category-nav-all-tab"
                                     :aria-selected="currentCategory === null"
                                     aria-label="全部书签"
                                     class="category-tab"
@@ -333,6 +338,7 @@
                     <!-- Subcategory Dropdown Panel (Phase 2) - Absolute positioned overlay -->
                     <div x-show="categoryDropdownVisible"
                          x-ref="subcategoryPanel"
+                         data-testid="subcategory-panel"
                          :id="'subcategory-panel-' + activeParentCategory"
                          role="region"
                          :aria-label="activeParentCategory ? (categoryTree.find(c => c.id == activeParentCategory)?.name + ' 的子分类') : '子分类'"
@@ -356,6 +362,8 @@
                                     <button @click="loadCategory(child.id); closeCategoryDropdown()"
                                             type="button"
                                             :aria-label="(child.displayName || child.name) + '子分类'"
+                                            data-testid="subcategory-nav-item"
+                                            :data-category-id="child.id"
                                             class="subcategory-item focus:outline-none focus:ring-2 focus:ring-blue-500"
                                             :class="currentCategory == child.id ? 'active' : ''">
                                         <span class="subcategory-item-icon" x-text="child.icon || '📄'" :style="child.color ? 'color:' + child.color : ''"></span>
@@ -433,6 +441,7 @@
                             <template x-if="selectedBookmarks.length > 0">
                                 <div class="flex gap-1 flex-wrap">
                                     <button @click="openMoveSelectedModal()"
+                                        data-testid="move-selected-bookmarks-button"
                                         class="rounded border px-2 py-1 text-xs hover:bg-slate-50 flex-shrink-0">📁
                                         移动</button>
                                     <button @click="openCheckModalForSelected()"
@@ -489,13 +498,17 @@
                                 </thead>
                                 <tbody class="divide-y">
                                     <template x-for="bookmark in displayBookmarks" :key="bookmark.id">
-                                        <tr class="hover:bg-slate-50">
+                                        <tr class="hover:bg-slate-50"
+                                            data-testid="bookmark-row"
+                                            :data-bookmark-id="bookmark.id">
                                             <td class="px-3 py-2">
                                                 <input type="checkbox" :value="String(bookmark.id)"
+                                                    data-testid="bookmark-row-checkbox"
                                                     x-model="selectedBookmarks">
                                             </td>
                                             <td class="px-3 py-2 max-w-xs">
                                                 <a :href="bookmark.url" target="_blank"
+                                                    data-testid="bookmark-row-title"
                                                     class="text-sm text-blue-600 hover:underline line-clamp-1"
                                                     x-text="bookmark.title"></a>
                                                 <div class="text-xs text-slate-400 truncate max-w-xs"
@@ -503,6 +516,7 @@
                                                 </div>
                                             </td>
                                             <td class="px-3 py-2"><span class="text-xs text-slate-500"
+                                                    data-testid="bookmark-category-label"
                                                     x-text="bookmark.category_name || '未分类'"></span></td>
                                             <td class="px-3 py-2 text-center">
                                                 <span class="inline-flex items-center gap-1">
@@ -517,6 +531,7 @@
                                                 <!-- Dropdown Menu Button -->
                                                 <button
                                                     @click.stop="openDropdownId === bookmark.id ? closeAllDropdowns() : openDropdown(bookmark.id)"
+                                                    data-testid="bookmark-actions-button"
                                                     class="rounded border px-2 py-1 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 dark:border-slate-600">操作
                                                     ▼</button>
                                                 <!-- Dropdown Menu -->
@@ -543,6 +558,7 @@
                                                         class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">✏️
                                                         编辑</button>
                                                     <button @click="openMoveBookmark(bookmark); closeAllDropdowns()"
+                                                        data-testid="bookmark-row-move-button"
                                                         class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">📁
                                                         移动</button>
                                                     <button @click="startCheckOne(bookmark.id); closeAllDropdowns()"
@@ -675,7 +691,9 @@
         </div>
 
         <!-- Move One Bookmark Modal -->
-        <div x-cloak x-show="showMoveOneModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        <div x-cloak x-show="showMoveOneModal"
+            data-testid="move-one-modal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
             @click.self="closeMoveOneModal()">
             <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
                 <div class="flex items-center justify-between mb-3">
@@ -683,7 +701,9 @@
                     <button @click="closeMoveOneModal()"
                         class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                 </div>
-                <select x-model="moveOneTargetCategory" class="w-full rounded border px-3 py-2 text-sm">
+                <select x-model="moveOneTargetCategory"
+                    data-testid="move-one-category-select"
+                    class="w-full rounded border px-3 py-2 text-sm">
                     <option value="">未分类</option>
                     <template x-for="cat in categories" :key="cat.id">
                         <option :value="cat.id" x-text="cat.name"></option>
@@ -693,6 +713,7 @@
                     <button @click="closeMoveOneModal()"
                         class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
                     <button @click="confirmMoveOneBookmark()"
+                        data-testid="confirm-move-one-bookmark"
                         class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">确认移动</button>
                 </div>
             </div>
@@ -700,12 +721,15 @@
 
         <!-- Move Selected Modal -->
         <div x-cloak x-show="showMoveSelectedModal"
+            data-testid="move-selected-modal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
             @click.self="closeMoveSelectedModal()">
             <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
                 <h3 class="text-lg font-semibold mb-3">批量移动书签</h3>
                 <p class="text-sm text-slate-500 mb-3">将 <span x-text="selectedBookmarks.length"></span> 个书签移动到：</p>
-                <select x-model="moveSelectedTargetCategory" class="w-full rounded border px-3 py-2 text-sm">
+                <select x-model="moveSelectedTargetCategory"
+                    data-testid="move-selected-category-select"
+                    class="w-full rounded border px-3 py-2 text-sm">
                     <option value="">未分类</option>
                     <template x-for="cat in categories" :key="cat.id">
                         <option :value="cat.id" x-text="cat.name"></option>
@@ -715,6 +739,7 @@
                     <button @click="closeMoveSelectedModal()"
                         class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
                     <button @click="confirmMoveSelectedBookmarks()"
+                        data-testid="confirm-move-selected-bookmarks"
                         class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">确认移动</button>
                 </div>
             </div>
@@ -923,6 +948,7 @@
 
         <!-- Template Select Modal -->
         <div x-cloak x-show="showTemplateSelectModal"
+            data-testid="template-select-modal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
             @click.self="showTemplateSelectModal = false">
             <div class="w-full max-w-3xl rounded-lg bg-white p-4 shadow-xl max-h-[80vh] flex flex-col" x-data="{ activeTab: 'custom' }">
@@ -951,10 +977,14 @@
                     <div x-show="activeTab === 'custom'" class="space-y-2" role="tabpanel" id="tabpanel-custom" aria-labelledby="tab-custom">
                         <template x-for="tpl in customTemplates" :key="tpl.id">
                             <div class="flex items-center justify-between border rounded-lg px-3 py-2 hover:bg-slate-50"
+                                data-testid="custom-template-card"
+                                :data-template-id="tpl.id"
                                 :class="tpl.is_active === 1 ? 'border-blue-300 bg-blue-50' : ''">
                                 <div class="flex-1 min-w-0">
                                     <div class="flex items-center gap-2">
-                                        <span class="text-sm font-medium truncate" x-text="tpl.name"></span>
+                                        <span class="text-sm font-medium truncate"
+                                              data-testid="template-card-name"
+                                              x-text="tpl.name"></span>
                                         <template x-if="tpl.is_active === 1">
                                             <span class="text-xs px-1.5 py-0.5 rounded bg-blue-100 text-blue-600">当前</span>
                                         </template>
@@ -979,6 +1009,7 @@
                                     </template>
                                     <template x-if="tpl.is_active !== 1">
                                         <button @click="if(await AppDialog.confirm('应用模板将替换当前所有分类，所有书签将变为未分类。如果该模板曾使用过，书签分布将自动恢复。\n\n确定应用此模板？')) { applyTemplate(tpl.id); showTemplateSelectModal = false; }"
+                                            data-testid="apply-template-button"
                                             class="text-xs px-2 py-1 rounded bg-blue-500 text-white hover:bg-blue-600"
                                             :disabled="templateApplying">应用</button>
                                     </template>
@@ -1504,7 +1535,9 @@
                     <button @click="openCreateCategoryModal(null)" class="btn-primary btn-sm flex items-center gap-1">
                         <span>➕</span> 添加一级分类
                     </button>
-                    <button @click="closeCategoryManager()" class="p-2 rounded-full hover:bg-slate-100 text-slate-500 transition-colors">
+                    <button @click="closeCategoryManager()"
+                        data-testid="close-category-manager"
+                        class="p-2 rounded-full hover:bg-slate-100 text-slate-500 transition-colors">
                         <span class="text-xl">✕</span>
                     </button>
                 </div>
@@ -1548,7 +1581,11 @@
                                 <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button @click="openCreateCategoryModal(cat.id)" class="p-1.5 text-slate-400 hover:text-blue-500" title="添加子分类">➕</button>
                                     <button @click="openCategoryStyleModal(cat)" class="p-1.5 text-slate-400 hover:text-blue-500" title="设置样式">🎨</button>
-                                    <button @click="deleteCategory(cat.id)" class="p-1.5 text-slate-400 hover:text-rose-500" title="删除分类">🗑️</button>
+                                    <button @click="deleteCategory(cat.id)"
+                                            data-testid="delete-category-button"
+                                            :data-category-id="cat.id"
+                                            class="p-1.5 text-slate-400 hover:text-rose-500"
+                                            title="删除分类">🗑️</button>
                                 </div>
                             </div>
 
@@ -1569,7 +1606,11 @@
                                             </div>
                                             <div class="flex items-center gap-1 opacity-0 group-hover/child:opacity-100 transition-opacity">
                                                 <button @click="openCategoryStyleModal(child)" class="p-1 text-slate-400 hover:text-blue-500" title="设置样式">🎨</button>
-                                                <button @click="deleteCategory(child.id)" class="p-1 text-slate-400 hover:text-rose-500" title="删除">🗑️</button>
+                                                <button @click="deleteCategory(child.id)"
+                                                        data-testid="delete-category-button"
+                                                        :data-category-id="child.id"
+                                                        class="p-1 text-slate-400 hover:text-rose-500"
+                                                        title="删除">🗑️</button>
                                             </div>
                                         </div>
                                     </template>

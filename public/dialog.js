@@ -18,6 +18,7 @@ const AppDialog = (() => {
     const overlay = document.createElement('div');
     overlay.className = 'fixed inset-0 z-50 flex items-center justify-center';
     overlay.style.cssText = 'background:rgba(0,0,0,.45);opacity:0;transition:opacity .2s';
+    overlay.dataset.testid = 'app-dialog';
 
     const panel = document.createElement('div');
     panel.className = 'rounded-lg shadow-xl w-full max-w-sm mx-4 p-5';
@@ -50,6 +51,7 @@ const AppDialog = (() => {
       const cancel = document.createElement('button');
       cancel.className = 'btn-secondary btn-sm';
       cancel.textContent = o.cancelText || '取消';
+      cancel.dataset.testid = 'app-dialog-cancel';
       cancel.onclick = () => close(false);
       btns.appendChild(cancel);
     }
@@ -57,6 +59,7 @@ const AppDialog = (() => {
     const ok = document.createElement('button');
     ok.className = 'btn-primary btn-sm';
     ok.textContent = isConfirm ? (o.confirmText || '确定') : (o.buttonText || '确定');
+    ok.dataset.testid = isConfirm ? 'app-dialog-confirm' : 'app-dialog-ok';
     ok.onclick = () => close(isConfirm ? true : undefined);
     btns.appendChild(ok);
 
