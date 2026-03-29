@@ -57,8 +57,8 @@ describe('integration: AI deterministic harness', () => {
             url: '/api/ai/classify',
             headers: authHeaders,
             payload: {
-                title: 'React 文档',
-                url: 'https://react.dev',
+                title: 'React 官网',
+                url: 'https://react.dev/',
             },
         });
 
@@ -71,7 +71,7 @@ describe('integration: AI deterministic harness', () => {
             model: config.model,
             timeout: 60000,
         });
-        expect(harness.calls[0].messages[1].content).toContain('标题: React 文档');
+        expect(harness.calls[0].messages[1].content).toContain('标题: React 官网');
         expect(harness.remainingSteps()).toBe(0);
     });
 
@@ -94,6 +94,32 @@ describe('integration: AI deterministic harness', () => {
 
         expect(response.statusCode).toBe(200);
         expect(response.json()).toEqual({ category: '学习资源/文档' });
+    });
+
+    it('reranks a valid topical result into docs when the bookmark context is clearly documentation', async () => {
+        const { ctx: appCtx, authHeaders } = await createHarnessApp([
+            textCompletion('技术开发/前端'),
+        ]);
+        seedAISettings(appCtx.db);
+        const { createTemplate, applyTemplate } = await import('../../src/template-service');
+        const template = createTemplate(appCtx.db, '开发者语义模板', [
+            { name: '框架与库', children: [{ name: '前端框架' }] },
+            { name: '学习资源', children: [{ name: '官方文档' }, { name: '系列教程' }, { name: '代码示例' }] },
+        ]);
+        applyTemplate(appCtx.db, template.id);
+
+        const response = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify',
+            headers: authHeaders,
+            payload: {
+                title: 'React useEffect Reference',
+                url: 'https://react.dev/reference/react/useEffect',
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({ category: '学习资源/官方文档' });
     });
 
     it('runs classify-batch fully offline and persists a preview plan', async () => {

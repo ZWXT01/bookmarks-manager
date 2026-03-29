@@ -112,7 +112,7 @@ describe('integration: ai route contracts', () => {
             payload: { title: '', url: '' },
         });
         expect(missingInput.statusCode).toBe(400);
-        expect(missingInput.json()).toEqual({ error: '请提供标题或URL' });
+        expect(missingInput.json()).toEqual({ error: '请提供标题、URL 或描述' });
 
         const successHarness = createQueuedAIHarness([textCompletion('技术开发/后端/Node.js')]);
         await appCtx.cleanup();
@@ -155,6 +155,53 @@ describe('integration: ai route contracts', () => {
         });
         expect(normalizedResponse.statusCode).toBe(200);
         expect(normalizedResponse.json()).toEqual({ category: '学习资源/文档' });
+
+        const semanticTemplateHarness = createQueuedAIHarness([textCompletion('框架与库/前端框架')]);
+        await ctx.cleanup();
+        ctx = await createTestApp({ aiClientFactory: semanticTemplateHarness.aiClientFactory });
+        const semanticSession = await ctx.login();
+        seedAISettings(ctx.db);
+        ctx.db.prepare('DELETE FROM category_templates').run();
+        ctx.db.prepare('DELETE FROM template_snapshots').run();
+        const { createTemplate, applyTemplate } = await import('../../src/template-service');
+        const semanticTemplate = createTemplate(ctx.db, '开发者语义模板', [
+            { name: '框架与库', children: [{ name: '前端框架' }] },
+            { name: '学习资源', children: [{ name: '官方文档' }, { name: '系列教程' }, { name: '代码示例' }] },
+        ]);
+        applyTemplate(ctx.db, semanticTemplate.id);
+
+        const semanticResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify',
+            headers: semanticSession.headers,
+            payload: {
+                title: 'React useState Reference',
+                url: 'https://react.dev/reference/react/useState',
+            },
+        });
+        expect(semanticResponse.statusCode).toBe(200);
+        expect(semanticResponse.json()).toEqual({ category: '学习资源/官方文档' });
+
+        const descriptionOnlyHarness = createQueuedAIHarness([textCompletion('学习资源')]);
+        await ctx.cleanup();
+        ctx = await createTestApp({ aiClientFactory: descriptionOnlyHarness.aiClientFactory });
+        const descriptionSession = await ctx.login();
+        seedAISettings(ctx.db);
+        activateAiTestTemplate(ctx.db);
+
+        const descriptionOnlyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify',
+            headers: descriptionSession.headers,
+            payload: {
+                title: '',
+                url: '',
+                description: 'React 官方文档与 API reference',
+            },
+        });
+        expect(descriptionOnlyResponse.statusCode).toBe(200);
+        expect(descriptionOnlyResponse.json()).toEqual({ category: '学习资源/文档' });
+        expect(descriptionOnlyHarness.calls[0].messages[1].content).toContain('描述: React 官方文档与 API reference');
 
         const unmappedHarness = createQueuedAIHarness([textCompletion('完全不存在/随便')]);
         await ctx.cleanup();

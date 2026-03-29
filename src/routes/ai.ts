@@ -1,7 +1,7 @@
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { createOpenAIClient, type AIClientFactory } from '../ai-client';
-import { getSingleClassifyAllowedPaths, normalizeClassifyPath, resolveSingleClassifyCategory } from '../ai-classify-guardrail';
+import { getSingleClassifyAllowedPaths, normalizeClassifyPath, selectSingleClassifyCategory } from '../ai-classify-guardrail';
 import { getConfiguredAiBatchSize, parseAiBatchSize } from '../ai-batch-size';
 
 export interface AIRoutesOptions {
@@ -45,9 +45,10 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         const body: any = req.body || {};
         const title = typeof body.title === 'string' ? body.title.trim() : '';
         const url = typeof body.url === 'string' ? body.url.trim() : '';
+        const description = typeof body.description === 'string' ? body.description.trim() : '';
         const config = getAIConfig(getSetting);
         if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
-        if (!title && !url) return reply.code(400).send({ error: '请提供标题或URL' });
+        if (!title && !url && !description) return reply.code(400).send({ error: '请提供标题、URL 或描述' });
 
         const allowedPaths = getSingleClassifyAllowedPaths(db);
         const candidateHint = allowedPaths.length > 0
@@ -57,7 +58,9 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         const prompt = '你是书签分类助手。通过联网访问网页了解内容后分类。\n' +
             '规则：1.分类最多2级(如:技术/编程)，禁止3级！2.如果提供了候选分类，必须从候选分类中精确选择一个最合适的结果并原样输出\n' +
             candidateHint + '\n只输出分类路径，不要解释。\n' +
-            (title ? '标题: ' + title + '\n' : '') + (url ? '网址: ' + url + '\n' : '');
+            (title ? '标题: ' + title + '\n' : '') +
+            (url ? '网址: ' + url + '\n' : '') +
+            (description ? '描述: ' + description + '\n' : '');
 
         try {
             const aiClient = createAIClient(config, 60000);
@@ -74,9 +77,15 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             const rawContent = completion.choices?.[0]?.message?.content?.trim() || '';
             if (!rawContent) return reply.code(502).send({ error: 'AI 未返回分类结果' });
 
-            const resolvedCategory = resolveSingleClassifyCategory(rawContent, allowedPaths);
+            const resolvedCategory = selectSingleClassifyCategory({
+                rawCategory: rawContent,
+                allowedPaths,
+                title,
+                url,
+                description,
+            });
             if (!resolvedCategory) {
-                req.log.warn({ rawCategory: rawContent, allowedPaths }, 'ai classify returned unmapped category');
+                req.log.warn({ rawCategory: rawContent, allowedPaths, title, url }, 'ai classify returned unmapped category');
                 return reply.code(502).send({ error: 'AI 返回的分类不在当前分类树中' });
             }
 
