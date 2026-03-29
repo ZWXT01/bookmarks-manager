@@ -496,6 +496,24 @@
   - 本地合同测试已证明瞬时 timeout 可恢复，而普通 provider 失败仍保持原样。
   - `npx tsc --noEmit`、定向 `/api/ai/test` 回归、focused H1 replay、`npm test`、`npm run build` 通过；若真实 provider 仍未恢复绿色，必须在文档中明确保留为残余风险。
 
+## R5-AI-07 固化 provider 直连诊断与 `/api/ai/test` 可操作错误
+
+- 目标：在 `R5-AI-06` 已证明“一次瞬时重试不足以把当前 provider 拉回绿色”的前提下，把残余问题从“仍超时但原因模糊”收口为“可明确区分 `/models` 探活、模型存在性和 `/chat/completions` 超时”的可执行诊断合同。
+- 范围：
+  - `/api/ai/test` 在 retryable timeout / 连接型故障重试后仍失败时，自动探测 `/models`，并返回稳定的诊断 payload。
+  - 新增独立 `scripts/ai-provider-diagnose.ts`，直连 `/models` 与 `/chat/completions`，输出脱敏 JSON 报告。
+  - 补 route 合同测试，证明 timeout 诊断 payload 稳定，普通 provider 失败仍保持原样。
+  - 对当前本地 provider 补 direct diagnose 与 focused H1 replay，并把结论写入独立验收文档。
+- 非目标：
+  - 不在本 issue 中修复 provider 侧 timeout 本身。
+  - 不把 `/api/ai/test` 扩大成多阶段健康检查 API。
+  - 不把 diagnose 脚本接入 UI、定时任务或后台健康探针。
+- 依赖：`R5-AI-06`。
+- 验收：
+  - `/api/ai/test` 在 retryable 故障重试后仍失败时，能区分“`/models` 可连通且 model 存在”“`/models` 可连通但 model 不存在”和“`/models` 自身也失败”。
+  - `scripts/ai-provider-diagnose.ts` 能输出脱敏 report，至少包含 `/models` 与 `/chat/completions` 的状态、耗时和失败摘要。
+  - `npx tsc --noEmit`、定向 AI route 回归、direct diagnose、focused H1 replay、`npm test`、`npm run build` 通过；若真实 provider 仍不绿，必须把问题范围收敛到可操作口径。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -524,3 +542,4 @@
 24. `R5-AI-04`
 25. `R5-AI-05`
 26. `R5-AI-06`
+27. `R5-AI-07`
