@@ -1,6 +1,6 @@
 # bookmarks-manager 功能覆盖矩阵
 
-更新时间：2026-03-28
+更新时间：2026-03-29
 
 关联文档：
 
@@ -13,10 +13,12 @@
 
 | 项目 | 当前结论 | 证据 |
 |---|---|---|
-| 构建基线 | `npm run build` 于 2026-03-28 通过。 | 当前工作区执行通过。 |
-| 自动化测试基线 | `npm test` 于 2026-03-28 通过，`13` 个测试文件、`119` 条测试全部通过。 | 当前工作区执行通过。 |
-| 仓库内 Playwright 资产 | `e2e/` 中存在 `3` 个 spec 文件、`11` 条用例。 | `bookmarks.spec.ts`、`categories.spec.ts`、`search-and-shortcuts.spec.ts`。 |
-| UI 验证主路径 | 当前主路径不是仓库内 Playwright，而是已在 `R1-QA-01` 固化的内置 Playwright MCP smoke。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)。 |
+| 构建基线 | `npm run build` 于 2026-03-29 通过。 | 当前工作区在 `R2-REL-03` 收口回归中执行通过。 |
+| 自动化测试基线 | `npm test` 于 2026-03-29 通过，`16` 个测试文件、`136` 条测试全部通过。 | 当前工作区在 `R2-REL-03` 收口回归中执行通过。 |
+| 仓库内 Playwright 资产 | `e2e/` 与 `playwright.config.ts` 仍在仓库中，但已经明确是历史资产，不作为 release gate。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)。 |
+| UI 验证主路径 | 当前主路径是内置 Playwright MCP，已覆盖最小 smoke、关键业务旅程，以及 `R1-DOC-04` 的本地 `/login + /jobs` 补验收。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)、[最终回归与交接说明](./13-release-handoff.md)。 |
+| 扩展 round-trip gate | `npx tsx scripts/extension-roundtrip-validate.ts` 于 2026-03-29 clean run 通过。 | [浏览器扩展 round-trip 验收](./12-extension-roundtrip-validation.md)。 |
+| 真实 AI gate | `R15-H1-04` 已完成真实 provider 验收，并完成 organize apply / rollback 演练。 | [真实 AI 提供方联调与人工验收](./10-ai-provider-h1-validation.md)。 |
 
 ## 2. Gate 冻结结论
 
@@ -49,6 +51,17 @@
 
 - `G1` 只负责冻结范围、合同和验证矩阵，不修业务实现。
 - `R1` 的 release gate 以 `npm run build`、`npm test` 和内置 Playwright MCP 最小 smoke 为准。
-- 最小 smoke 当前已验证 `登录 -> 首页 -> 设置 -> 任务 -> 快照 -> 退出` 旅程，并明确不依赖仓库内 `e2e/` 和 `playwright.config.ts`。
+- 最小 smoke 已验证 `登录 -> 首页 -> 设置 -> 任务 -> 快照 -> 退出`，并在 2026-03-29 用本地临时环境补验了 `R1-DOC-04` 所需的 `/login` 与 `/jobs` 浏览器渲染闭环。
 - `R1.5` 的 AI gate 必须同时具备离线 mock / fixture 自动化和 `H1` 真实 provider 人工验收。
-- `R2` 结束时，扩展 round-trip、MCP UI smoke、最终回归与交接文档必须全部闭环。
+- `R2` 的最终 gate 以 `npm test`、`npm run build`、[11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md)、[12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md)、[10-ai-provider-h1-validation.md](./10-ai-provider-h1-validation.md) 和 [13-release-handoff.md](./13-release-handoff.md) 为准。
+
+## 5. 2026-03-29 收口状态
+
+| 主题 | 最终覆盖 | 结论 | 残余说明 |
+|---|---|---|---|
+| 设置 / 模板 / 快照 / 备份 | `tests/integration/ops-routes.test.ts` + Playwright MCP 关键旅程 | 已纳入回归 | 还原继续遵循 partial-restore 合同，不在本轮隐式扩大恢复范围。 |
+| AI classify / test / classify-batch | `tests/integration/ai-routes.test.ts`、`tests/integration/ai-harness.test.ts` + H1 实测 | 已纳入回归与人工验收 | 单条 `/api/ai/classify` 在真实 provider 下仍可能返回模板外层级，需保留人工复核。 |
+| AI organize 生命周期 | `tests/integration/ai-organize-routes.test.ts` + MCP UI + H1 apply / rollback | 已纳入回归 | 真实 provider 质量以“可解释、可回退”为准，不承诺零误判。 |
+| 浏览器扩展 | `scripts/extension-roundtrip-validate.ts` + [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) | 已纳入 `R2` gate | 当前 smoke 覆盖 popup-harness，不是浏览器工具栏中的真实 unpacked extension target。 |
+| 文档 / 页面漂移 | README、设置说明、任务详情页 simplify 遗留已清理；本地 MCP 已补验 `/login`、`/jobs` | `R1-DOC-04` 可关闭 | `ai_simplify` 只保留 backlog / 历史任务类型语义，不再视为活跃功能。 |
+| UI gate 归属 | 内置 Playwright MCP 是唯一 UI gate；仓库内 `e2e/` 只做历史资产保留 | 基线稳定 | 后续若继续扩展 UI 验收，只追加 MCP 旅程，不恢复仓库内 Playwright 为主 gate。 |

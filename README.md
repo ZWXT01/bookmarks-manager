@@ -71,6 +71,18 @@ npm run build
 npm start
 ```
 
+### Release Validation
+
+The current release gate for this repository is:
+
+- `npm test`
+- `npm run build`
+- built-in Playwright MCP smoke against a temporary local app seeded by `scripts/playwright-mcp-smoke-env.ts`
+- `npx tsx scripts/extension-roundtrip-validate.ts` for the browser extension popup round-trip
+- the real-provider AI acceptance recorded in `docs/planning/functional-hardening-and-ai-validation/10-ai-provider-h1-validation.md`
+
+The checked-in `e2e/` specs and `playwright.config.ts` remain historical assets and are not the active release gate.
+
 ## ⚙️ Environment Variables
 
 ### Basic Configuration
