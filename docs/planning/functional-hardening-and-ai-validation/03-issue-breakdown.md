@@ -18,7 +18,7 @@
 ## 2. issue 命名规则
 
 - 命名格式：`<阶段>-<域>-<序号>`。
-- 阶段枚举：`G1`、`R1`、`R15`、`R2`、`R3`、`R4`。
+- 阶段枚举：`G1`、`R1`、`R15`、`R2`、`R3`、`R4`、`R5`。
 - 域枚举建议：`QA`、`API`、`BE`、`DOC`、`AI`、`E2E`、`EXT`、`REL`、`H1`、`UI`、`CLEAN`。
 - 示例：`R15-AI-03`、`R1-BE-03`。
 
@@ -359,6 +359,23 @@
   - `学习资源/React` 这类模板外二级结果会被归一化或显式拒绝，不再直接透传到调用方。
   - `npm test`、`npx tsc --noEmit`、`npm run build` 通过。
 
+## R5-EXT-02 将扩展 round-trip gate 升级到真实 unpacked runtime
+
+- 目标：把扩展验收从“普通页面中的 popup-harness”升级到“Playwright Chromium 中加载的真实 unpacked extension runtime”，收口浏览器宿主层面的剩余盲区。
+- 范围：
+  - 使用 `chromium.launchPersistentContext()` 加载 `extension-new/`，在真实扩展宿主中运行 popup。
+  - 验证真实 `chrome.storage`、`chrome.tabs.create`、`chrome.tabs.query`、`chrome.scripting.executeScript`、`chrome.tabs.sendMessage`、content script 与服务端 API 的联动。
+  - 覆盖 token 配置、目标页标题 / URL 绑定、保存书签、保存快照、收藏+存档、失败提示，以及管理页 / 获取 Token 入口打开新标签。
+  - 为 headless 自动化无法直接点击工具栏 action popup 的限制，补充最小目标页 hint 钩子，并把约束写入验收文档。
+- 非目标：
+  - 不在本 issue 中重建仓库内 Playwright 扩展 spec。
+  - 不把“点击浏览器工具栏图标打开 popup”的 UI 手势本身纳入自动化范围。
+- 依赖：`R2-EXT-02`、`R2-REL-03`。
+- 验收：
+  - `scripts/extension-runtime-validate.ts` 可 clean run，并在真实 Chromium unpacked extension runtime 下覆盖书签、快照、save-all、失败提示和新标签打开。
+  - 快照文件内容能证明抓取的确实是目标页，而不是 popup 页面或 mock 内容。
+  - `npm test`、`npx tsc --noEmit`、`npm run build` 通过，且临时 profile、临时 DB、临时快照和后台进程已清理。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -379,3 +396,4 @@
 16. `R4-CLEAN-01`
 17. `R4-QA-02`
 18. `R5-AI-01`
+19. `R5-EXT-02`
