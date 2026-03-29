@@ -514,6 +514,24 @@
   - `scripts/ai-provider-diagnose.ts` 能输出脱敏 report，至少包含 `/models` 与 `/chat/completions` 的状态、耗时和失败摘要。
   - `npx tsc --noEmit`、定向 AI route 回归、direct diagnose、focused H1 replay、`npm test`、`npm run build` 通过；若真实 provider 仍不绿，必须把问题范围收敛到可操作口径。
 
+## R5-AI-08 收口设置页 AI 诊断可见性
+
+- 目标：把 `R5-AI-07` 新增的 provider 诊断从“仅在 API 响应里可见”推进到“设置页操作员在点击测试连接后即可直接看到”的可操作 UI，避免非开发者只能从 network / 日志中判断是配置错误还是 chat completion timeout。
+- 范围：
+  - 设置页为 AI 测试按钮、输入框和结果面板补稳定选择器。
+  - 将 `/api/ai/test` 的成功态、普通失败态和带 `diagnostic` 的失败态渲染成可见结果面板，而不只弹 toast。
+  - 新增浏览器 harness，验证成功态和 `models_ok=true` 的诊断失败态都能正确展示。
+  - 补页面级回归，确保 settings 页始终保留 AI 诊断壳和稳定选择器。
+- 非目标：
+  - 不在本 issue 中修改 `/api/ai/test` 路由合同。
+  - 不把 provider diagnose 脚本接进设置页后台轮询。
+  - 不在本 issue 中处理设置页其它遗留交互。
+- 依赖：`R5-AI-07`。
+- 验收：
+  - 设置页点击“测试连接”后，成功态和带 `diagnostic` 的失败态都能在页面上直接展示，而不只依赖 toast。
+  - `scripts/settings-ai-diagnostic-validate.ts` 能在真实浏览器中验证成功态与诊断失败态的 UI。
+  - `npx tsc --noEmit`、定向页面回归、设置页 AI 诊断浏览器 harness、`npm test`、`npm run build` 通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -543,3 +561,4 @@
 25. `R5-AI-05`
 26. `R5-AI-06`
 27. `R5-AI-07`
+28. `R5-AI-08`
