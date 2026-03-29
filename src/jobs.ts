@@ -14,7 +14,9 @@ export function setJobQueueLogger(logger: LoggerLike): void {
   jobQueueLogger = logger;
 }
 
-export type JobType = 'import' | 'check' | 'ai_classify' | 'ai_simplify' | 'ai_organize';
+export type ActiveJobType = 'import' | 'check' | 'ai_organize';
+export type LegacyJobType = 'ai_classify' | 'ai_simplify';
+export type JobType = ActiveJobType | LegacyJobType;
 export type JobStatus = 'queued' | 'running' | 'done' | 'failed' | 'canceled';
 
 export type JobRow = {
@@ -123,7 +125,7 @@ export function pruneJobsToRecent(db: Db, keepDoneFailed = 10): void {
   pruneJobs(db, keepDoneFailed);
 }
 
-export function createJob(db: Db, type: JobType, message: string | null, total?: number): JobRow {
+export function createJob(db: Db, type: ActiveJobType, message: string | null, total?: number): JobRow {
   const id = randomUUID();
   const now = new Date().toISOString();
 

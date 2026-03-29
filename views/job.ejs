@@ -36,8 +36,7 @@
     const jobIcon = job.type === 'ai_organize' ? '🤖' : isLegacyAiTask ? '🗂️' : '🔍';
     const jobLabel =
       job.type === 'ai_organize' ? 'AI 整理任务'
-      : job.type === 'ai_classify' ? '历史 AI 分类任务（已下线）'
-      : job.type === 'ai_simplify' ? '历史 AI 精简任务（已下线）'
+      : isLegacyAiTask ? '历史 AI 任务（已下线）'
       : job.type === 'import' ? '导入任务'
       : '书签检查任务';
     const jobSuccessLabel =
@@ -93,7 +92,7 @@
           <div>更新：<span id="job-updated">
               <%= new Date(job.updated_at).toLocaleString('zh-CN') %>
             </span></div>
-          <% if ((job.type==='ai_classify' || job.type==='ai_simplify' || job.type==='ai_organize') && job.extra) { try { const
+          <% if ((isLegacyAiTask || job.type === 'ai_organize') && job.extra) { try { const
             extra=JSON.parse(job.extra); if (extra.tokenEstimate) { %>
             <div class="mt-1 text-emerald-600">
               预估Token: ~<%= extra.tokenEstimate.estimatedTotalTokens.toLocaleString() %>
