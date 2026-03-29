@@ -462,6 +462,23 @@
   - focused H1 replay 至少对当前 provider 跑过一次，且结果和阻塞原因已写入独立验收记录。
   - `npx tsc --noEmit`、`npm test`、`npm run build` 通过，且未遗留临时目录、临时 DB 或后台验证进程。
 
+## R5-AI-05 收口单条 classify 超时降级路径
+
+- 目标：在 `R5-AI-04` 已确认当前 provider 会 timeout 的前提下，把单条 `/api/ai/classify` 从“provider 超时即 500”收口到“高信号输入可退化到本地 deterministic guardrail”的更稳妥合同。
+- 范围：
+  - 为单条 classify 暴露明确的 deterministic fallback 入口，复用既有 taxonomy / semantic 评分，而不是另起一套临时规则。
+  - 仅对 timeout / 连接型 provider 故障启用 fallback；普通 provider 失败和配置错误继续原样报错。
+  - 补足 route / unit 测试，并用 focused H1 replay 证明 `react-reference-docs` 这类高信号样本可在真实 provider timeout 时仍返回模板内合法分类。
+- 非目标：
+  - 不在本 issue 中把 `/api/ai/test` 改成绿色。
+  - 不把 timeout fallback 扩展到 `classify-batch` / `organize` 批量链路。
+  - 不承诺低信号输入都能在无 provider 的情况下稳定分类。
+- 依赖：`R5-AI-04`。
+- 验收：
+  - 单条 `/api/ai/classify` 在 timeout / 连接型故障下，对高信号输入可返回模板内合法分类。
+  - 普通 provider 错误仍保持 `500`，不发生错误吞没。
+  - `npx tsc --noEmit`、定向 classify 回归、focused H1 replay、`npm test`、`npm run build` 通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -488,3 +505,4 @@
 22. `R5-AI-02`
 23. `R5-AI-03`
 24. `R5-AI-04`
+25. `R5-AI-05`
