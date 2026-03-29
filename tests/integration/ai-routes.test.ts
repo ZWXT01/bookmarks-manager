@@ -18,6 +18,7 @@ describe('integration: ai route contracts', () => {
 
     afterEach(async () => {
         vi.useRealTimers();
+        vi.unstubAllGlobals();
         if (!ctx) return;
         await ctx.cleanup();
         ctx = null;
@@ -41,7 +42,7 @@ describe('integration: ai route contracts', () => {
         }));
     }
 
-    it('covers /api/ai/test validation, retries transient failures, success, and provider failures', async () => {
+    it('covers /api/ai/test validation, retries transient failures, timeout diagnostics, success, and provider failures', async () => {
         const { ctx: appCtx, authHeaders } = await createHarnessApp();
 
         const missingConfig = await appCtx.app.inject({
@@ -89,6 +90,42 @@ describe('integration: ai route contracts', () => {
         expect(retryResponse.statusCode).toBe(200);
         expect(retryResponse.json()).toEqual({ success: true, message: 'AI 配置测试成功' });
         expect(retryHarness.calls).toHaveLength(2);
+
+        const diagnosticFetch = vi.fn(async () => new Response(JSON.stringify({
+            data: [{ id: 'mock-model' }],
+        }), {
+            status: 200,
+            headers: { 'content-type': 'application/json' },
+        }));
+        vi.stubGlobal('fetch', diagnosticFetch);
+
+        const timeoutHarness = createQueuedAIHarness([new Error('Request timed out.'), new Error('Request timed out.')]);
+        await ctx.cleanup();
+        ctx = await createTestApp({ aiClientFactory: timeoutHarness.aiClientFactory });
+        const timeoutSession = await ctx.login();
+
+        const timeoutResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/test',
+            headers: timeoutSession.headers,
+            payload: {
+                base_url: 'https://mock-ai.example.test/v1',
+                api_key: 'test-key',
+                model: 'mock-model',
+            },
+        });
+        expect(timeoutResponse.statusCode).toBe(500);
+        expect(timeoutResponse.json()).toEqual({
+            error: 'AI 配置基础连通正常，但聊天补全接口超时',
+            diagnostic: {
+                models_ok: true,
+                model_found: true,
+                models_status: 200,
+            },
+        });
+        expect(timeoutHarness.calls).toHaveLength(2);
+        expect(diagnosticFetch).toHaveBeenCalledTimes(1);
+        vi.unstubAllGlobals();
 
         const failureHarness = createQueuedAIHarness([new Error('fixture test failure')]);
         await ctx.cleanup();

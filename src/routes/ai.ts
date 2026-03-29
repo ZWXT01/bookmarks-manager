@@ -15,12 +15,53 @@ export interface AIRoutesOptions {
     aiClientFactory?: AIClientFactory;
 }
 
+interface ModelsProbeResult {
+    ok: boolean;
+    statusCode: number | null;
+    modelFound: boolean | null;
+    errorMessage: string | null;
+}
+
 function getAIConfig(getSetting: (key: string) => string | null) {
     const baseUrl = (getSetting('ai_base_url') ?? '').trim();
     const apiKey = (getSetting('ai_api_key') ?? '').trim();
     const model = (getSetting('ai_model') ?? '').trim();
     if (!baseUrl || !apiKey || !model) return null;
     return { baseUrl, apiKey, model };
+}
+
+function buildProviderHeaders(apiKey: string): Record<string, string> {
+    return {
+        authorization: `Bearer ${apiKey}`,
+        accept: 'application/json',
+    };
+}
+
+function appendProviderPath(baseUrl: string, suffix: string) {
+    return `${baseUrl.replace(/\/+$/, '')}${suffix}`;
+}
+
+function parseProviderBody(text: string): unknown {
+    try {
+        return JSON.parse(text);
+    } catch {
+        return text;
+    }
+}
+
+function extractProviderErrorMessage(body: unknown, fallback: string | null = null): string | null {
+    if (typeof body === 'string' && body.trim()) return body.trim();
+    if (body && typeof body === 'object') {
+        const errorValue = (body as { error?: unknown }).error;
+        if (typeof errorValue === 'string' && errorValue.trim()) return errorValue.trim();
+        if (errorValue && typeof errorValue === 'object') {
+            const nestedMessage = (errorValue as { message?: unknown }).message;
+            if (typeof nestedMessage === 'string' && nestedMessage.trim()) return nestedMessage.trim();
+        }
+        const messageValue = (body as { message?: unknown }).message;
+        if (typeof messageValue === 'string' && messageValue.trim()) return messageValue.trim();
+    }
+    return fallback;
 }
 
 export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done) => {
@@ -59,6 +100,37 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             || normalized.includes('socket hang up')
             || normalized.includes('network')
             || normalized.includes('connection');
+    }
+
+    async function probeModelsEndpoint(baseUrl: string, apiKey: string, model: string, timeoutMs: number): Promise<ModelsProbeResult> {
+        try {
+            const response = await fetch(appendProviderPath(baseUrl, '/models'), {
+                method: 'GET',
+                headers: buildProviderHeaders(apiKey),
+                signal: AbortSignal.timeout(timeoutMs),
+            });
+            const body = parseProviderBody(await response.text());
+            const data = body && typeof body === 'object' && Array.isArray((body as { data?: unknown[] }).data)
+                ? (body as { data: Array<{ id?: unknown }> }).data
+                : null;
+            const ids = data
+                ?.map((entry) => (typeof entry?.id === 'string' ? entry.id : ''))
+                .filter(Boolean) ?? [];
+
+            return {
+                ok: response.ok,
+                statusCode: response.status,
+                modelFound: data ? ids.includes(model) : null,
+                errorMessage: response.ok ? null : extractProviderErrorMessage(body, `HTTP ${response.status}`),
+            };
+        } catch (error) {
+            return {
+                ok: false,
+                statusCode: null,
+                modelFound: null,
+                errorMessage: error instanceof Error ? error.message : String(error),
+            };
+        }
     }
 
     // POST /api/ai/classify - 单个书签分类（保留，浏览器扩展依赖）
@@ -162,6 +234,43 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             }
             throw lastError;
         } catch (e: any) {
+            if (isRetryableProviderError(e)) {
+                const probe = await probeModelsEndpoint(baseUrl, apiKey, model, 10_000);
+                if (probe.ok && probe.modelFound) {
+                    req.log.warn({ err: e, probe }, 'ai test timed out after retries but models probe succeeded');
+                    return reply.code(500).send({
+                        error: 'AI 配置基础连通正常，但聊天补全接口超时',
+                        diagnostic: {
+                            models_ok: true,
+                            model_found: true,
+                            models_status: probe.statusCode,
+                        },
+                    });
+                }
+                if (probe.ok && probe.modelFound === false) {
+                    req.log.warn({ err: e, probe }, 'ai test timed out after retries and configured model was not found');
+                    return reply.code(500).send({
+                        error: 'AI 端点可连通，但当前模型不存在或不可访问',
+                        diagnostic: {
+                            models_ok: true,
+                            model_found: false,
+                            models_status: probe.statusCode,
+                        },
+                    });
+                }
+                if (!probe.ok) {
+                    req.log.warn({ err: e, probe }, 'ai test timed out after retries and models probe also failed');
+                    return reply.code(500).send({
+                        error: e.message || 'AI 测试失败',
+                        diagnostic: {
+                            models_ok: false,
+                            model_found: null,
+                            models_status: probe.statusCode,
+                            models_error: probe.errorMessage,
+                        },
+                    });
+                }
+            }
             req.log.error({ err: e }, 'ai test failed');
             return reply.code(500).send({ error: e.message || 'AI 测试失败' });
         }
