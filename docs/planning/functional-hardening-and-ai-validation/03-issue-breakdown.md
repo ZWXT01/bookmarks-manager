@@ -342,6 +342,23 @@
   - 删除分类和模板切换后，不再出现“筛选状态已失效但书签列表仍停留旧结果”的前端漂移。
   - `npm test`、`npx tsc --noEmit`、`npm run build` 通过。
 
+## R5-AI-01 收口单条 classify taxonomy guardrail
+
+- 目标：把 `/api/ai/classify` 从“可能返回模板外层级的辅助建议”收口成“输出必须落在当前模板 / 分类树内”的强合同入口。
+- 范围：
+  - 为单条 classify 建立候选分类枚举、路径标准化和 taxonomy guardrail。
+  - 优先读取当前活动模板；若无活动模板，再回退到当前 live categories。
+  - 对模板外返回做 deterministic 收口：可映射则归一化，不可映射则拒绝返回错误结果。
+  - 补足对应的离线 HTTP 合同与 deterministic harness 覆盖。
+- 非目标：
+  - 不在本 issue 中重新验收真实 provider 的语义正确率。
+  - 不在本 issue 中改动 classify-batch / organize 的批量分配合同。
+- 依赖：`R15-H1-04`、`R4-CLEAN-01`。
+- 验收：
+  - 单条 `/api/ai/classify` 在有活动模板时只能返回模板内的合法分类路径。
+  - `学习资源/React` 这类模板外二级结果会被归一化或显式拒绝，不再直接透传到调用方。
+  - `npm test`、`npx tsc --noEmit`、`npm run build` 通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -361,3 +378,4 @@
 15. `R3-QA-03`
 16. `R4-CLEAN-01`
 17. `R4-QA-02`
+18. `R5-AI-01`

@@ -42,7 +42,7 @@
 | 模板 | `src/routes/templates.ts`、`src/template-service.ts` | 无专门测试 | 主要经 API / 任务页间接使用 | CRUD、apply、reset 无自动化 | `R1-API-02` |
 | 快照 | `src/routes/snapshots.ts`、`views/snapshots.ejs`、文件系统 `snapshots/*.html` | 无专门测试 | 页面存在；扩展可触发保存 | 快照 schema、文件资产和 API 都缺回归 | `R1-API-02`、`R1-BE-03`、`R2-EXT-02` |
 | 备份 / 还原 | `src/routes/backups.ts`、文件系统 `backups/*.db` | 无专门测试 | 仅人工高风险操作 | 当前合同与实现不清，且真实数据路径高风险 | `R1-API-02`、`R1-BE-03` |
-| AI classify / test / classify-batch | `src/routes/ai.ts` | 无专门测试 | 无正式 H1 验收记录 | 缺 mock / fixture、HTTP 合同测试与真实 provider 验收 | `R15-AI-01`、`R15-AI-02`、`R15-H1-04` |
+| AI classify / test / classify-batch | `src/routes/ai.ts`、`src/ai-classify-guardrail.ts` | `tests/integration/ai-routes.test.ts`、`tests/integration/ai-harness.test.ts` | `R15-H1-04` 已做真实 provider 验收 | 单条 classify 的语义质量仍可能漂移，但输出合同已收口到当前模板 / 分类树 | `R15-AI-01`、`R15-AI-02`、`R15-H1-04`、`R5-AI-01` |
 | AI organize 生命周期 | `src/routes/ai.ts`、`src/ai-organize.ts`、`src/ai-organize-plan.ts`、`src/routes/pages.ts` | `tests/ai-organize-plan.test.ts` 仅覆盖状态机与日志 | 任务详情页可展示 organize 计划 | 缺 organize HTTP 合同、apply / rollback / stale recovery 回归 | `R15-AI-03` |
 | 浏览器扩展 round-trip | `extension-new/` | 无正式自动化 | 仅人工点测说明 | 保存书签 / 快照 / 同时保存缺正式验收 | `R2-EXT-02` |
 | `ai_simplify` 遗留面 | `src/db.ts`、`src/jobs.ts` | 无，因为它已不是活跃功能 | 仅保留历史任务兼容读取与旧表迁移清理 | 不再保留专属 UI 分支；若要恢复需新立项 | `R1-DOC-04`、`R4-CLEAN-01` |
@@ -60,7 +60,8 @@
 | 主题 | 最终覆盖 | 结论 | 残余说明 |
 |---|---|---|---|
 | 设置 / 模板 / 快照 / 备份 | `tests/integration/ops-routes.test.ts` + Playwright MCP 关键旅程 | 已纳入回归 | 还原继续遵循 partial-restore 合同，不在本轮隐式扩大恢复范围。 |
-| AI classify / test / classify-batch | `tests/integration/ai-routes.test.ts`、`tests/integration/ai-harness.test.ts` + H1 实测 | 已纳入回归与人工验收 | 单条 `/api/ai/classify` 在真实 provider 下仍可能返回模板外层级，需保留人工复核。 |
+| AI classify / test / classify-batch | `tests/integration/ai-routes.test.ts`、`tests/integration/ai-harness.test.ts` + H1 实测 | 已纳入回归与人工验收 | 单条 `/api/ai/classify` 的输出合同已被 guardrail 收口；剩余残余只在“模板内语义是否选得足够准”。 |
+| AI classify 输出合同 | `src/ai-classify-guardrail.ts` + `tests/integration/ai-routes.test.ts` / `tests/integration/ai-harness.test.ts` | 已纳入回归 | 单条 `/api/ai/classify` 现在会被强制收口到当前模板 / 分类树；完全不可映射则返回错误。 |
 | AI organize 生命周期 | `tests/integration/ai-organize-routes.test.ts` + MCP UI + H1 apply / rollback | 已纳入回归 | 真实 provider 质量以“可解释、可回退”为准，不承诺零误判。 |
 | 浏览器扩展 | `scripts/extension-roundtrip-validate.ts` + [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) | 已纳入 `R2` gate | 当前 smoke 覆盖 popup-harness，不是浏览器工具栏中的真实 unpacked extension target。 |
 | 文档 / 页面漂移 | README、设置说明、任务详情页 simplify 遗留已清理；`R4-CLEAN-01` 又移除了 `ai_simplify` 专属任务页分支 | `R1-DOC-04`、`R4-CLEAN-01` 可关闭 | `ai_simplify` 只保留 backlog / 历史任务兼容类型与旧表迁移清理，不再视为活跃功能。 |
