@@ -300,6 +300,8 @@
                                             :aria-expanded="cat.children && cat.children.length > 0 ? (categoryDropdownVisible && activeParentCategory == cat.id) : null"
                                             :aria-controls="cat.children && cat.children.length > 0 ? 'subcategory-panel-' + cat.id : null"
                                             :aria-label="cat.name + '分类'"
+                                            data-testid="category-nav-tab"
+                                            :data-category-id="cat.id"
                                             class="category-tab"
                                             :class="currentCategory == cat.id ? 'active' : ''">
                                         <span class="category-tab-icon" x-text="cat.icon || '📁'" :style="cat.color ? 'color:' + cat.color : ''"></span>
@@ -321,6 +323,7 @@
                         <button @click="openCategoryManager()"
                                 @focus="closeCategoryDropdown()"
                                 class="ml-2 p-2 text-slate-400 hover:text-blue-500 transition-colors flex-shrink-0"
+                                data-testid="open-category-manager"
                                 aria-label="管理分类"
                                 title="管理分类">
                             <span class="text-lg" aria-hidden="true">⚙️</span>
@@ -1111,6 +1114,7 @@
                     <div>
                         <label class="text-xs text-slate-600 block mb-1">分类</label>
                         <select x-model="newBookmark.category_id"
+                            data-testid="add-bookmark-category-select"
                             class="w-full rounded border px-3 py-2 text-sm">
                             <option value="">未分类</option>
                             <template x-for="cat in categories" :key="cat.id">
