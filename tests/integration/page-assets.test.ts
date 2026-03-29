@@ -48,6 +48,25 @@ describe('integration: page assets', () => {
         }
     });
 
+    it('renders the settings page with the ai diagnostic shell and selectors', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: '/settings',
+            headers,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('data-testid="ai-test-btn"');
+        expect(response.body).toContain('data-testid="ai-test-result"');
+        expect(response.body).toContain('data-testid="ai-base-url-input"');
+        expect(response.body).toContain('data-testid="ai-api-key-input"');
+        expect(response.body).toContain('data-testid="ai-model-input"');
+        expect(response.body).toContain('基础连通正常，聊天补全未通过');
+    });
+
     it('serves the generated tailwind asset as a static file', async () => {
         const response = await ctx.app.inject({
             method: 'GET',

@@ -145,25 +145,33 @@
           <option value="grok">Grok (grok2api)</option>
           <option value="openai">OpenAI</option>
         </select>
-        <button id="ai-test-btn" type="button" class="btn-secondary btn-sm">测试连接</button>
+        <button id="ai-test-btn" data-testid="ai-test-btn" type="button" class="btn-secondary btn-sm">测试连接</button>
       </div>
     </div>
     <div class="mt-3 space-y-3">
       <label class="block">
         <div class="text-xs text-slate-600">Base URL</div>
-        <input name="ai_base_url" value="<%- aiBaseUrl %>"
+        <input data-testid="ai-base-url-input" name="ai_base_url" value="<%- aiBaseUrl %>"
           placeholder="例如 https://api.openai.com/v1 或 https://grok2api.1018666.xyz/v1"
           class="mt-1 w-full rounded border px-3 py-2 text-sm" />
       </label>
       <label class="block">
         <div class="text-xs text-slate-600">API Key</div>
-        <input name="ai_api_key" value="<%- aiApiKey %>" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+        <input data-testid="ai-api-key-input" name="ai_api_key" value="<%- aiApiKey %>" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
       </label>
       <label class="block">
         <div class="text-xs text-slate-600">Model</div>
-        <input name="ai_model" value="<%- aiModel %>" placeholder="例如 gpt-4o-mini 或 grok-4"
+        <input data-testid="ai-model-input" name="ai_model" value="<%- aiModel %>" placeholder="例如 gpt-4o-mini 或 grok-4"
           class="mt-1 w-full rounded border px-3 py-2 text-sm" />
       </label>
+    </div>
+    <div id="ai-test-result" data-testid="ai-test-result" class="mt-3 hidden rounded border p-3">
+      <div class="flex items-center justify-between gap-2">
+        <div id="ai-test-result-title" data-testid="ai-test-result-title" class="text-sm font-semibold text-slate-700"></div>
+        <div id="ai-test-result-badge" data-testid="ai-test-result-badge" class="rounded border px-2 py-1 text-xs"></div>
+      </div>
+      <div id="ai-test-result-message" data-testid="ai-test-result-message" class="mt-2 text-xs text-slate-600"></div>
+      <div id="ai-test-result-details" data-testid="ai-test-result-details" class="mt-2 hidden text-xs text-slate-600"></div>
     </div>
     <div class="mt-3 text-xs text-slate-500">配置后可调用 /api/ai/classify 获取分类建议（先输出分类路径）。</div>
   </div>
@@ -275,6 +283,11 @@
       var form = document.getElementById('settings-form');
       var toast = document.getElementById('settings-toast');
       var btn = document.getElementById('settings-save');
+      var aiTestResult = document.getElementById('ai-test-result');
+      var aiTestResultTitle = document.getElementById('ai-test-result-title');
+      var aiTestResultBadge = document.getElementById('ai-test-result-badge');
+      var aiTestResultMessage = document.getElementById('ai-test-result-message');
+      var aiTestResultDetails = document.getElementById('ai-test-result-details');
 
       function showToast(msg, type) {
         if (!toast) return;
@@ -297,6 +310,78 @@
             toast.textContent = '';
           }, 2500);
         } catch { }
+      }
+
+      function resetAiTestResult() {
+        if (!aiTestResult) return;
+        aiTestResult.classList.add('hidden');
+        aiTestResult.classList.remove('border-emerald-200', 'bg-emerald-50', 'text-emerald-700');
+        aiTestResult.classList.remove('border-amber-200', 'bg-amber-50', 'text-amber-800');
+        aiTestResult.classList.remove('border-rose-200', 'bg-rose-50', 'text-rose-700');
+        if (aiTestResultTitle) aiTestResultTitle.textContent = '';
+        if (aiTestResultMessage) aiTestResultMessage.textContent = '';
+        if (aiTestResultBadge) {
+          aiTestResultBadge.textContent = '';
+          aiTestResultBadge.classList.remove('border-emerald-200', 'bg-emerald-50', 'text-emerald-700');
+          aiTestResultBadge.classList.remove('border-amber-200', 'bg-amber-50', 'text-amber-800');
+          aiTestResultBadge.classList.remove('border-rose-200', 'bg-rose-50', 'text-rose-700');
+        }
+        if (aiTestResultDetails) {
+          aiTestResultDetails.textContent = '';
+          aiTestResultDetails.classList.add('hidden');
+        }
+      }
+
+      function pushAiDiagnosticLine(text) {
+        if (!aiTestResultDetails || !text) return;
+        var line = document.createElement('div');
+        line.setAttribute('data-testid', 'ai-test-result-item');
+        line.className = aiTestResultDetails.textContent ? 'mt-2' : '';
+        line.textContent = text;
+        aiTestResultDetails.appendChild(line);
+      }
+
+      function renderAiTestResult(type, title, message, diagnostic) {
+        if (!aiTestResult) return;
+        resetAiTestResult();
+        aiTestResult.classList.remove('hidden');
+
+        if (type === 'success') {
+          aiTestResult.classList.add('border-emerald-200', 'bg-emerald-50', 'text-emerald-700');
+          if (aiTestResultBadge) aiTestResultBadge.classList.add('border-emerald-200', 'bg-emerald-50', 'text-emerald-700');
+        } else if (type === 'warn') {
+          aiTestResult.classList.add('border-amber-200', 'bg-amber-50', 'text-amber-800');
+          if (aiTestResultBadge) aiTestResultBadge.classList.add('border-amber-200', 'bg-amber-50', 'text-amber-800');
+        } else {
+          aiTestResult.classList.add('border-rose-200', 'bg-rose-50', 'text-rose-700');
+          if (aiTestResultBadge) aiTestResultBadge.classList.add('border-rose-200', 'bg-rose-50', 'text-rose-700');
+        }
+
+        if (aiTestResultTitle) aiTestResultTitle.textContent = title;
+        if (aiTestResultMessage) aiTestResultMessage.textContent = message || '';
+        if (aiTestResultBadge) {
+          aiTestResultBadge.textContent = type === 'success' ? '通过' : type === 'warn' ? '需处理' : '失败';
+        }
+
+        if (!diagnostic || typeof diagnostic !== 'object' || !aiTestResultDetails) return;
+
+        var entries = [];
+        if (typeof diagnostic.models_ok === 'boolean') {
+          entries.push('模型列表探测：' + (diagnostic.models_ok ? '正常' : '失败'));
+        }
+        if (typeof diagnostic.model_found === 'boolean') {
+          entries.push('当前模型：' + (diagnostic.model_found ? '已发现' : '未发现'));
+        }
+        if (diagnostic.models_status != null) {
+          entries.push('模型列表状态码：' + String(diagnostic.models_status));
+        }
+        if (typeof diagnostic.models_error === 'string' && diagnostic.models_error.trim()) {
+          entries.push('模型探测错误：' + diagnostic.models_error.trim());
+        }
+
+        if (!entries.length) return;
+        aiTestResultDetails.classList.remove('hidden');
+        entries.forEach(pushAiDiagnosticLine);
       }
 
       if (!form) return;
@@ -449,10 +534,12 @@
           var model = form.querySelector('input[name="ai_model"]').value.trim();
 
           if (!baseUrl || !apiKey || !model) {
+            resetAiTestResult();
             showToast('请先填写完整的 AI 配置', 'error');
             return;
           }
 
+          resetAiTestResult();
           aiTestBtn.disabled = true;
           aiTestBtn.textContent = '测试中...';
 
@@ -467,11 +554,24 @@
             });
             var data = await res.json().catch(function () { return null; });
             if (res.ok && data && data.success) {
+              renderAiTestResult('success', 'AI 连接测试成功', data.message || 'AI 配置测试成功');
               showToast('AI 连接测试成功！', 'success');
             } else {
-              showToast('AI 连接测试失败：' + ((data && data.error) || '未知错误'), 'error');
+              var diagnostic = data && data.diagnostic ? data.diagnostic : null;
+              var hasReachableModels = diagnostic && diagnostic.models_ok === true;
+              renderAiTestResult(
+                hasReachableModels ? 'warn' : 'error',
+                hasReachableModels ? '基础连通正常，聊天补全未通过' : 'AI 连接测试失败',
+                (data && data.error) || '未知错误',
+                diagnostic,
+              );
+              showToast(
+                hasReachableModels ? 'AI 连接测试未通过，已返回诊断信息' : ('AI 连接测试失败：' + ((data && data.error) || '未知错误')),
+                hasReachableModels ? 'warn' : 'error',
+              );
             }
           } catch (err) {
+            renderAiTestResult('error', 'AI 连接测试失败', '网络错误');
             showToast('AI 连接测试失败：网络错误', 'error');
           } finally {
             aiTestBtn.disabled = false;
