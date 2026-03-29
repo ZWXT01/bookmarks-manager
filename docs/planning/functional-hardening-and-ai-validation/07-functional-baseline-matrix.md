@@ -13,10 +13,11 @@
 
 | 项目 | 当前结论 | 证据 |
 |---|---|---|
-| 构建基线 | `npm run build` 于 2026-03-29 通过。 | 当前工作区在 `R2-REL-03` 收口回归中执行通过。 |
-| 自动化测试基线 | `npm test` 于 2026-03-29 通过，`16` 个测试文件、`143` 条测试全部通过。 | 当前工作区在 `R5-EXT-02` 收口回归中执行通过。 |
+| 构建基线 | `npm run build` 于 2026-03-29 通过。 | 当前工作区在 `R5-UI-04` 收口回归中执行通过。 |
+| 自动化测试基线 | `npm test` 于 2026-03-29 通过，`17` 个测试文件、`146` 条测试全部通过。 | 当前工作区在 `R5-UI-04` 收口回归中执行通过。 |
 | 仓库内 Playwright 资产 | `e2e/` 与 `playwright.config.ts` 仍在仓库中，但已经明确是历史资产，不作为 release gate。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)。 |
 | UI 验证主路径 | 当前主路径是内置 Playwright MCP，已覆盖最小 smoke、关键业务旅程，以及 `R1-DOC-04` 的本地 `/login + /jobs` 补验收。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)、[最终回归与交接说明](./13-release-handoff.md)。 |
+| 前端静态样式 gate | 页面已不再依赖运行时 `tailwind.js`，静态样式生成、页面资产合同和分类交互浏览器 harness 于 2026-03-29 全部通过。 | [静态 Tailwind 迁移验收](./21-static-tailwind-validation.md)。 |
 | 扩展 round-trip gate | `npx tsx scripts/extension-roundtrip-validate.ts`、`npx tsx scripts/extension-runtime-validate.ts` 与 `npx tsx scripts/extension-action-popup-validate.ts` 于 2026-03-29 clean run 通过。 | [浏览器扩展 round-trip 验收](./12-extension-roundtrip-validation.md)、[真实扩展运行时验收](./19-extension-runtime-validation.md)、[真实 action popup 验收](./20-extension-action-popup-validation.md)。 |
 | 真实 AI gate | `R15-H1-04` 已完成真实 provider 验收，并完成 organize apply / rollback 演练。 | [真实 AI 提供方联调与人工验收](./10-ai-provider-h1-validation.md)。 |
 
@@ -45,6 +46,7 @@
 | AI classify / test / classify-batch | `src/routes/ai.ts`、`src/ai-classify-guardrail.ts` | `tests/integration/ai-routes.test.ts`、`tests/integration/ai-harness.test.ts` | `R15-H1-04` 已做真实 provider 验收 | 单条 classify 的语义质量仍可能漂移，但输出合同已收口到当前模板 / 分类树 | `R15-AI-01`、`R15-AI-02`、`R15-H1-04`、`R5-AI-01` |
 | AI organize 生命周期 | `src/routes/ai.ts`、`src/ai-organize.ts`、`src/ai-organize-plan.ts`、`src/routes/pages.ts` | `tests/ai-organize-plan.test.ts` 仅覆盖状态机与日志 | 任务详情页可展示 organize 计划 | 缺 organize HTTP 合同、apply / rollback / stale recovery 回归 | `R15-AI-03` |
 | 浏览器扩展 round-trip | `extension-new/` | `scripts/extension-roundtrip-validate.ts`、`scripts/extension-runtime-validate.ts`、`scripts/extension-action-popup-validate.ts` | 无需额外人工 gate；真实运行时与 action popup 目标都可复跑 | 无主要功能合同缺口；仅不单独模拟浏览器工具栏的物理点击手势 | `R2-EXT-02`、`R5-EXT-02`、`R5-EXT-03` |
+| 前端页面资产 / 静态样式 | `views/*.ejs`、`public/tailwind.generated.css`、`scripts/generate-static-tailwind.ts` | `tests/integration/page-assets.test.ts` | `scripts/category-interaction-validate.ts` 已复跑首页导航、分类联动、模板切换与刷新保持 | 新增 utility class 时需要同步再生成静态 CSS 产物 | `R2-E2E-01`、`R5-UI-04` |
 | `ai_simplify` 遗留面 | `src/db.ts`、`src/jobs.ts` | 无，因为它已不是活跃功能 | 仅保留历史任务兼容读取与旧表迁移清理 | 不再保留专属 UI 分支；若要恢复需新立项 | `R1-DOC-04`、`R4-CLEAN-01` |
 
 ## 4. 当前 release gate 口径
@@ -64,6 +66,7 @@
 | AI classify 输出合同 | `src/ai-classify-guardrail.ts` + `tests/integration/ai-routes.test.ts` / `tests/integration/ai-harness.test.ts` | 已纳入回归 | 单条 `/api/ai/classify` 现在会被强制收口到当前模板 / 分类树；完全不可映射则返回错误。 |
 | AI organize 生命周期 | `tests/integration/ai-organize-routes.test.ts` + MCP UI + H1 apply / rollback | 已纳入回归 | 真实 provider 质量以“可解释、可回退”为准，不承诺零误判。 |
 | 浏览器扩展 | `scripts/extension-roundtrip-validate.ts` + `scripts/extension-runtime-validate.ts` + `scripts/extension-action-popup-validate.ts` + [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) / [19-extension-runtime-validation.md](./19-extension-runtime-validation.md) / [20-extension-action-popup-validation.md](./20-extension-action-popup-validation.md) | 已纳入 `R2` gate | popup-harness 继续保留作 deterministic 合同层验证；真实 runtime 已覆盖真实 `chrome.storage`、tab 查询、content script、新标签打开，以及真实 action popup 对当前活动页的绑定。浏览器工具栏物理点击手势本身不单独自动化，但相同 popup target 合同已被覆盖。 |
+| 前端资产完整性 | `scripts/generate-static-tailwind.ts` + `public/tailwind.generated.css` + `tests/integration/page-assets.test.ts` + [21-static-tailwind-validation.md](./21-static-tailwind-validation.md) | 已纳入回归 | 页面运行时 Tailwind `<script>` 和 warning shim 已移除；`public/lib/tailwind.js` 只保留为生成脚本输入，后续新增 utility class 时要同步再生成静态 CSS。 |
 | 文档 / 页面漂移 | README、设置说明、任务详情页 simplify 遗留已清理；`R4-CLEAN-01` 又移除了 `ai_simplify` 专属任务页分支 | `R1-DOC-04`、`R4-CLEAN-01` 可关闭 | `ai_simplify` 只保留 backlog / 历史任务兼容类型与旧表迁移清理，不再视为活跃功能。 |
 | 跨页面交互 UI gate | `scripts/category-interaction-validate.ts` + [16-category-interaction-validation.md](./16-category-interaction-validation.md) + [17-cross-view-interaction-validation.md](./17-cross-view-interaction-validation.md) | 已扩展到排序、删除分类、移动子分类、单条 / 批量书签移动、模板切换与刷新保持 | 后续若继续改分类导航、模板切换或书签移动链路，应只在同一 harness 上继续加场景。 |
 | UI gate 归属 | 内置 Playwright MCP 是唯一 UI gate；仓库内 `e2e/` 只做历史资产保留 | 基线稳定 | 后续若继续扩展 UI 验收，只追加 MCP 旅程，不恢复仓库内 Playwright 为主 gate。 |

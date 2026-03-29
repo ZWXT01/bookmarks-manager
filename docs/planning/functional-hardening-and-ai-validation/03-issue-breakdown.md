@@ -394,6 +394,23 @@
   - popup 内部可看见当前活动 tab，证明 active-page 绑定合同成立。
   - `npm test`、`npx tsc --noEmit`、`npm run build` 通过。
 
+## R5-UI-04 移除运行时 Tailwind 并固化静态样式产物
+
+- 目标：把首页、登录、设置、任务、快照等页面对运行时 `tailwind.js` 的依赖彻底收口为可复跑的静态样式产物，关闭前端资产完整性的残余风险。
+- 范围：
+  - 新增可复跑的静态 Tailwind 生成脚本，基于仓库内模板与前端脚本提取 class，并输出受版本控制的 `public/tailwind.generated.css`。
+  - 将 `views/index.ejs`、`views/login.ejs`、`views/job.ejs`、`views/jobs.ejs`、`views/settings.ejs`、`views/snapshots.ejs` 从运行时 `<script src="/public/lib/tailwind.js">` 切换到静态 `<link>`。
+  - 新增页面资产合同测试，防止运行时 Tailwind 引用和 warning suppress shim 回退。
+  - 复跑现有分类交互浏览器 harness，证明静态样式替换后首页导航、分类联动和模板切换主链路未退化。
+- 非目标：
+  - 不在本 issue 中重做整站样式体系或引入新的 npm CSS 构建链。
+  - 不移除 `public/lib/tailwind.js` 这份 vendor bundle 本身；它只收口为生成脚本输入，不再被页面运行时直接引用。
+- 依赖：`R2-E2E-01`、`R3-UI-01`。
+- 验收：
+  - 受影响页面不再包含运行时 Tailwind `<script>` 或 warning suppress shim，而是统一引用 `public/tailwind.generated.css`。
+  - `scripts/generate-static-tailwind.ts` 可复跑并稳定生成完整静态样式资产。
+  - `tests/integration/page-assets.test.ts`、`npx tsx scripts/category-interaction-validate.ts`、`npx tsc --noEmit`、`npm test`、`npm run build` 通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -416,3 +433,4 @@
 18. `R5-AI-01`
 19. `R5-EXT-02`
 20. `R5-EXT-03`
+21. `R5-UI-04`
