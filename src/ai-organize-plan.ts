@@ -1,8 +1,8 @@
 import { randomUUID } from 'crypto';
 import type { Db } from './db';
-import { getOrCreateCategoryByPath, getCategoryTree, getCategoryById, getCategoryByName } from './category-service';
+import { getCategoryTree } from './category-service';
 import { createJob, updateJob, getJob, jobQueue } from './jobs';
-import { getActiveTemplate } from './template-service';
+import { getActiveTemplate, getTemplate } from './template-service';
 
 // ==================== Types ====================
 
@@ -11,7 +11,7 @@ export type PlanStatus = 'assigning' | 'preview' | 'applied' | 'canceled' | 'rol
 export interface PlanRow {
   id: string; job_id: string | null; status: PlanStatus; scope: string;
   target_tree: string | null; assignments: string | null; diff_summary: string | null;
-  backup_snapshot: string | null; phase: string | null;
+  backup_snapshot: string | null; source_snapshot: string | null; phase: string | null;
   batches_done: number; batches_total: number;
   failed_batch_ids: string | null; needs_review_count: number;
   template_id: number | null;
@@ -33,6 +33,29 @@ export interface RollbackResult { restored_categories: number; restored_bookmark
 export interface ResolveDecisions {
   conflicts?: { bookmark_id: number; action: 'override' | 'skip' }[];
   empty_categories?: { id: number; action: 'delete' | 'keep' }[];
+}
+
+export interface PlanBookmarkSnapshot {
+  bookmark_id: number;
+  category_id: number | null;
+  updated_at: string | null;
+}
+
+export interface PlanLiveTargetSnapshot {
+  path: string;
+  category_id: number;
+}
+
+export interface PlanTemplateSnapshot {
+  template_id: number;
+  updated_at: string | null;
+  paths: string[];
+}
+
+export interface PlanSourceSnapshot {
+  bookmark_states: PlanBookmarkSnapshot[];
+  live_target_categories: PlanLiveTargetSnapshot[];
+  template: PlanTemplateSnapshot | null;
 }
 
 export class PlanError extends Error {
@@ -97,6 +120,8 @@ function parseTree(raw: string | null): CategoryNode[] {
 
 type PathLookup = Map<string, { id: number; path: string }>;
 
+type BookmarkStateRow = { id: number; category_id: number | null; updated_at: string | null };
+
 function buildPathLookup(db: Db): PathLookup {
   const lookup: PathLookup = new Map();
   for (const node of getCategoryTree(db)) {
@@ -110,15 +135,13 @@ function buildPathLookup(db: Db): PathLookup {
   return lookup;
 }
 
-function resolveCategory(db: Db, rawPath: string, lookup: PathLookup): number {
+function getExistingCategoryId(rawPath: string, lookup: PathLookup): number {
   const p = normalizePath(rawPath);
   if (!p) throw new Error('invalid category path');
   const key = casefold(p);
   const existing = lookup.get(key);
-  if (existing) return existing.id;
-  const id = getOrCreateCategoryByPath(db, p);
-  lookup.set(key, { id, path: p });
-  return id;
+  if (!existing) throw new PlanError(409, 'plan is stale: target categories changed');
+  return existing.id;
 }
 
 type BookmarkRow = { id: number; title: string; url: string; category_id: number | null; category_name: string | null; updated_at: string | null };
@@ -141,7 +164,7 @@ function getCatUsage(db: Db): CatUsage[] {
   `).all() as CatUsage[];
 }
 
-function collectTargetPaths(plan: PlanRow, assignments?: Assignment[]): string[] {
+function collectTargetPaths(plan: Pick<PlanRow, 'target_tree' | 'assignments'>, assignments?: Assignment[]): string[] {
   const tree = parseTree(plan.target_tree);
   const paths: string[] = [];
   for (const node of tree) {
@@ -161,6 +184,85 @@ function collectTargetPaths(plan: PlanRow, assignments?: Assignment[]): string[]
   return paths.filter(p => { const k = casefold(normalizePath(p)); if (seen.has(k)) return false; seen.add(k); return true; });
 }
 
+function getBookmarkStates(db: Db, bookmarkIds: number[]): Map<number, BookmarkStateRow> {
+  if (!bookmarkIds.length) return new Map();
+  const rows = db.prepare(`
+    SELECT id, category_id, updated_at
+    FROM bookmarks
+    WHERE id IN (${bookmarkIds.map(() => '?').join(',')})
+  `).all(...bookmarkIds) as BookmarkStateRow[];
+  return new Map(rows.map(row => [row.id, row]));
+}
+
+function parseSourceSnapshot(raw: string | null): PlanSourceSnapshot | null {
+  const value = safeJson<Record<string, unknown> | null>(raw, null);
+  if (!value || typeof value !== 'object') return null;
+
+  const bookmarkStates = Array.isArray(value.bookmark_states)
+    ? value.bookmark_states
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+      .map(item => ({
+        bookmark_id: Number(item.bookmark_id),
+        category_id: item.category_id == null ? null : Number(item.category_id),
+        updated_at: typeof item.updated_at === 'string' ? item.updated_at : null,
+      }))
+      .filter(item => Number.isInteger(item.bookmark_id) && item.bookmark_id > 0 && (item.category_id == null || Number.isInteger(item.category_id)))
+    : [];
+
+  const liveTargetCategories = Array.isArray(value.live_target_categories)
+    ? value.live_target_categories
+      .filter((item): item is Record<string, unknown> => !!item && typeof item === 'object')
+      .map(item => ({
+        path: normalizePath(typeof item.path === 'string' ? item.path : ''),
+        category_id: Number(item.category_id),
+      }))
+      .filter(item => item.path && Number.isInteger(item.category_id) && item.category_id > 0)
+    : [];
+
+  let template: PlanTemplateSnapshot | null = null;
+  if (value.template && typeof value.template === 'object') {
+    const rawTemplate = value.template as Record<string, unknown>;
+    const templateId = Number(rawTemplate.template_id);
+    if (Number.isInteger(templateId) && templateId > 0) {
+      template = {
+        template_id: templateId,
+        updated_at: typeof rawTemplate.updated_at === 'string' ? rawTemplate.updated_at : null,
+        paths: Array.isArray(rawTemplate.paths)
+          ? rawTemplate.paths
+            .map(item => normalizePath(typeof item === 'string' ? item : ''))
+            .filter(Boolean)
+          : [],
+      };
+    }
+  }
+
+  return {
+    bookmark_states: bookmarkStates,
+    live_target_categories: liveTargetCategories,
+    template,
+  };
+}
+
+function parseTemplatePaths(rawTree: string): string[] {
+  const tree = parseTree(rawTree);
+  const paths: string[] = [];
+  for (const node of tree) {
+    const top = normalizePath(node.name);
+    if (top) paths.push(top);
+    for (const child of node.children) {
+      const childPath = normalizePath(`${node.name}/${child.name}`);
+      if (childPath) paths.push(childPath);
+    }
+  }
+  const seen = new Set<string>();
+  return paths.filter(path => {
+    const key = casefold(path);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function canTransition(from: PlanStatus, to: PlanStatus): boolean {
   if (from === to) return true;
   if (to === 'canceled' && !TERMINAL_STATUSES.has(from)) return true;
@@ -175,6 +277,137 @@ function canTransition(from: PlanStatus, to: PlanStatus): boolean {
 
 function logStateChange(db: Db, planId: string, from: string | null, to: string, reason: string): void {
   db.prepare('INSERT INTO plan_state_logs (plan_id, from_status, to_status, reason, created_at) VALUES (?, ?, ?, ?, ?)').run(planId, from, to, reason, nowIso());
+}
+
+export function buildPlanSourceSnapshot(
+  db: Db,
+  plan: Pick<PlanRow, 'template_id' | 'target_tree' | 'assignments'>,
+  assignmentsInput?: Assignment[],
+): PlanSourceSnapshot {
+  const assignments = assignmentsInput ?? parseAssignments(plan.assignments);
+  const bookmarkIds = [...new Set(assignments.map(item => item.bookmark_id).filter(id => Number.isInteger(id) && id > 0))];
+  const bookmarkStates = getBookmarkStates(db, bookmarkIds);
+  const bookmarkSnapshots = bookmarkIds.map(bookmarkId => {
+    const state = bookmarkStates.get(bookmarkId);
+    return {
+      bookmark_id: bookmarkId,
+      category_id: state?.category_id ?? null,
+      updated_at: state?.updated_at ?? null,
+    };
+  });
+
+  const activeTemplate = getActiveTemplate(db);
+  const liveTargetCategories: PlanLiveTargetSnapshot[] = [];
+  if (plan.template_id == null || activeTemplate?.id === plan.template_id) {
+    const lookup = buildPathLookup(db);
+    for (const path of collectTargetPaths(plan, assignments)) {
+      const existing = lookup.get(casefold(path));
+      if (existing) liveTargetCategories.push({ path: existing.path, category_id: existing.id });
+    }
+  }
+
+  let template: PlanTemplateSnapshot | null = null;
+  if (plan.template_id != null) {
+    const targetTemplate = getTemplate(db, plan.template_id);
+    if (targetTemplate) {
+      template = {
+        template_id: targetTemplate.id,
+        updated_at: targetTemplate.updated_at,
+        paths: parseTemplatePaths(targetTemplate.tree),
+      };
+    }
+  }
+
+  return {
+    bookmark_states: bookmarkSnapshots,
+    live_target_categories: liveTargetCategories,
+    template,
+  };
+}
+
+function requireSourceSnapshot(plan: PlanRow): PlanSourceSnapshot {
+  const snapshot = parseSourceSnapshot(plan.source_snapshot);
+  if (!snapshot) throw new PlanError(409, 'plan safety snapshot missing; rerun organize');
+  return snapshot;
+}
+
+function ensureLiveTargetsAvailable(db: Db, plan: PlanRow, assignments: Assignment[]): PathLookup {
+  const lookup = buildPathLookup(db);
+  for (const path of collectTargetPaths(plan, assignments)) {
+    if (!lookup.has(casefold(path))) {
+      throw new PlanError(409, 'plan is stale: target categories changed');
+    }
+  }
+  return lookup;
+}
+
+function findNewerOverlappingPlanId(db: Db, plan: PlanRow, bookmarkIds: number[]): string | null {
+  if (!bookmarkIds.length) return null;
+  const bookmarkIdSet = new Set(bookmarkIds);
+  const rows = db.prepare(`
+    SELECT id, assignments
+    FROM ai_organize_plans
+    WHERE id <> ?
+      AND created_at > ?
+      AND status IN ('preview', 'applied')
+      AND ((template_id IS NULL AND ? IS NULL) OR template_id = ?)
+    ORDER BY created_at DESC
+  `).all(plan.id, plan.created_at, plan.template_id, plan.template_id) as Array<Pick<PlanRow, 'id' | 'assignments'>>;
+
+  for (const row of rows) {
+    const overlap = parseAssignments(row.assignments).some(item => bookmarkIdSet.has(item.bookmark_id));
+    if (overlap) return row.id;
+  }
+  return null;
+}
+
+function validateInitialApplySafety(db: Db, plan: PlanRow, assignments: Assignment[]): void {
+  const snapshot = requireSourceSnapshot(plan);
+  const currentStates = getBookmarkStates(db, snapshot.bookmark_states.map(item => item.bookmark_id));
+
+  if (currentStates.size !== snapshot.bookmark_states.length) {
+    throw new PlanError(409, 'plan is stale: bookmarks changed');
+  }
+
+  for (const item of snapshot.bookmark_states) {
+    const current = currentStates.get(item.bookmark_id);
+    if (!current) throw new PlanError(409, 'plan is stale: bookmarks changed');
+    if ((current.category_id ?? null) !== (item.category_id ?? null)) {
+      throw new PlanError(409, 'plan is stale: bookmarks changed');
+    }
+  }
+
+  const newerPlanId = findNewerOverlappingPlanId(db, plan, snapshot.bookmark_states.map(item => item.bookmark_id));
+  if (newerPlanId) throw new PlanError(409, 'plan is stale: newer overlapping plan exists');
+
+  if (plan.template_id != null) {
+    const templateSnapshot = snapshot.template;
+    const currentTemplate = getTemplate(db, plan.template_id);
+    if (!templateSnapshot || !currentTemplate || currentTemplate.updated_at !== templateSnapshot.updated_at) {
+      throw new PlanError(409, 'plan is stale: target template changed');
+    }
+    const currentTemplatePaths = new Set(parseTemplatePaths(currentTemplate.tree).map(path => casefold(path)));
+    for (const path of templateSnapshot.paths) {
+      if (!currentTemplatePaths.has(casefold(path))) {
+        throw new PlanError(409, 'plan is stale: target template changed');
+      }
+    }
+  }
+
+  const activeTemplate = getActiveTemplate(db);
+  if (plan.template_id != null && activeTemplate?.id !== plan.template_id) {
+    return;
+  }
+
+  const liveLookup = buildPathLookup(db);
+  for (const target of snapshot.live_target_categories) {
+    const current = liveLookup.get(casefold(target.path));
+    if (!current || current.id !== target.category_id) {
+      throw new PlanError(409, 'plan is stale: target categories changed');
+    }
+  }
+
+  ensureLiveTargetsAvailable(db, plan, assignments);
 }
 
 // ==================== CRUD ====================
@@ -230,7 +463,7 @@ export function getPlan(db: Db, planId: string): PlanRow | null {
 }
 
 export function updatePlan(db: Db, planId: string, patch: Partial<Omit<PlanRow, 'id' | 'created_at'>>): PlanRow {
-  const jsonCols = new Set(['target_tree', 'assignments', 'diff_summary', 'backup_snapshot', 'failed_batch_ids']);
+  const jsonCols = new Set(['target_tree', 'assignments', 'diff_summary', 'backup_snapshot', 'source_snapshot', 'failed_batch_ids']);
   const entries = Object.entries(patch).filter(([, v]) => v !== undefined);
   if (!entries.length) return getPlan(db, planId)!;
 
@@ -382,6 +615,11 @@ export function applyPlan(db: Db, planId: string): ApplyResult {
   return db.transaction(() => {
     const plan = getPlan(db, planId);
     if (!plan || plan.status !== 'preview') throw new Error('plan can only be applied in preview status');
+    const assignments = parseAssignments(plan.assignments);
+
+    if (!plan.backup_snapshot) {
+      validateInitialApplySafety(db, plan, assignments);
+    }
 
     // Snapshot BEFORE any mutations
     if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
@@ -389,7 +627,6 @@ export function applyPlan(db: Db, planId: string): ApplyResult {
     const active = getActiveTemplate(db);
     if (plan.template_id != null && active?.id !== plan.template_id) {
       // Cross-template apply: write to the plan's template snapshot, leave live tables untouched
-      const assignments = parseAssignments(plan.assignments);
       const delSnap = db.prepare('DELETE FROM template_snapshots WHERE template_id = ? AND bookmark_id = ?');
       const insSnap = db.prepare('INSERT INTO template_snapshots (template_id, bookmark_id, category_path) VALUES (?, ?, ?)');
       let applied = 0;
@@ -404,10 +641,7 @@ export function applyPlan(db: Db, planId: string): ApplyResult {
       return { conflicts: [], empty_categories: [], applied_count: applied };
     }
 
-    const assignments = parseAssignments(plan.assignments);
-
-    const lookup = buildPathLookup(db);
-    for (const p of collectTargetPaths(plan, assignments)) resolveCategory(db, p, lookup);
+    const lookup = ensureLiveTargetsAvailable(db, plan, assignments);
 
     const bookmarks = getBookmarkMap(db);
     const moveStmt = db.prepare('UPDATE bookmarks SET category_id = ?, updated_at = ? WHERE id = ?');
@@ -422,7 +656,8 @@ export function applyPlan(db: Db, planId: string): ApplyResult {
       // 4.7: needs_review bookmarks → category_id = NULL
       if (a.status === 'needs_review') {
         const bm = bookmarks.get(a.bookmark_id);
-        if (bm && bm.category_id != null) {
+        if (!bm) throw new PlanError(409, 'plan is stale: bookmarks changed');
+        if (bm.category_id != null) {
           sourceCatIds.add(bm.category_id);
           nullStmt.run(now, bm.id);
         }
@@ -432,7 +667,7 @@ export function applyPlan(db: Db, planId: string): ApplyResult {
       const tp = normalizePath(a.category_path);
       if (!tp) continue;
       const bm = bookmarks.get(a.bookmark_id);
-      if (!bm) continue;
+      if (!bm) throw new PlanError(409, 'plan is stale: bookmarks changed');
       const from = bm.category_name ? normalizePath(bm.category_name) : null;
       if (from && casefold(from) === casefold(tp)) continue;
 
@@ -441,7 +676,7 @@ export function applyPlan(db: Db, planId: string): ApplyResult {
         continue;
       }
 
-      const catId = resolveCategory(db, tp, lookup);
+      const catId = getExistingCategoryId(tp, lookup);
       if (bm.category_id === catId) continue;
       if (bm.category_id != null) sourceCatIds.add(bm.category_id);
       applied += moveStmt.run(catId, now, bm.id).changes;
@@ -468,6 +703,10 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
     const plan = getPlan(db, planId);
     if (!plan || plan.status !== 'preview') throw new Error('plan can only be resolved in preview status');
     const assignments = parseAssignments(plan.assignments);
+
+    if (!plan.backup_snapshot) {
+      validateInitialApplySafety(db, plan, assignments);
+    }
 
     if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
 
@@ -496,8 +735,7 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
 
     const conflictMap = new Map((decisions.conflicts ?? []).map(c => [c.bookmark_id, c.action]));
     const emptyMap = new Map((decisions.empty_categories ?? []).map(e => [e.id, e.action]));
-    const lookup = buildPathLookup(db);
-    for (const p of collectTargetPaths(plan, assignments)) resolveCategory(db, p, lookup);
+    const lookup = ensureLiveTargetsAvailable(db, plan, assignments);
 
     const bookmarks = getBookmarkMap(db);
     const moveStmt = db.prepare('UPDATE bookmarks SET category_id = ?, updated_at = ? WHERE id = ?');
@@ -511,7 +749,7 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
       const tp = normalizePath(a.category_path);
       if (!tp) continue;
       const bm = bookmarks.get(a.bookmark_id);
-      if (!bm) continue;
+      if (!bm) throw new PlanError(409, 'plan is stale: bookmarks changed');
       const from = bm.category_name ? normalizePath(bm.category_name) : null;
       if (from && casefold(from) === casefold(tp)) continue;
 
@@ -522,7 +760,7 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
         }
       }
 
-      const catId = resolveCategory(db, tp, lookup);
+      const catId = getExistingCategoryId(tp, lookup);
       if (bm.category_id === catId) continue;
       if (bm.category_id != null) sourceCatIds.add(bm.category_id);
       applied += moveStmt.run(catId, now, bm.id).changes;

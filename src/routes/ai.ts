@@ -227,6 +227,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             if (plan.assignments) result.assignments = JSON.parse(plan.assignments);
             if (plan.failed_batch_ids) result.failed_batch_ids = JSON.parse(plan.failed_batch_ids);
             delete result.backup_snapshot;
+            delete result.source_snapshot;
 
             return reply.send(result);
         } catch (e: any) {
@@ -243,6 +244,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                 if (p.assignments) r.assignments = JSON.parse(p.assignments);
                 if (p.failed_batch_ids) r.failed_batch_ids = JSON.parse(p.failed_batch_ids);
                 delete r.backup_snapshot;
+                delete r.source_snapshot;
                 return r;
             });
             return reply.send({ plans });
@@ -264,6 +266,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             if (plan.assignments) result.assignments = JSON.parse(plan.assignments);
             if (plan.failed_batch_ids) result.failed_batch_ids = JSON.parse(plan.failed_batch_ids);
             delete result.backup_snapshot; // don't send snapshot to client
+            delete result.source_snapshot;
 
             if ((plan.status === 'preview' || plan.status === 'assigning') && plan.assignments) {
                 result.diff = computeDiff(db, plan);

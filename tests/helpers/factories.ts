@@ -4,7 +4,7 @@ import path from 'path';
 import bcrypt from 'bcryptjs';
 
 import type { Db } from '../../src/db';
-import type { PlanStatus, PlanRow } from '../../src/ai-organize-plan';
+import { buildPlanSourceSnapshot, type PlanStatus, type PlanRow } from '../../src/ai-organize-plan';
 import type { JobRow, JobStatus, JobType } from '../../src/jobs';
 
 export { createTestDb, seedBookmarks, seedCategory } from './db';
@@ -65,6 +65,7 @@ export interface SeedPlanOptions {
     assignments?: unknown;
     diff_summary?: unknown;
     backup_snapshot?: unknown;
+    source_snapshot?: unknown;
     phase?: string | null;
     batches_done?: number;
     batches_total?: number;
@@ -213,10 +214,10 @@ export function seedPlan(db: Db, options: SeedPlanOptions = {}): PlanRow {
 
     db.prepare(
         `INSERT INTO ai_organize_plans (
-            id, job_id, status, scope, target_tree, assignments, diff_summary, backup_snapshot,
+            id, job_id, status, scope, target_tree, assignments, diff_summary, backup_snapshot, source_snapshot,
             phase, batches_done, batches_total, failed_batch_ids, needs_review_count,
             template_id, created_at, applied_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
         id,
         options.job_id ?? null,
@@ -226,6 +227,7 @@ export function seedPlan(db: Db, options: SeedPlanOptions = {}): PlanRow {
         serializeJson(options.assignments),
         serializeJson(options.diff_summary),
         serializeJson(options.backup_snapshot),
+        serializeJson(options.source_snapshot),
         options.phase ?? defaultPlanPhase(status),
         options.batches_done ?? 0,
         options.batches_total ?? 0,
@@ -236,7 +238,14 @@ export function seedPlan(db: Db, options: SeedPlanOptions = {}): PlanRow {
         appliedAt,
     );
 
-    return db.prepare('SELECT * FROM ai_organize_plans WHERE id = ?').get(id) as PlanRow;
+    let plan = db.prepare('SELECT * FROM ai_organize_plans WHERE id = ?').get(id) as PlanRow;
+    if (options.source_snapshot === undefined && plan.assignments && (plan.status === 'preview' || plan.status === 'applied')) {
+        const sourceSnapshot = buildPlanSourceSnapshot(db, plan);
+        db.prepare('UPDATE ai_organize_plans SET source_snapshot = ? WHERE id = ?').run(JSON.stringify(sourceSnapshot), id);
+        plan = db.prepare('SELECT * FROM ai_organize_plans WHERE id = ?').get(id) as PlanRow;
+    }
+
+    return plan;
 }
 
 export function seedSnapshot(db: Db, options: SeedSnapshotOptions): SnapshotRow {

@@ -1,6 +1,6 @@
 import type { Db } from './db';
 import type { Assignment, CategoryNode, PlanRow } from './ai-organize-plan';
-import { updatePlan, transitionStatus, getPlan } from './ai-organize-plan';
+import { updatePlan, transitionStatus, getPlan, buildPlanSourceSnapshot } from './ai-organize-plan';
 import { updateJob, jobQueue, publishJobEvent } from './jobs';
 import { getCategoryTree } from './category-service';
 import { createOpenAIClient, type AIClientFactory } from './ai-client';
@@ -272,6 +272,7 @@ ${categoriesText}
     assignments: JSON.stringify(allAssignments),
     failed_batch_ids: failedBatchIds.length ? JSON.stringify(failedBatchIds) : null,
     needs_review_count: needsReviewCount,
+    source_snapshot: JSON.stringify(buildPlanSourceSnapshot(db, plan, allAssignments)),
   });
 
   if (plan.job_id) {

@@ -403,6 +403,298 @@ describe('integration: ai organize route contracts', () => {
         expect(listTemplateSnapshots(ctx, crossTemplate.id)).toEqual([]);
     });
 
+    it('rejects stale apply when a preview bookmark was deleted before apply', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        const template = activateAiTestTemplate(ctx.db);
+        const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
+
+        expect(sourceCategory).toBeTruthy();
+
+        const [bookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Deleted Later', url: 'https://deleted-after-preview.example.test', categoryId: sourceCategory!.id },
+        ]);
+
+        const plan = seedPlan(ctx.db, {
+            status: 'preview',
+            template_id: template.id,
+            created_at: new Date(Date.now() - 60_000).toISOString(),
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '技术开发/前端', status: 'assigned' },
+            ],
+        });
+
+        ctx.db.prepare('DELETE FROM bookmarks WHERE id = ?').run(bookmarkId);
+
+        const applyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${plan.id}/apply`,
+            headers: authHeaders,
+        });
+
+        expect(applyResponse.statusCode).toBe(409);
+        expect(applyResponse.json()).toEqual({ error: 'plan is stale: bookmarks changed' });
+        expect(getPlan(ctx.db, plan.id)?.status).toBe('preview');
+    });
+
+    it('rejects stale apply when bookmark category drifted without changing updated_at', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        const template = activateAiTestTemplate(ctx.db);
+        const sourceCategory = getCategoryByPath(ctx.db, '技术开发/前端');
+        const driftedCategory = getCategoryByPath(ctx.db, '技术开发/后端');
+        const targetCategory = getCategoryByPath(ctx.db, '学习资源/文档');
+        const stableUpdatedAt = '2026-03-29T09:00:00.000Z';
+
+        expect(sourceCategory).toBeTruthy();
+        expect(driftedCategory).toBeTruthy();
+        expect(targetCategory).toBeTruthy();
+
+        const [bookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'State Drift Bookmark', url: 'https://state-drift.example.test', categoryId: sourceCategory!.id },
+        ]);
+        ctx.db.prepare('UPDATE bookmarks SET updated_at = ? WHERE id = ?').run(stableUpdatedAt, bookmarkId);
+
+        const plan = seedPlan(ctx.db, {
+            status: 'preview',
+            template_id: template.id,
+            created_at: new Date(Date.now() - 60_000).toISOString(),
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '学习资源/文档', status: 'assigned' },
+            ],
+        });
+
+        ctx.db.prepare('UPDATE bookmarks SET category_id = ?, updated_at = ? WHERE id = ?').run(
+            driftedCategory!.id,
+            stableUpdatedAt,
+            bookmarkId,
+        );
+
+        const applyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${plan.id}/apply`,
+            headers: authHeaders,
+        });
+
+        expect(applyResponse.statusCode).toBe(409);
+        expect(applyResponse.json()).toEqual({ error: 'plan is stale: bookmarks changed' });
+        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(driftedCategory!.id);
+    });
+
+    it('rejects stale apply when target categories changed instead of recreating them', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        const template = activateAiTestTemplate(ctx.db);
+        const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
+        const targetCategory = getCategoryByPath(ctx.db, '技术开发/前端');
+
+        expect(sourceCategory).toBeTruthy();
+        expect(targetCategory).toBeTruthy();
+
+        const [bookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Target Drift Bookmark', url: 'https://target-drift.example.test', categoryId: sourceCategory!.id },
+        ]);
+
+        const plan = seedPlan(ctx.db, {
+            status: 'preview',
+            template_id: template.id,
+            created_at: new Date(Date.now() - 60_000).toISOString(),
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '技术开发/前端', status: 'assigned' },
+            ],
+        });
+
+        ctx.db.prepare('UPDATE categories SET name = ? WHERE id = ?').run('技术开发/前端新版', targetCategory!.id);
+
+        const applyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${plan.id}/apply`,
+            headers: authHeaders,
+        });
+
+        const recreatedCount = ctx.db.prepare(
+            `SELECT COUNT(*) AS count FROM categories WHERE parent_id = ? AND (name = ? OR name = ?)`
+        ).get(targetCategory!.parent_id, '技术开发/前端', '前端') as { count: number };
+
+        expect(applyResponse.statusCode).toBe(409);
+        expect(applyResponse.json()).toEqual({ error: 'plan is stale: target categories changed' });
+        expect(recreatedCount.count).toBe(0);
+        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
+    });
+
+    it('rejects an older overlapping preview plan once a newer preview exists for the same bookmarks', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        const template = activateAiTestTemplate(ctx.db);
+        const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
+        const targetCategory = getCategoryByPath(ctx.db, '技术开发/前端');
+        const newerTargetCategory = getCategoryByPath(ctx.db, '技术开发/后端');
+
+        expect(sourceCategory).toBeTruthy();
+        expect(targetCategory).toBeTruthy();
+        expect(newerTargetCategory).toBeTruthy();
+
+        const [bookmarkId, keeperBookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Overlapping Bookmark', url: 'https://overlap.example.test', categoryId: sourceCategory!.id },
+            { title: 'Source Keeper', url: 'https://overlap-keeper.example.test', categoryId: sourceCategory!.id },
+        ]);
+
+        const olderPlan = seedPlan(ctx.db, {
+            status: 'preview',
+            template_id: template.id,
+            created_at: '2026-03-29T08:00:00.000Z',
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '技术开发/前端', status: 'assigned' },
+            ],
+        });
+
+        const newerPlan = seedPlan(ctx.db, {
+            status: 'preview',
+            template_id: template.id,
+            created_at: '2026-03-29T08:05:00.000Z',
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '技术开发/后端', status: 'assigned' },
+            ],
+        });
+
+        const olderApplyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${olderPlan.id}/apply`,
+            headers: authHeaders,
+        });
+
+        expect(olderApplyResponse.statusCode).toBe(409);
+        expect(olderApplyResponse.json()).toEqual({ error: 'plan is stale: newer overlapping plan exists' });
+        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
+        expect(getBookmarkCategoryId(ctx, keeperBookmarkId)).toBe(sourceCategory!.id);
+
+        const newerApplyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${newerPlan.id}/apply`,
+            headers: authHeaders,
+        });
+
+        expect(newerApplyResponse.statusCode).toBe(200);
+        expect(newerApplyResponse.json()).toMatchObject({
+            success: true,
+            needs_confirm: false,
+            applied_count: 1,
+            conflicts: [],
+            empty_categories: [],
+        });
+        expect(getPlan(ctx.db, newerPlan.id)?.status).toBe('applied');
+        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(newerTargetCategory!.id);
+        expect(getBookmarkCategoryId(ctx, keeperBookmarkId)).toBe(sourceCategory!.id);
+    });
+
+    it('rejects cross-template apply when the target template changed after preview generation', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        activateAiTestTemplate(ctx.db);
+        const sourceCategory = getCategoryByPath(ctx.db, '技术开发/前端');
+        expect(sourceCategory).toBeTruthy();
+
+        const crossTemplate = createTemplate(ctx.db, '跨模板漂移测试', [
+            { name: '工作', children: [{ name: '项目' }] },
+            { name: '学习', children: [{ name: '资料' }] },
+            { name: '生活', children: [{ name: '旅行' }] },
+        ]);
+
+        const [bookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Template Drift Bookmark', url: 'https://template-drift.example.test', categoryId: sourceCategory!.id },
+        ]);
+
+        const plan = seedPlan(ctx.db, {
+            status: 'preview',
+            template_id: crossTemplate.id,
+            created_at: new Date(Date.now() - 60_000).toISOString(),
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '工作/项目', status: 'assigned' },
+            ],
+        });
+
+        const updatedTree = [
+            { name: '工作', children: [{ name: '项目管理' }] },
+            { name: '学习', children: [{ name: '资料' }] },
+            { name: '生活', children: [{ name: '旅行' }] },
+        ];
+        ctx.db.prepare('UPDATE category_templates SET tree = ?, updated_at = ? WHERE id = ?').run(
+            JSON.stringify(updatedTree),
+            '2026-03-29T10:00:00.000Z',
+            crossTemplate.id,
+        );
+
+        const applyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${plan.id}/apply`,
+            headers: authHeaders,
+        });
+
+        expect(applyResponse.statusCode).toBe(409);
+        expect(applyResponse.json()).toEqual({ error: 'plan is stale: target template changed' });
+        expect(listTemplateSnapshots(ctx, crossTemplate.id)).toEqual([]);
+        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
+    });
+
+    it('rejects resolve when a conflicted bookmark was deleted after the first apply attempt', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        const template = activateAiTestTemplate(ctx.db);
+        const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
+
+        expect(sourceCategory).toBeTruthy();
+
+        const [bookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Deleted During Resolve', url: 'https://resolve-delete.example.test', categoryId: sourceCategory!.id },
+        ]);
+
+        const plan = seedPlan(ctx.db, {
+            status: 'preview',
+            template_id: template.id,
+            created_at: new Date(Date.now() - 60_000).toISOString(),
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '技术开发/后端', status: 'assigned' },
+            ],
+        });
+
+        ctx.db.prepare('UPDATE bookmarks SET updated_at = ? WHERE id = ?').run(new Date().toISOString(), bookmarkId);
+
+        const applyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${plan.id}/apply`,
+            headers: authHeaders,
+        });
+
+        expect(applyResponse.statusCode).toBe(200);
+        expect(applyResponse.json()).toMatchObject({
+            success: true,
+            needs_confirm: true,
+            applied_count: 0,
+        });
+        expect(applyResponse.json().conflicts).toHaveLength(1);
+
+        ctx.db.prepare('DELETE FROM bookmarks WHERE id = ?').run(bookmarkId);
+
+        const resolveResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${plan.id}/apply/resolve`,
+            headers: authHeaders,
+            payload: {
+                conflicts: [{ bookmark_id: bookmarkId, action: 'override' }],
+                empty_categories: [],
+            },
+        });
+
+        expect(resolveResponse.statusCode).toBe(409);
+        expect(resolveResponse.json()).toEqual({ error: 'plan is stale: bookmarks changed' });
+    });
+
     it('covers retry with the configured batch size default', async () => {
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
             jsonCompletion({ assignments: buildAssignments(25, '技术开发/前端') }),

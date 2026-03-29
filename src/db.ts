@@ -108,6 +108,7 @@ export function openDb(dbPath: string): Db {
       assignments TEXT,
       diff_summary TEXT,
       backup_snapshot TEXT,
+      source_snapshot TEXT,
       phase TEXT,
       batches_done INTEGER NOT NULL DEFAULT 0,
       batches_total INTEGER NOT NULL DEFAULT 0,
@@ -217,6 +218,9 @@ export function openDb(dbPath: string): Db {
   const planColumns = db.prepare("PRAGMA table_info(ai_organize_plans)").all() as Array<{ name: string }>;
   if (!planColumns.some(col => col.name === 'template_id')) {
     db.exec(`ALTER TABLE ai_organize_plans ADD COLUMN template_id INTEGER REFERENCES category_templates(id)`);
+  }
+  if (!planColumns.some(col => col.name === 'source_snapshot')) {
+    db.exec(`ALTER TABLE ai_organize_plans ADD COLUMN source_snapshot TEXT`);
   }
 
   // 迁移：修正预置模板 tree JSON 中含 / 的子分类名
