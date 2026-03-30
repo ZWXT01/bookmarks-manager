@@ -165,9 +165,24 @@ describe('integration: ops routes', () => {
         });
 
         expect(listResponse.statusCode).toBe(200);
-        expect(listResponse.json().templates.length).toBeGreaterThanOrEqual(4);
-        const presetTemplate = listResponse.json().templates.find((template: any) => template.type === 'preset');
+        const templates = listResponse.json().templates as Array<any>;
+        expect(templates.length).toBeGreaterThanOrEqual(8);
+        const presetTemplate = templates.find((template: any) => template.type === 'preset');
         expect(presetTemplate).toBeTruthy();
+        expect(
+            templates
+                .filter((template: any) => template.type === 'preset')
+                .map((template: any) => template.name),
+        ).toEqual(expect.arrayContaining([
+            '综合通用版',
+            '开发者版',
+            '生活娱乐版',
+            '极简版',
+            '产品运营版',
+            '内容创作版',
+            '研究学习版',
+            '收藏归档版',
+        ]));
 
         const createResponse = await ctx.app.inject({
             method: 'POST',

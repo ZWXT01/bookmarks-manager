@@ -2061,9 +2061,12 @@ function bookmarkApp() {
       }
     },
 
-    async applyTemplate(id) {
-      if (this.templateApplying) return;
-      this.templateApplying = true;
+    async applyTemplate(id, options = {}) {
+      const managed = Boolean(options.managed);
+      if (!managed && this.templateApplying) return false;
+      if (!managed) {
+        this.templateApplying = true;
+      }
       try {
         const res = await fetch(`/api/templates/${id}/apply`, {
           method: 'POST', headers: { 'Accept': 'application/json' },
@@ -2075,20 +2078,26 @@ function bookmarkApp() {
           } else {
             this.showToast(data?.error || '应用模板失败', 'error');
           }
-          return;
+          return false;
         }
         await this.loadTemplates();
         await this.loadCategories();
         await this.loadBookmarks();
-        this.showToast('模板已应用', 'success');
+        if (!options.silentSuccess) {
+          this.showToast(options.successMessage || '模板已应用', 'success');
+        }
+        return true;
       } catch {
         this.showToast('应用模板失败', 'error');
+        return false;
       } finally {
-        this.templateApplying = false;
+        if (!managed) {
+          this.templateApplying = false;
+        }
       }
     },
 
-    async createTemplate(name, tree) {
+    async createTemplate(name, tree, options = {}) {
       try {
         const res = await fetch('/api/templates', {
           method: 'POST',
@@ -2101,7 +2110,9 @@ function bookmarkApp() {
           return null;
         }
         await this.loadTemplates();
-        this.showToast('模板已创建', 'success');
+        if (!options.silentSuccess) {
+          this.showToast(options.successMessage || '模板已创建', 'success');
+        }
         return data.template || null;
       } catch {
         this.showToast('创建模板失败', 'error');
@@ -2204,7 +2215,7 @@ function bookmarkApp() {
           return;
         }
         this.templateEditTarget = null;
-        this.templateEditName = data.template.name + ' (自定义)';
+        this.templateEditName = this.buildCustomTemplateCopyName(data.template.name);
         this.templateEditTree = (data.template.tree || []).map(n => ({
           name: n.name,
           children: (n.children || []).map(c => ({ name: c.name })),
@@ -2218,6 +2229,63 @@ function bookmarkApp() {
         this.showTemplateEditModal = true;
       } catch {
         this.showToast('加载模板详情失败', 'error');
+      }
+    },
+
+    buildCustomTemplateCopyName(baseName) {
+      const normalizedBase = (baseName || '').trim().replace(/\s*(?:（自定义(?:\s+\d+)?）|\(自定义(?:\s+\d+)?\))\s*$/, '');
+      const seedName = `${normalizedBase || '模板'}（自定义）`;
+      const names = new Set((this.templates || []).map((tpl) => tpl.name));
+      if (!names.has(seedName)) return seedName;
+
+      let index = 2;
+      while (names.has(`${seedName} ${index}`)) {
+        index += 1;
+      }
+      return `${seedName} ${index}`;
+    },
+
+    async instantiatePresetTemplate(tplId, options = {}) {
+      const applyAfterCreate = Boolean(options.applyAfterCreate);
+      if (this.templateApplying) return null;
+
+      this.templateApplying = true;
+      try {
+        const detailResponse = await fetch(`/api/templates/${tplId}`, { headers: { 'Accept': 'application/json' } });
+        const detailData = await detailResponse.json().catch(() => null);
+        if (!detailResponse.ok || !detailData?.template) {
+          this.showToast(detailData?.error || '加载模板详情失败', 'error');
+          return null;
+        }
+
+        const templateName = this.buildCustomTemplateCopyName(detailData.template.name);
+        const templateTree = (detailData.template.tree || []).map((node) => ({
+          name: node.name,
+          children: (node.children || []).map((child) => ({ name: child.name })),
+        }));
+        const created = await this.createTemplate(templateName, templateTree, {
+          silentSuccess: true,
+        });
+        if (!created) return null;
+
+        if (applyAfterCreate) {
+          const applied = await this.applyTemplate(created.id, {
+            managed: true,
+            silentSuccess: true,
+          });
+          if (!applied) return null;
+          this.showTemplateSelectModal = false;
+          this.showToast(`已基于「${detailData.template.name}」创建并应用自定义模板`, 'success');
+        } else {
+          this.showToast(`已基于「${detailData.template.name}」创建自定义副本`, 'success');
+        }
+
+        return created;
+      } catch {
+        this.showToast(applyAfterCreate ? '创建并应用模板失败' : '创建模板副本失败', 'error');
+        return null;
+      } finally {
+        this.templateApplying = false;
       }
     },
 
@@ -2258,8 +2326,7 @@ function bookmarkApp() {
             name: n.name,
             children: (n.children || []).map(c => ({ name: c.name })),
           }));
-          const baseName = data.template.name.replace(/\s*\(自定义\)\s*$/, '');
-          this.templateEditName = baseName + ' (自定义)';
+          this.templateEditName = this.buildCustomTemplateCopyName(data.template.name);
         }
       } catch {
         this.showToast('加载模板失败', 'error');

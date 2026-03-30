@@ -93,6 +93,11 @@ describe('integration: page assets', () => {
         expect(response.statusCode).toBe(200);
         expect(response.body).toContain('data-testid="template-select-modal"');
         expect(response.body).toContain('data-testid="template-select-panel"');
+        expect(response.body).toContain('data-testid="template-tab-custom"');
+        expect(response.body).toContain('data-testid="template-tab-preset"');
+        expect(response.body).toContain('data-testid="preset-template-card"');
+        expect(response.body).toContain('data-testid="copy-preset-template-button"');
+        expect(response.body).toContain('data-testid="use-preset-template-button"');
         expect(response.body).toContain('data-testid="template-edit-modal"');
         expect(response.body).toContain('data-testid="template-edit-panel"');
         expect(response.body).toContain('data-testid="template-edit-body"');

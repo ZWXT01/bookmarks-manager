@@ -243,9 +243,6 @@ export function openDb(dbPath: string): Db {
 }
 
 function seedPresetTemplates(db: Db): void {
-  const count = (db.prepare('SELECT COUNT(*) AS c FROM category_templates WHERE type = ?').get('preset') as { c: number }).c;
-  if (count >= 4) return;
-
   const now = new Date().toISOString();
   const stmt = db.prepare(
     `INSERT OR IGNORE INTO category_templates (name, type, tree, is_active, created_at, updated_at)
@@ -311,7 +308,50 @@ function seedPresetTemplates(db: Db): void {
         { name: '其他', children: [{ name: '临时' }, { name: '收藏' }] },
       ],
     },
+    {
+      name: '产品运营版',
+      tree: [
+        { name: '市场洞察', children: [{ name: '行业资讯' }, { name: '竞品监测' }, { name: '用户调研' }, { name: '数据报告' }] },
+        { name: '内容运营', children: [{ name: '选题策划' }, { name: '渠道分发' }, { name: '增长案例' }, { name: '社区运营' }] },
+        { name: '产品设计', children: [{ name: '需求池' }, { name: '原型交互' }, { name: '体验研究' }, { name: '设计系统' }] },
+        { name: '商业化', children: [{ name: '定价策略' }, { name: '转化优化' }, { name: '广告投放' }, { name: '销售协同' }] },
+        { name: '项目协作', children: [{ name: 'Roadmap' }, { name: '项目管理' }, { name: '会议纪要' }, { name: '资源素材' }] },
+      ],
+    },
+    {
+      name: '内容创作版',
+      tree: [
+        { name: '选题灵感', children: [{ name: '热点追踪' }, { name: '读书摘录' }, { name: '采访素材' }, { name: '案例拆解' }] },
+        { name: '写作与脚本', children: [{ name: '长文写作' }, { name: '视频脚本' }, { name: '标题优化' }, { name: '发布清单' }] },
+        { name: '视觉制作', children: [{ name: '封面排版' }, { name: '图片素材' }, { name: '视频剪辑' }, { name: '动效参考' }] },
+        { name: '发布运营', children: [{ name: '平台规则' }, { name: '发布时间' }, { name: '数据复盘' }, { name: '商单合作' }] },
+        { name: '品牌资产', children: [{ name: '风格指南' }, { name: '作品集' }, { name: '模板组件' }, { name: '合作资源' }] },
+      ],
+    },
+    {
+      name: '研究学习版',
+      tree: [
+        { name: '研究方向', children: [{ name: '主题追踪' }, { name: '关键词' }, { name: '研究问题' }, { name: '假设框架' }] },
+        { name: '学术资料', children: [{ name: '论文检索' }, { name: '期刊会议' }, { name: '开源数据' }, { name: '引用管理' }] },
+        { name: '课程学习', children: [{ name: '在线课程' }, { name: '公开课' }, { name: '学习笔记' }, { name: '练习题' }] },
+        { name: '方法工具', children: [{ name: '实验设计' }, { name: '调研方法' }, { name: '数据分析' }, { name: '可视化' }] },
+        { name: '输出沉淀', children: [{ name: '读书笔记' }, { name: '文献综述' }, { name: '复盘总结' }, { name: '分享材料' }] },
+      ],
+    },
+    {
+      name: '收藏归档版',
+      tree: [
+        { name: '待处理', children: [{ name: '稍后阅读' }, { name: '待整理' }, { name: '待下载' }, { name: '待核实' }] },
+        { name: '长期参考', children: [{ name: '常用工具' }, { name: '官方文档' }, { name: '案例库' }, { name: '模板库' }] },
+        { name: '项目归档', children: [{ name: '已完成' }, { name: '历史版本' }, { name: '交付物' }, { name: '决策记录' }] },
+        { name: '生活资料', children: [{ name: '账单合同' }, { name: '证件办事' }, { name: '出行住宿' }, { name: '健康记录' }] },
+        { name: '娱乐收藏', children: [{ name: '片单' }, { name: '音乐单' }, { name: '游戏清单' }, { name: '灵感收藏' }] },
+      ],
+    },
   ];
+
+  const count = (db.prepare('SELECT COUNT(*) AS c FROM category_templates WHERE type = ?').get('preset') as { c: number }).c;
+  if (count >= presets.length) return;
 
   for (const p of presets) {
     stmt.run(p.name, JSON.stringify(p.tree), now, now, p.name);
