@@ -33,7 +33,7 @@
 
 | 项目 | 证据 | 结果 |
 |---|---|---|
-| 自动化测试 | `npm test` 于 2026-03-30 通过，`21` 个测试文件、`162` 条测试全部通过。 | 通过 |
+| 自动化测试 | `npm test` 于 2026-03-30 通过，`21` 个测试文件、`163` 条测试全部通过。 | 通过 |
 | 构建 | `npm run build` 于 2026-03-30 通过。 | 通过 |
 | `R1-DOC-04` 浏览器补验收 | 本地临时环境 `http://127.0.0.1:45577` 通过内置 Playwright MCP 访问 `/login` 与 `/jobs`；标题分别为“登录 - 书签管理器”和“任务列表 - 书签管理器”，`warning/error` 计数为 `0`。 | 通过 |
 | MCP 关键业务旅程 | [11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md) 已覆盖登录、首页、设置、模板、快照、备份、任务 / SSE 与 mock AI UI 联动。 | 通过 |
@@ -42,6 +42,7 @@
 | `/api/ai/test` 瞬时重试与可操作诊断 | [26-ai-test-retry-validation.md](./26-ai-test-retry-validation.md) 已证明本地 timeout-retry 合同成立；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 又证明默认 Grok 源下 `/api/ai/test` 已恢复 `200`。 | 通过 |
 | provider 直连诊断 | [27-ai-provider-diagnostic-validation.md](./27-ai-provider-diagnostic-validation.md) 曾把问题收口到 chat completion 链路；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 又证明修正后的默认 Grok 源在 `/models` 与 `/chat/completions` 上都返回 `200`，且 chat completion 为 `text/event-stream`。 | 通过 |
 | 设置页 AI 诊断 UI | [28-settings-ai-diagnostic-ui-validation.md](./28-settings-ai-diagnostic-ui-validation.md) 已证明设置页在真实浏览器中能同时展示成功态和 `models_ok=true` 的 timeout 诊断态，操作员不必再只靠 toast 或 network 面板。 | 通过 |
+| 多待应用 organize plan 合同 | [30-organize-apply-contract-validation.md](./30-organize-apply-contract-validation.md) 已证明同模板不重叠可直接 apply、同模板重叠进入显式冲突解决、跨模板继续按模板快照隔离 apply。 | 通过 |
 | 单条 classify 语义择优 | [22-single-classify-semantic-validation.md](./22-single-classify-semantic-validation.md) 已补齐本地语义 rerank、样本回归和 `description` 上下文。 | 通过 |
 | 单条 classify 样本集 gate | [23-single-classify-sample-gate-validation.md](./23-single-classify-sample-gate-validation.md) 已固化固定样本集、复验脚本和 `npm test` 自动化入口。 | 通过 |
 | 单条 classify focused H1 replay | [24-single-classify-h1-replay-validation.md](./24-single-classify-h1-replay-validation.md) 记录了旧 provider 的 timeout 基线；[25-single-classify-timeout-fallback-validation.md](./25-single-classify-timeout-fallback-validation.md) 证明过 timeout fallback；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 则证明默认 Grok 源下 focused replay 已恢复到 `1/1`。 | 通过 |
@@ -51,17 +52,19 @@
 - 代码侧与离线 gate 仍然闭环，可交接给后续维护者继续在现有 taxonomy / semantic contract 上维护。
 - `R1-DOC-04` 的历史阻塞已解除，文档 / 页面漂移不再是发布阻塞项。
 - 当前风险台账中已无 `open + blocked` 的遗留项，`RISK-001` 也已在默认 Grok provider 验证源下关闭。
+- 多待应用 organize plan 现在不再依赖“只有最新 plan 能应用”的隐式规则；同模板不重叠、同模板重叠、跨模板三类 apply 路径都已有明确合同和自动化证明。
 - 单条 `/api/ai/classify` 已从“只保证模板内输出”继续收口到“对常见文档 / 教程 / 示例 / 社区 host 场景也有本地 deterministic 语义择优”。
 - 单条 `/api/ai/classify` 现在还具备固定语义样本集与 focused H1 replay 脚本；模板调整或 provider / model 切换后不再需要靠零散手工样本复测。
 - 默认 provider 验证源现已固定为本地 `validation_grok_*`，且脚本默认走 `grok`；若要验证当前应用设置而不是默认 Grok，必须显式传 `--provider current`。
 - Grok 当前以 `text/event-stream` 返回 completion；AI client、single classify 与 organize 现在都已兼容这类 SSE `delta.content` 响应，并会清理 `<think>...</think>` 噪音。
 - 设置页仍会把 AI 诊断直接展示给操作员；当前主要注意事项已从“默认 provider 不稳定”切换为“若手工切 provider / endpoint，必须重新按当前源复验”。
 
-## 4. 保留风险
+## 4. 已收口风险
 
 | risk_id | 状态 | 说明 |
 |---|---|---|
 | `RISK-001` | resolved | 默认 Grok provider 验证源已固定到 `validation_grok_*`，真实 direct diagnose、focused H1 和 full H1 都已恢复绿色；后续只需在手工切换 provider / endpoint 时显式传 `--provider current` 重新复验。 |
+| `RISK-017` | resolved | organize apply 合同已明文化并进入自动化：同模板不重叠直接 apply，同模板重叠必须显式 resolve / needs_review，跨模板继续按模板快照隔离 apply。 |
 
 ## 5. 交接说明
 
