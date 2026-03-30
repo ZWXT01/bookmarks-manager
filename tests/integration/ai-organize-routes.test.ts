@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { getPlan } from '../../src/ai-organize-plan';
+import { createPlan, getPlan, transitionStatus, updatePlan } from '../../src/ai-organize-plan';
 import { getCategoryByPath } from '../../src/category-service';
 import { getJob, jobQueue } from '../../src/jobs';
 import { createTemplate, updateTemplate } from '../../src/template-service';
@@ -956,6 +956,63 @@ describe('integration: ai organize route contracts', () => {
             skipped: 0,
         });
         expect(harness.calls).toHaveLength(1);
+    });
+
+    it('retries against the frozen original bookmark scope instead of refreshed live all scope', async () => {
+        const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
+            jsonCompletion({ assignments: buildAssignments(2, '技术开发/前端') }),
+        ]);
+        seedAISettings(appCtx.db, { batchSize: 10 });
+        const template = activateAiTestTemplate(appCtx.db);
+
+        const originalBookmarkIds = seedBookmarks(appCtx.db, [
+            { title: 'Frozen Scope Retry 1', url: 'https://frozen-retry-1.example.test' },
+            { title: 'Frozen Scope Retry 2', url: 'https://frozen-retry-2.example.test' },
+        ]);
+
+        const failedPlan = createPlan(appCtx.db, 'all', template.id);
+        transitionStatus(appCtx.db, failedPlan.id, 'canceled');
+        updatePlan(appCtx.db, failedPlan.id, { status: 'failed', phase: null });
+
+        const [newBookmarkId] = seedBookmarks(appCtx.db, [
+            { title: 'Late Added Bookmark', url: 'https://late-added.example.test' },
+        ]);
+
+        const retryResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${failedPlan.id}/retry`,
+            headers: authHeaders,
+        });
+
+        expect(retryResponse.statusCode).toBe(200);
+        expect(retryResponse.json()).toEqual({ success: true, status: 'assigning' });
+        await waitForCondition(() => getPlan(appCtx.db, failedPlan.id)?.status === 'preview');
+
+        const retriedPlan = getPlan(appCtx.db, failedPlan.id);
+        const assignments = retriedPlan?.assignments ? JSON.parse(retriedPlan.assignments) as Array<{ bookmark_id: number }> : [];
+        const sourceSnapshot = retriedPlan?.source_snapshot ? JSON.parse(retriedPlan.source_snapshot) as {
+            scope_bookmark_ids: number[];
+            scope_frozen: boolean;
+        } : null;
+
+        expect(assignments.map((item) => item.bookmark_id)).toEqual(originalBookmarkIds);
+        expect(assignments.some((item) => item.bookmark_id === newBookmarkId)).toBe(false);
+        expect(sourceSnapshot).toMatchObject({
+            scope_bookmark_ids: originalBookmarkIds,
+            scope_frozen: true,
+        });
+        expect(getJob(appCtx.db, retriedPlan!.job_id!)).toMatchObject({
+            total: 2,
+            processed: 2,
+            inserted: 2,
+            skipped: 0,
+            status: 'done',
+        });
+
+        const prompt = harness.calls[0].messages[1].content as string;
+        expect(prompt).toContain('https://frozen-retry-1.example.test');
+        expect(prompt).toContain('https://frozen-retry-2.example.test');
+        expect(prompt.includes('https://late-added.example.test')).toBe(false);
     });
 
     it('rejects starting a second organize plan while another plan is assigning and returns activePlanId', async () => {

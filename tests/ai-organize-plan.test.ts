@@ -4,6 +4,7 @@ import type { Db } from '../src/db';
 import {
   createPlan,
   getPlan,
+  getPlanScopeBookmarkIds,
   updatePlan,
   deletePlan,
   transitionStatus,
@@ -12,6 +13,7 @@ import {
   recoverStalePlans,
 } from '../src/ai-organize-plan';
 import { createJob, getJob } from '../src/jobs';
+import { seedBookmarks } from './helpers/factories';
 
 type LogRow = { plan_id: string; from_status: string | null; to_status: string; reason: string; created_at: string };
 
@@ -32,6 +34,23 @@ describe('ai-organize-plan', () => {
   afterEach(() => cleanup());
 
   describe('createPlan timeout cleanup', () => {
+    it('should freeze the initial live scope bookmark ids in source_snapshot', () => {
+      const bookmarkIds = seedBookmarks(db, [
+        { title: 'Frozen Scope 1', url: 'https://frozen-scope-1.example.test' },
+        { title: 'Frozen Scope 2', url: 'https://frozen-scope-2.example.test' },
+      ]);
+
+      const plan = createPlan(db, 'all');
+      const snapshot = JSON.parse(getPlan(db, plan.id)!.source_snapshot!) as {
+        scope_bookmark_ids: number[];
+        scope_frozen: boolean;
+      };
+
+      expect(snapshot.scope_frozen).toBe(true);
+      expect(snapshot.scope_bookmark_ids).toEqual(bookmarkIds);
+      expect(getPlanScopeBookmarkIds(db, getPlan(db, plan.id)!)).toEqual(bookmarkIds);
+    });
+
     it('should clean up designing plan older than 2h and allow new plan', () => {
       const old = createPlan(db, 'all');
       // backdate created_at to 2h+1ms ago

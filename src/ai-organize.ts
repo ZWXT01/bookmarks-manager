@@ -1,6 +1,6 @@
 import type { Db } from './db';
 import type { Assignment, CategoryNode, PlanRow } from './ai-organize-plan';
-import { updatePlan, transitionStatus, getPlan, buildPlanSourceSnapshot } from './ai-organize-plan';
+import { updatePlan, transitionStatus, getPlan, buildPlanSourceSnapshot, getPlanScopeBookmarkIds } from './ai-organize-plan';
 import { updateJob, jobQueue, publishJobEvent } from './jobs';
 import { getCategoryTree } from './category-service';
 import { createOpenAIClient, extractAICompletionText, type AIClientFactory } from './ai-client';
@@ -140,23 +140,16 @@ export async function assignBookmarks(
   const validPaths = buildValidPathsFromTree(targetTree);
   const categoryList = buildCategoryListFromTree(targetTree);
 
-  // resolve scope: support bookmark_ids, uncategorized, category:N, or all
-  let whereClause = '';
-  if (plan.scope === 'uncategorized') {
-    whereClause = 'WHERE b.category_id IS NULL';
-  } else if (plan.scope.startsWith('category:')) {
-    const catId = parseInt(plan.scope.split(':')[1]);
-    if (!isNaN(catId)) whereClause = `WHERE b.category_id = ${catId}`;
-  } else if (plan.scope.startsWith('ids:')) {
-    const ids = plan.scope.slice(4).split(',').map(Number).filter(n => Number.isInteger(n) && n > 0);
-    if (ids.length) whereClause = `WHERE b.id IN (${ids.join(',')})`;
-  }
-
-  const bookmarks = db.prepare(`
-    SELECT b.id, b.url, b.title, c.name AS current_category
-    FROM bookmarks b LEFT JOIN categories c ON c.id = b.category_id
-    ${whereClause} ORDER BY b.id
-  `).all() as BookmarkBatch[];
+  const scopeBookmarkIds = getPlanScopeBookmarkIds(db, planSnapshot);
+  const bookmarks = scopeBookmarkIds.length > 0
+    ? db.prepare(`
+      SELECT b.id, b.url, b.title, c.name AS current_category
+      FROM bookmarks b
+      LEFT JOIN categories c ON c.id = b.category_id
+      WHERE b.id IN (${scopeBookmarkIds.map(() => '?').join(',')})
+      ORDER BY b.id
+    `).all(...scopeBookmarkIds) as BookmarkBatch[]
+    : [];
 
   const batches: BookmarkBatch[][] = [];
   for (let i = 0; i < bookmarks.length; i += batchSize) batches.push(bookmarks.slice(i, i + batchSize));

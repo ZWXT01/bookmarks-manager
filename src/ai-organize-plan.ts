@@ -66,6 +66,8 @@ export interface PlanSourceSnapshot {
   bookmark_states: PlanBookmarkSnapshot[];
   live_target_categories: PlanLiveTargetSnapshot[];
   template: PlanTemplateSnapshot | null;
+  scope_bookmark_ids: number[];
+  scope_frozen: boolean;
 }
 
 export class PlanError extends Error {
@@ -219,6 +221,51 @@ function getBookmarkStates(db: Db, bookmarkIds: number[]): Map<number, BookmarkS
   return new Map(rows.map(row => [row.id, row]));
 }
 
+function parseScopeBookmarkIds(value: unknown): number[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<number>();
+  const ids: number[] = [];
+  for (const item of value) {
+    const id = Number(item);
+    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+  }
+  return ids;
+}
+
+function parseScopeIds(scope: string): number[] {
+  return parseScopeBookmarkIds(scope.slice(4).split(','));
+}
+
+function resolveScopeBookmarkIds(db: Db, rawScope: string): number[] {
+  const scope = rawScope.trim() || 'all';
+  if (scope.startsWith('ids:')) return parseScopeIds(scope);
+  if (scope === 'uncategorized') {
+    return db.prepare(`
+      SELECT id
+      FROM bookmarks
+      WHERE category_id IS NULL
+      ORDER BY id
+    `).all().map((row) => Number((row as { id: number }).id)).filter((id) => Number.isInteger(id) && id > 0);
+  }
+  if (scope.startsWith('category:')) {
+    const categoryId = Number(scope.split(':')[1]);
+    if (!Number.isInteger(categoryId) || categoryId <= 0) return [];
+    return db.prepare(`
+      SELECT id
+      FROM bookmarks
+      WHERE category_id = ?
+      ORDER BY id
+    `).all(categoryId).map((row) => Number((row as { id: number }).id)).filter((id) => Number.isInteger(id) && id > 0);
+  }
+  return db.prepare(`
+    SELECT id
+    FROM bookmarks
+    ORDER BY id
+  `).all().map((row) => Number((row as { id: number }).id)).filter((id) => Number.isInteger(id) && id > 0);
+}
+
 function parseSourceSnapshot(raw: string | null): PlanSourceSnapshot | null {
   const value = safeJson<Record<string, unknown> | null>(raw, null);
   if (!value || typeof value !== 'object') return null;
@@ -261,10 +308,16 @@ function parseSourceSnapshot(raw: string | null): PlanSourceSnapshot | null {
     }
   }
 
+  const hasScopeBookmarkIds = Array.isArray(value.scope_bookmark_ids);
+  const scopeBookmarkIds = parseScopeBookmarkIds(value.scope_bookmark_ids);
+  const scopeFrozen = value.scope_frozen === true || hasScopeBookmarkIds;
+
   return {
     bookmark_states: bookmarkStates,
     live_target_categories: liveTargetCategories,
     template,
+    scope_bookmark_ids: scopeBookmarkIds,
+    scope_frozen: scopeFrozen,
   };
 }
 
@@ -373,7 +426,7 @@ function ensureAssigningSlotAvailable(db: Db, excludePlanId?: string | null): vo
 
 export function buildPlanSourceSnapshot(
   db: Db,
-  plan: Pick<PlanRow, 'template_id' | 'target_tree' | 'assignments' | 'source_snapshot'>,
+  plan: Pick<PlanRow, 'scope' | 'template_id' | 'target_tree' | 'assignments' | 'source_snapshot'>,
   assignmentsInput?: Assignment[],
 ): PlanSourceSnapshot {
   const assignments = assignmentsInput ?? parseAssignments(plan.assignments);
@@ -400,6 +453,9 @@ export function buildPlanSourceSnapshot(
 
   const existingSnapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
   const existingTemplateSnapshot = existingSnapshot?.template;
+  const scopeBookmarkIds = existingSnapshot?.scope_frozen
+    ? existingSnapshot.scope_bookmark_ids
+    : (bookmarkIds.length > 0 ? bookmarkIds : resolveScopeBookmarkIds(db, plan.scope));
   const template = existingTemplateSnapshot && existingTemplateSnapshot.template_id === plan.template_id
     ? existingTemplateSnapshot
     : buildTemplateSnapshot(db, plan.template_id);
@@ -408,7 +464,32 @@ export function buildPlanSourceSnapshot(
     bookmark_states: bookmarkSnapshots,
     live_target_categories: liveTargetCategories,
     template,
+    scope_bookmark_ids: scopeBookmarkIds,
+    scope_frozen: true,
   };
+}
+
+export function getPlanScopeBookmarkIds(db: Db, plan: Pick<PlanRow, 'scope' | 'source_snapshot'>): number[] {
+  const snapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
+  if (snapshot?.scope_frozen) return snapshot.scope_bookmark_ids;
+  return resolveScopeBookmarkIds(db, plan.scope);
+}
+
+export function ensurePlanScopeSnapshot(db: Db, planId: string): PlanRow {
+  const plan = getPlan(db, planId);
+  if (!plan) throw new PlanError(404, 'plan not found');
+
+  const existingSnapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
+  if (existingSnapshot?.scope_frozen) return plan;
+
+  const sourceSnapshot: PlanSourceSnapshot = {
+    bookmark_states: existingSnapshot?.bookmark_states ?? [],
+    live_target_categories: existingSnapshot?.live_target_categories ?? [],
+    template: existingSnapshot?.template ?? buildTemplateSnapshot(db, plan.template_id),
+    scope_bookmark_ids: resolveScopeBookmarkIds(db, plan.scope),
+    scope_frozen: true,
+  };
+  return updatePlan(db, planId, { source_snapshot: JSON.stringify(sourceSnapshot) });
 }
 
 function requireSourceSnapshot(plan: PlanRow): PlanSourceSnapshot {
@@ -589,6 +670,7 @@ export function createPlan(db: Db, scope: string, templateId?: number | null): P
   return db.transaction(() => {
     cleanupExpiredSnapshots(db);
     ensureAssigningSlotAvailable(db);
+    const normalizedScope = scope.trim() || 'all';
 
     // Use provided templateId or fallback to active template
     let targetTemplateId = templateId;
@@ -604,9 +686,11 @@ export function createPlan(db: Db, scope: string, templateId?: number | null): P
       bookmark_states: [],
       live_target_categories: [],
       template: buildTemplateSnapshot(db, targetTemplateId),
+      scope_bookmark_ids: resolveScopeBookmarkIds(db, normalizedScope),
+      scope_frozen: true,
     };
     db.prepare(`INSERT INTO ai_organize_plans (id, status, scope, phase, template_id, batches_done, batches_total, needs_review_count, created_at)
-      VALUES (?, 'assigning', ?, 'assigning', ?, 0, 0, 0, ?)`).run(id, scope.trim() || 'all', targetTemplateId, now);
+      VALUES (?, 'assigning', ?, 'assigning', ?, 0, 0, 0, ?)`).run(id, normalizedScope, targetTemplateId, now);
     updatePlan(db, id, {
       target_tree: JSON.stringify(initialTargetTree),
       source_snapshot: JSON.stringify(initialSourceSnapshot),
@@ -659,6 +743,7 @@ export function transitionStatus(db: Db, planId: string, target: PlanStatus, rea
     const patch: Partial<PlanRow> = { status: target };
     if (target === 'assigning') {
       ensureAssigningSlotAvailable(db, planId);
+      ensurePlanScopeSnapshot(db, planId);
       const job = createJob(db, 'ai_organize', `AI organize plan ${planId}`, 0);
       patch.job_id = job.id;
       patch.phase = 'assigning';
