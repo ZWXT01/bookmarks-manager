@@ -40,11 +40,21 @@
         success: { icon: '✓', title: '操作完成' },
         error: { icon: '!', title: '需要处理' },
     };
+    const CAPTURE_BRIDGE_TIMEOUT_MS = 1200;
+    const SNAPSHOT_CAPTURE_TIMEOUT_MS = 90000;
+    const CAPTURE_BRIDGE_FILES = [
+        'lib/single-file.js',
+        'lib/single-file-bootstrap.js',
+        'lib/single-file-frames.js',
+        'content.js',
+    ];
 
     let categories = [];
     let isConnected = false;
     let lastConnectedAt = 0;
     let hideStatusTimer = null;
+    let activeActionMode = null;
+    const captureBridgeReadyTabs = new Set();
 
     function getRuntimeTestState() {
         const state = window.__BOOKMARKS_MANAGER_RUNTIME_TEST__;
@@ -62,6 +72,12 @@
         } catch (_error) {
             return serverUrl.replace(/^https?:\/\//, '') || '未配置服务器';
         }
+    }
+
+    function getRuntimeCaptureOptions() {
+        const runtimeState = getRuntimeTestState();
+        const options = runtimeState && runtimeState.captureOptions;
+        return options && typeof options === 'object' ? options : {};
     }
 
     function setSettingsOpen(open) {
@@ -199,6 +215,33 @@
         if (subtitleNode) subtitleNode.textContent = subtitle;
     }
 
+    function describeAction(mode) {
+        if (mode === 'save') return '正在保存书签';
+        if (mode === 'snapshot') return '正在生成快照';
+        return '正在收藏并存档';
+    }
+
+    function beginAction(mode) {
+        if (activeActionMode) {
+            showStatus(`${describeAction(activeActionMode)}，请等待当前操作完成`, 'loading');
+            return false;
+        }
+
+        activeActionMode = mode;
+        setActionState(mode);
+        return true;
+    }
+
+    function finishAction(mode) {
+        if (activeActionMode === mode) {
+            activeActionMode = null;
+        }
+
+        if (!activeActionMode) {
+            setActionState(null);
+        }
+    }
+
     function setActionState(mode) {
         ACTION_BUTTONS.forEach((button) => {
             const copy = BUTTON_COPY.get(button);
@@ -297,6 +340,10 @@
             }
         }
 
+        if (runtimeState && runtimeState.disableActiveTabFallback) {
+            return null;
+        }
+
         const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
         return tab || null;
     }
@@ -309,6 +356,9 @@
             if (tab) {
                 titleInput.value = tab.title || runtimeState?.targetTitle || '';
                 urlInput.value = tab.url || runtimeState?.targetUrl || '';
+            } else if (runtimeState) {
+                titleInput.value = runtimeState.targetTitle || '';
+                urlInput.value = runtimeState.targetUrl || '';
             }
         } catch (_error) {
             if (runtimeState) {
@@ -325,6 +375,126 @@
             'Content-Type': 'application/json',
             Authorization: `Bearer ${apiToken}`,
         };
+    }
+
+    function isCaptureSupportedUrl(rawUrl) {
+        if (!rawUrl) return false;
+
+        try {
+            const parsed = new URL(rawUrl);
+            return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+        } catch (_error) {
+            return false;
+        }
+    }
+
+    function normalizeCaptureError(error, fallbackMessage) {
+        const message = error instanceof Error ? error.message : String(error || fallbackMessage || '未知错误');
+
+        if (!message) {
+            return fallbackMessage || '未知错误';
+        }
+
+        if (message.includes('当前页面不支持完整快照') || message.includes('页面处理超时')) {
+            return message;
+        }
+
+        if (
+            message.includes('Cannot access contents of url') ||
+            message.includes('The extensions gallery cannot be scripted') ||
+            message.includes('Missing host permission')
+        ) {
+            return '当前页面不支持完整快照，请切换到普通网页后重试';
+        }
+
+        if (
+            message.includes('Receiving end does not exist') ||
+            message.includes('Could not establish connection') ||
+            message.includes('message port closed')
+        ) {
+            return '页面连接已失效，请刷新页面后重试';
+        }
+
+        if (message.includes('No tab with id') || message.includes('Tabs cannot be edited right now')) {
+            return '目标标签页不可用，请重新打开页面后重试';
+        }
+
+        return message;
+    }
+
+    function sendTabMessage(tabId, message, timeoutMs) {
+        return new Promise((resolve, reject) => {
+            let settled = false;
+            const timeout = setTimeout(() => {
+                if (settled) return;
+                settled = true;
+                reject(new Error('页面处理超时，请刷新页面后重试'));
+            }, timeoutMs);
+
+            chrome.tabs.sendMessage(tabId, message, (response) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message || '无法连接到页面'));
+                    return;
+                }
+
+                resolve(response);
+            });
+        });
+    }
+
+    async function ensureCaptureBridge(tab) {
+        if (!tab || !tab.id) {
+            throw new Error('无法获取当前标签页');
+        }
+
+        const tabUrl = tab.url || urlInput.value.trim();
+        if (!isCaptureSupportedUrl(tabUrl)) {
+            throw new Error('当前页面不支持完整快照，请切换到普通网页后重试');
+        }
+
+        if (captureBridgeReadyTabs.has(tab.id)) {
+            return tab;
+        }
+
+        try {
+            const ready = await sendTabMessage(tab.id, { method: 'pingCapture' }, CAPTURE_BRIDGE_TIMEOUT_MS);
+            if (ready && ready.success) {
+                captureBridgeReadyTabs.add(tab.id);
+                return tab;
+            }
+        } catch (_error) {
+            // Fall through to bridge injection.
+        }
+
+        try {
+            await chrome.scripting.executeScript({
+                target: { tabId: tab.id },
+                files: CAPTURE_BRIDGE_FILES,
+            });
+            const ready = await sendTabMessage(tab.id, { method: 'pingCapture' }, CAPTURE_BRIDGE_TIMEOUT_MS);
+            if (!ready || !ready.success) {
+                throw new Error(ready && ready.error ? ready.error : '页面连接未就绪');
+            }
+            captureBridgeReadyTabs.add(tab.id);
+            return tab;
+        } catch (error) {
+            captureBridgeReadyTabs.delete(tab.id);
+            throw new Error(normalizeCaptureError(error, '页面连接失败'));
+        }
+    }
+
+    async function prepareSnapshotTarget() {
+        const tab = await resolveTargetTab();
+        if (!tab || !tab.id) {
+            throw new Error('无法获取当前标签页');
+        }
+
+        await ensureCaptureBridge(tab);
+        return tab;
     }
 
     async function checkConnection() {
@@ -410,7 +580,9 @@
         }
 
         if (!managed) {
-            setActionState('save');
+            if (!beginAction('save')) {
+                return false;
+            }
         }
 
         showStatus('正在保存书签…', 'loading');
@@ -434,11 +606,12 @@
             }
             return true;
         } catch (error) {
-            showStatus(`保存失败: ${error.message}`, 'error');
+            const message = error instanceof Error ? error.message : String(error || '保存失败');
+            showStatus(`保存失败: ${message}`, 'error');
             return false;
         } finally {
             if (!managed) {
-                setActionState(null);
+                finishAction('save');
             }
         }
     }
@@ -446,6 +619,8 @@
     async function saveSnapshot(options) {
         const managed = Boolean(options && options.managed);
         const successMessage = options && options.successMessage;
+        const failurePrefix = options && options.failurePrefix;
+        const preparedTab = options && options.preparedTab;
         const url = urlInput.value.trim();
         const title = titleInput.value.trim();
 
@@ -460,44 +635,33 @@
         }
 
         if (!managed) {
-            setActionState('snapshot');
+            if (!beginAction('snapshot')) {
+                return false;
+            }
         }
 
         try {
-            const tab = await resolveTargetTab();
-            if (!tab || !tab.id) {
-                throw new Error('无法获取当前标签页');
-            }
-
-            showStatus('正在准备页面采集…', 'loading');
-            try {
-                await chrome.scripting.executeScript({
-                    target: { tabId: tab.id },
-                    files: ['lib/single-file.js', 'content.js'],
-                });
-            } catch (_error) {
-                // Ignore duplicate injection warnings.
-            }
+            const tab = preparedTab || await prepareSnapshotTarget();
 
             showStatus('正在处理网页内容…', 'loading');
-
-            const response = await new Promise((resolve, reject) => {
-                const timeout = setTimeout(() => {
-                    reject(new Error('处理超时，请刷新页面后重试'));
-                }, 180000);
-
-                chrome.tabs.sendMessage(tab.id, { method: 'getPageData', options: {} }, (message) => {
-                    clearTimeout(timeout);
-                    if (chrome.runtime.lastError) {
-                        reject(new Error(chrome.runtime.lastError.message || '无法连接到页面'));
-                        return;
-                    }
-                    resolve(message);
-                });
-            });
+            const runtimeCaptureOptions = getRuntimeCaptureOptions();
+            const captureTimeout = Number.isFinite(runtimeCaptureOptions.timeoutMs) && runtimeCaptureOptions.timeoutMs > 0
+                ? runtimeCaptureOptions.timeoutMs
+                : SNAPSHOT_CAPTURE_TIMEOUT_MS;
+            const response = await sendTabMessage(
+                tab.id,
+                {
+                    method: 'getPageData',
+                    options: {
+                        timeoutMs: captureTimeout,
+                        testDelayMs: runtimeCaptureOptions.testDelayMs,
+                    },
+                },
+                captureTimeout + 2000,
+            );
 
             if (!response || !response.success || !response.data || !response.data.content) {
-                throw new Error(response?.error || '获取页面数据失败');
+                throw new Error(response && response.error ? response.error : '获取页面数据失败');
             }
 
             const pageData = response.data;
@@ -517,7 +681,8 @@
 
             const data = await uploadResponse.json();
             if (!uploadResponse.ok) {
-                showStatus(data.error || '保存失败', 'error');
+                const failureMessage = data.error || '保存失败';
+                showStatus(failurePrefix ? `${failurePrefix}${failureMessage}` : failureMessage, 'error');
                 return false;
             }
 
@@ -528,11 +693,12 @@
             }
             return true;
         } catch (error) {
-            showStatus(`保存失败: ${error.message}`, 'error');
+            const failureMessage = normalizeCaptureError(error, '获取页面数据失败');
+            showStatus(failurePrefix ? `${failurePrefix}${failureMessage}` : `保存失败: ${failureMessage}`, 'error');
             return false;
         } finally {
             if (!managed) {
-                setActionState(null);
+                finishAction('snapshot');
             }
         }
     }
@@ -548,9 +714,21 @@
             return;
         }
 
-        setActionState('saveAll');
+        if (!beginAction('saveAll')) {
+            return;
+        }
 
         try {
+            showStatus('正在校验页面快照环境…', 'loading');
+            let preparedTab;
+
+            try {
+                preparedTab = await prepareSnapshotTarget();
+            } catch (error) {
+                showStatus(`无法开始存档: ${normalizeCaptureError(error, '页面连接失败')}`, 'error');
+                return;
+            }
+
             const bookmarkOk = await saveBookmark({
                 managed: true,
                 successMessage: '书签已保存，继续生成快照…',
@@ -560,13 +738,15 @@
 
             const snapshotOk = await saveSnapshot({
                 managed: true,
+                preparedTab,
                 successMessage: '已完成收藏和存档',
+                failurePrefix: '书签已保存，但快照失败：',
             });
             if (snapshotOk) {
                 scheduleStatusHide(3200);
             }
         } finally {
-            setActionState(null);
+            finishAction('saveAll');
         }
     }
 

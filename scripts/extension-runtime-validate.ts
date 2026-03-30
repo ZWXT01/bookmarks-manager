@@ -23,6 +23,11 @@ interface FixtureServerHandle {
 interface RuntimePopupState {
     targetTitle: string;
     targetUrl: string;
+    disableActiveTabFallback?: boolean;
+    captureOptions?: {
+        timeoutMs?: number;
+        testDelayMs?: number;
+    };
 }
 
 interface ExtensionRuntimeHandle {
@@ -138,6 +143,19 @@ async function waitForAttribute(page: Page, selector: string, attribute: string,
         (value) => value === expected,
         timeout,
         `${selector} ${attribute} to equal ${expected}`,
+    );
+}
+
+async function waitForActionButtonsEnabled(page: Page, timeout = 5000): Promise<void> {
+    await pollUntil(
+        async () => await page.evaluate(() => ({
+            save: !document.querySelector<HTMLButtonElement>('#save-btn')?.disabled,
+            snapshot: !document.querySelector<HTMLButtonElement>('#snapshot-btn')?.disabled,
+            saveAll: !document.querySelector<HTMLButtonElement>('#save-all-btn')?.disabled,
+        })),
+        (value) => value.save && value.snapshot && value.saveAll,
+        timeout,
+        'action buttons to recover',
     );
 }
 
@@ -259,6 +277,18 @@ async function main() {
                 marker: 'runtime-save-all-marker',
                 body: 'This fixture page is used for real extension runtime save-all validation.',
             },
+            {
+                pathname: '/timeout',
+                title: 'Runtime Timeout Fixture',
+                marker: 'runtime-timeout-marker',
+                body: 'This fixture page is used for timeout and recovery validation.',
+            },
+            {
+                pathname: '/save-all-dedupe',
+                title: 'Runtime Save All Dedupe Fixture',
+                marker: 'runtime-save-all-dedupe-marker',
+                body: 'This fixture page is used for repeated save-all click validation.',
+            },
         ]);
 
         const seededCategories = seedCategoryTree(ctx.db, [
@@ -348,12 +378,7 @@ async function main() {
             await waitForText(bookmarkPopup, '#status', '书签保存成功');
             await waitForClass(bookmarkPopup, '#status', 'success');
             await waitForText(bookmarkPopup, '#status-title', '操作完成');
-
-            const saveState = await bookmarkPopup.evaluate(() => ({
-                saveDisabled: Boolean(document.querySelector('#save-btn')?.disabled),
-                saveAllDisabled: Boolean(document.querySelector('#save-all-btn')?.disabled),
-            }));
-            assert(!saveState.saveDisabled && !saveState.saveAllDisabled, `bookmark action buttons did not recover: ${JSON.stringify(saveState)}`);
+            await waitForActionButtonsEnabled(bookmarkPopup);
 
             const bookmark = ctx.db.prepare(`
                 SELECT b.id, b.url, b.title, b.category_id
@@ -368,6 +393,7 @@ async function main() {
             await bookmarkPopup.click('#snapshot-btn');
             await waitForText(bookmarkPopup, '#status', '快照已保存', 15000);
             await waitForClass(bookmarkPopup, '#status', 'success', 15000);
+            await waitForActionButtonsEnabled(bookmarkPopup, 15000);
 
             const snapshot = ctx.db.prepare(`
                 SELECT id, bookmark_id, filename
@@ -406,6 +432,7 @@ async function main() {
             await saveAllPopup.selectOption('#category', { label: '扩展验收/同时保存' });
             await saveAllPopup.click('#save-all-btn');
             await waitForText(saveAllPopup, '#status', '已完成收藏和存档', 15000);
+            await waitForActionButtonsEnabled(saveAllPopup, 15000);
 
             const bookmark = ctx.db.prepare(`
                 SELECT b.id, b.url, b.title, b.category_id
@@ -452,15 +479,139 @@ async function main() {
             await waitForText(failurePopup, '#status', '未连接到服务器');
             await waitForClass(failurePopup, '#status', 'error');
             await waitForText(failurePopup, '#status-title', '需要处理');
+            await waitForActionButtonsEnabled(failurePopup);
+
+            await failurePopup.fill('#api-token', ctx.auth.apiToken);
+            await failurePopup.click('#save-settings-btn');
+            await waitForText(failurePopup, '#connection-text', '已连接');
+            await waitForText(failurePopup, '#settings-summary', '已连接');
         } finally {
             await failurePopup.close();
+        }
+
+        const unsupportedTarget = await runtime.context.newPage();
+        await unsupportedTarget.goto('chrome://version/', { waitUntil: 'domcontentloaded' });
+        const unsupportedUrl = unsupportedTarget.url();
+        const unsupportedTitle = await unsupportedTarget.title();
+        const bookmarkCountBeforeUnsupported = (ctx.db.prepare('SELECT COUNT(*) AS count FROM bookmarks').get() as { count: number }).count;
+
+        const unsupportedPopup = await openRuntimePopup(runtime.context, extensionId, {
+            targetTitle: unsupportedTitle,
+            targetUrl: unsupportedUrl,
+        });
+
+        try {
+            await waitForInputValue(unsupportedPopup, '#url', unsupportedUrl);
+            await waitForText(unsupportedPopup, '#connection-text', '已连接');
+            await waitForOption(unsupportedPopup, '扩展验收/同时保存');
+            await unsupportedPopup.selectOption('#category', { label: '扩展验收/同时保存' });
+            await unsupportedPopup.click('#save-all-btn');
+            await waitForText(unsupportedPopup, '#status', '当前页面不支持完整快照');
+            await waitForClass(unsupportedPopup, '#status', 'error');
+            await waitForActionButtonsEnabled(unsupportedPopup);
+
+            const bookmarkCountAfterUnsupported = (ctx.db.prepare('SELECT COUNT(*) AS count FROM bookmarks').get() as { count: number }).count;
+            assert(
+                bookmarkCountAfterUnsupported === bookmarkCountBeforeUnsupported,
+                `unsupported page save-all created an unexpected bookmark: before=${bookmarkCountBeforeUnsupported}, after=${bookmarkCountAfterUnsupported}`,
+            );
+        } finally {
+            await unsupportedPopup.close();
+            await unsupportedTarget.close();
+        }
+
+        const missingTarget = await runtime.context.newPage();
+        await missingTarget.goto(`${fixtureServer.baseUrl}/bookmark?vanished=1`, { waitUntil: 'domcontentloaded' });
+        const missingTargetUrl = missingTarget.url();
+        const missingTargetTitle = await missingTarget.title();
+        await missingTarget.close();
+
+        const missingTargetPopup = await openRuntimePopup(runtime.context, extensionId, {
+            targetTitle: missingTargetTitle,
+            targetUrl: missingTargetUrl,
+            disableActiveTabFallback: true,
+        });
+
+        try {
+            await waitForInputValue(missingTargetPopup, '#title', missingTargetTitle);
+            await waitForInputValue(missingTargetPopup, '#url', missingTargetUrl);
+            await waitForText(missingTargetPopup, '#connection-text', '已连接');
+            await missingTargetPopup.click('#snapshot-btn');
+            await waitForText(missingTargetPopup, '#status', '无法获取当前标签页');
+            await waitForClass(missingTargetPopup, '#status', 'error');
+            await waitForActionButtonsEnabled(missingTargetPopup);
+        } finally {
+            await missingTargetPopup.close();
+        }
+
+        const timeoutTarget = await runtime.context.newPage();
+        await timeoutTarget.goto(`${fixtureServer.baseUrl}/timeout`, { waitUntil: 'domcontentloaded' });
+        const timeoutUrl = timeoutTarget.url();
+        const timeoutTitle = await timeoutTarget.title();
+
+        const timeoutPopup = await openRuntimePopup(runtime.context, extensionId, {
+            targetTitle: timeoutTitle,
+            targetUrl: timeoutUrl,
+            captureOptions: {
+                timeoutMs: 80,
+                testDelayMs: 200,
+            },
+        });
+
+        try {
+            await waitForInputValue(timeoutPopup, '#title', timeoutTitle);
+            await waitForInputValue(timeoutPopup, '#url', timeoutUrl);
+            await waitForText(timeoutPopup, '#connection-text', '已连接');
+            await timeoutPopup.click('#snapshot-btn');
+            await waitForText(timeoutPopup, '#status', '页面处理超时');
+            await waitForClass(timeoutPopup, '#status', 'error');
+            await waitForActionButtonsEnabled(timeoutPopup);
+
+            const timeoutSnapshotCount = (ctx.db.prepare('SELECT COUNT(*) AS count FROM snapshots WHERE url = ?').get(timeoutUrl) as { count: number }).count;
+            assert(timeoutSnapshotCount === 0, `timeout scenario unexpectedly created snapshots: ${timeoutSnapshotCount}`);
+        } finally {
+            await timeoutPopup.close();
+            await timeoutTarget.close();
+        }
+
+        const dedupeTarget = await runtime.context.newPage();
+        await dedupeTarget.goto(`${fixtureServer.baseUrl}/save-all-dedupe`, { waitUntil: 'domcontentloaded' });
+        const dedupeUrl = dedupeTarget.url();
+        const dedupeTitle = await dedupeTarget.title();
+
+        const dedupePopup = await openRuntimePopup(runtime.context, extensionId, {
+            targetTitle: dedupeTitle,
+            targetUrl: dedupeUrl,
+        });
+
+        try {
+            await waitForInputValue(dedupePopup, '#title', dedupeTitle);
+            await waitForInputValue(dedupePopup, '#url', dedupeUrl);
+            await waitForText(dedupePopup, '#connection-text', '已连接');
+            await waitForOption(dedupePopup, '扩展验收/同时保存');
+            await dedupePopup.selectOption('#category', { label: '扩展验收/同时保存' });
+            await dedupePopup.evaluate(() => {
+                document.querySelector<HTMLButtonElement>('#save-all-btn')?.click();
+                document.querySelector<HTMLButtonElement>('#save-all-btn')?.click();
+            });
+            await waitForText(dedupePopup, '#status', '已完成收藏和存档', 15000);
+            await waitForClass(dedupePopup, '#status', 'success', 15000);
+            await waitForActionButtonsEnabled(dedupePopup, 15000);
+
+            const bookmarkRows = (ctx.db.prepare('SELECT COUNT(*) AS count FROM bookmarks WHERE url = ?').get(dedupeUrl) as { count: number }).count;
+            const snapshotRows = (ctx.db.prepare('SELECT COUNT(*) AS count FROM snapshots WHERE url = ?').get(dedupeUrl) as { count: number }).count;
+            assert(bookmarkRows === 1, `repeated save-all created duplicate bookmarks: ${bookmarkRows}`);
+            assert(snapshotRows === 1, `repeated save-all created duplicate snapshots: ${snapshotRows}`);
+        } finally {
+            await dedupePopup.close();
+            await dedupeTarget.close();
         }
 
         const bookmarkCount = (ctx.db.prepare('SELECT COUNT(*) AS count FROM bookmarks').get() as { count: number }).count;
         const snapshotCount = (ctx.db.prepare('SELECT COUNT(*) AS count FROM snapshots').get() as { count: number }).count;
 
         console.log(JSON.stringify({
-            issueId: 'R5-EXT-02',
+            issueId: 'R6-EXT-05',
             mode: 'real-extension-runtime',
             baseUrl,
             fixtureBaseUrl: fixtureServer.baseUrl,
@@ -478,6 +629,10 @@ async function main() {
                 saveAllSaved: true,
                 popupStatusStatesVerified: true,
                 failurePromptVerified: true,
+                unsupportedPageRejected: true,
+                missingTargetRejected: true,
+                timeoutRecovered: true,
+                repeatedSaveAllDeduped: true,
                 bookmarkCount,
                 snapshotCount,
             },
