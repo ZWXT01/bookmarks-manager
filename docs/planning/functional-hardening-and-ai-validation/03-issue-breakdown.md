@@ -688,6 +688,24 @@
   - 取消旧 plan 后，新的 plan 可以成功创建并继续完成 preview，不再受旧 provider 回调污染。
   - `cancel` / `retry` 对 missing plan 或状态机冲突会返回明确 `404/409`，而不是统一 `500`。
 
+## R7-AI-02 冻结 AI organize 的书签作用域快照
+
+- 目标：把 `organize` 的“本次到底整理哪些书签”也冻结成 plan 级快照，避免 `all / uncategorized / category:N` 在排队等待、失败重试或长时间保留 failed plan 后重新读取 live scope，偷偷吸进新书签或丢掉原本应处理的对象。
+- 范围：
+  - 在 plan 创建时把当前作用域解析成冻结的 `bookmark_ids` 快照，并写入 `source_snapshot`。
+  - `assignBookmarks()` 与 `retry` 统一只使用冻结后的作用域快照，而不是再次扫描 live scope。
+  - 为旧 plan 在首次 retry 时补 scope freeze，避免历史 failed plan 继续受 live scope 漂移影响。
+  - 新增定向回归，覆盖“failed plan retry 前新增书签，不应被吸入原计划”的合同。
+- 非目标：
+  - 不在本 issue 中改变 organize 对书签删除后的 apply / retry 处理策略。
+  - 不在本 issue 中重做 job queue 或引入并发执行。
+- 依赖：`R7-AI-01`、`R6-AI-01`、`R6-AI-03`。
+- 验收：
+  - 新创建的 organize plan 会显式冻结 `scope_bookmark_ids`，即使初始作用域为空也保持冻结状态。
+  - failed plan 在 retry 前新增的书签不会被吸入原计划。
+  - `assignBookmarks()` 的 prompt 和 job total 只反映冻结时的书签集合，而不是 retry 时的 live scope。
+  - 至少有 1 份 unit + integration 验收覆盖作用域冻结合同。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -726,3 +744,4 @@
 34. `R6-EXT-05`
 35. `R6-TPL-06`
 36. `R7-AI-01`
+37. `R7-AI-02`
