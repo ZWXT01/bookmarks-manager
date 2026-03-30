@@ -18,6 +18,7 @@
 - [Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)
 - [浏览器扩展 round-trip 验收](./12-extension-roundtrip-validation.md)
 - [模板编辑后 AI 默认源验收记录](./32-ai-template-source-validation.md)
+- [内置扩展 popup UI 验收记录](./33-extension-popup-ui-validation.md)
 
 ## 1. 执行信息
 
@@ -34,11 +35,12 @@
 
 | 项目 | 证据 | 结果 |
 |---|---|---|
-| 自动化测试 | `npm test` 于 2026-03-30 通过，`21` 个测试文件、`167` 条测试全部通过。 | 通过 |
+| 自动化测试 | `npm test` 于 2026-03-30 通过，`22` 个测试文件、`169` 条测试全部通过。 | 通过 |
 | 构建 | `npm run build` 于 2026-03-30 通过。 | 通过 |
 | `R1-DOC-04` 浏览器补验收 | 本地临时环境 `http://127.0.0.1:45577` 通过内置 Playwright MCP 访问 `/login` 与 `/jobs`；标题分别为“登录 - 书签管理器”和“任务列表 - 书签管理器”，`warning/error` 计数为 `0`。 | 通过 |
 | MCP 关键业务旅程 | [11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md) 已覆盖登录、首页、设置、模板、快照、备份、任务 / SSE 与 mock AI UI 联动。 | 通过 |
 | 浏览器扩展 round-trip | [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) 已 clean run，覆盖 token、保存书签、保存快照、同时保存与失败提示。 | 通过 |
+| 内置扩展 popup UI | [33-extension-popup-ui-validation.md](./33-extension-popup-ui-validation.md) 已证明 popup 的主操作层级、设置区摘要、状态卡和真实运行时成功 / 失败反馈都已经收口，且不回退既有书签 / 快照主链路。 | 通过 |
 | `H1` 真实 provider AI 验收 | [10-ai-provider-h1-validation.md](./10-ai-provider-h1-validation.md) 已完成历史 `test`、`classify-batch`、`organize`、`apply/rollback`；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 又证明默认 Grok 源下的 full H1 已恢复全绿。 | 通过 |
 | `/api/ai/test` 瞬时重试与可操作诊断 | [26-ai-test-retry-validation.md](./26-ai-test-retry-validation.md) 已证明本地 timeout-retry 合同成立；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 又证明默认 Grok 源下 `/api/ai/test` 已恢复 `200`。 | 通过 |
 | provider 直连诊断 | [27-ai-provider-diagnostic-validation.md](./27-ai-provider-diagnostic-validation.md) 曾把问题收口到 chat completion 链路；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 又证明修正后的默认 Grok 源在 `/models` 与 `/chat/completions` 上都返回 `200`，且 chat completion 为 `text/event-stream`。 | 通过 |
@@ -58,6 +60,7 @@
 - 多待应用 organize plan 现在不再依赖“只有最新 plan 能应用”的隐式规则；同模板不重叠、同模板重叠、跨模板三类 apply 路径都已有明确合同和自动化证明。
 - 模板选择 / 编辑弹窗现在不再依赖静态 Tailwind 产物里不稳定的任意值高度类名；长树和小视口下的保存 / 取消按钮都已有浏览器级可达性证明。
 - 模板编辑后的默认 AI 入口也已和活动模板树统一：默认单条 `classify`、`classify-batch`、`organize` 不再读 live categories 漂移值；显式 `template_id` 保持隔离，assigning 中途改模板时旧 preview 会被明确判 stale。
+- 内置扩展 popup 现在不再只是“功能能跑”的工程面板；主操作、设置区和状态反馈已经有明确层级，真实 runtime 已证明成功 / 失败 / loading 状态和按钮恢复都能稳定工作。
 - 单条 `/api/ai/classify` 已从“只保证模板内输出”继续收口到“对常见文档 / 教程 / 示例 / 社区 host 场景也有本地 deterministic 语义择优”。
 - 单条 `/api/ai/classify` 现在还具备固定语义样本集与 focused H1 replay 脚本；模板调整或 provider / model 切换后不再需要靠零散手工样本复测。
 - 默认 provider 验证源现已固定为本地 `validation_grok_*`，且脚本默认走 `grok`；若要验证当前应用设置而不是默认 Grok，必须显式传 `--provider current`。
@@ -72,6 +75,7 @@
 | `RISK-017` | resolved | organize apply 合同已明文化并进入自动化：同模板不重叠直接 apply，同模板重叠必须显式 resolve / needs_review，跨模板继续按模板快照隔离 apply。 |
 | `RISK-018` | resolved | 模板选择 / 编辑弹窗已改成显式视口高度边界和固定头尾布局，并新增页面壳体与浏览器级长树可达性回归，不再出现“弹窗越长，保存 / 取消越看不见”的问题。 |
 | `RISK-019` | resolved | 默认单条 `classify`、`classify-batch` 与 `organize` 现在都跟随最新活动模板；显式 `template_id` 继续隔离，assigning 中途改模板时旧 preview 会被判 stale，不再把旧模板结果伪装成新模板输出。 |
+| `RISK-020` | resolved | 内置扩展 popup 已补齐主操作层级、设置区摘要、成功 / 失败 / loading 状态卡和按钮 busy / 恢复反馈；真实扩展 runtime 与 shell test 都已覆盖，不再停留在“能用但不好用”的工程态。 |
 
 ## 5. 交接说明
 
