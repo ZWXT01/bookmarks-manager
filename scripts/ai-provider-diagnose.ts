@@ -4,12 +4,13 @@ import path from 'path';
 
 import Database from 'better-sqlite3';
 
-interface AIConfig {
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    batchSize: string;
-}
+import {
+    loadValidationAIConfig,
+    parseValidationProviderName,
+    type ValidationAIConfig,
+    type ValidationProviderName,
+    type ValidationProviderSource,
+} from '../src/provider-validation-config';
 
 interface DiagnosticStepResult {
     ok: boolean;
@@ -31,10 +32,11 @@ interface DiagnosticReport {
     sourceDbPath: string;
     reportPath: string;
     provider: {
+        selected: ValidationProviderName;
         baseUrlMasked: string;
         modelMasked: string;
         batchSize: string;
-        source: 'env' | 'settings_db';
+        source: ValidationProviderSource;
     };
     timeouts: {
         modelsTimeoutMs: number;
@@ -68,6 +70,7 @@ function parseArgs(argv: string[]) {
         reportPath: path.join(os.tmpdir(), `bookmarks-ai-provider-diagnose-${Date.now()}.json`),
         modelsTimeoutMs: 10_000,
         completionTimeoutMs: 30_000,
+        provider: parseValidationProviderName(process.env.H1_AI_PROVIDER ?? 'grok'),
     };
 
     const args = { ...defaults };
@@ -78,8 +81,9 @@ function parseArgs(argv: string[]) {
         else if (arg === '--report') args.reportPath = path.resolve(process.cwd(), argv[++index]);
         else if (arg === '--models-timeout-ms') args.modelsTimeoutMs = Number(argv[++index]) || defaults.modelsTimeoutMs;
         else if (arg === '--completion-timeout-ms') args.completionTimeoutMs = Number(argv[++index]) || defaults.completionTimeoutMs;
+        else if (arg === '--provider') args.provider = parseValidationProviderName(argv[++index]);
         else if (arg === '--help') {
-            console.log('Usage: ./node_modules/.bin/tsx scripts/ai-provider-diagnose.ts [--source-db data/app.db] [--report /tmp/report.json] [--models-timeout-ms 10000] [--completion-timeout-ms 30000]');
+            console.log('Usage: ./node_modules/.bin/tsx scripts/ai-provider-diagnose.ts [--provider grok|current] [--source-db data/app.db] [--report /tmp/report.json] [--models-timeout-ms 10000] [--completion-timeout-ms 30000]');
             process.exit(0);
         } else {
             throw new Error(`unknown argument: ${arg}`);
@@ -87,48 +91,6 @@ function parseArgs(argv: string[]) {
     }
 
     return args;
-}
-
-function loadAiConfig(sourceDbPath: string): { config: AIConfig; source: 'env' | 'settings_db' } {
-    const envBaseUrl = process.env.H1_AI_BASE_URL?.trim();
-    const envApiKey = process.env.H1_AI_API_KEY?.trim();
-    const envModel = process.env.H1_AI_MODEL?.trim();
-    const envBatchSize = process.env.H1_AI_BATCH_SIZE?.trim();
-
-    if (envBaseUrl && envApiKey && envModel) {
-        return {
-            source: 'env',
-            config: {
-                baseUrl: envBaseUrl,
-                apiKey: envApiKey,
-                model: envModel,
-                batchSize: envBatchSize || '30',
-            },
-        };
-    }
-
-    if (!fs.existsSync(sourceDbPath)) {
-        throw new Error(`source DB not found: ${sourceDbPath}`);
-    }
-
-    const db = new Database(sourceDbPath, { readonly: true });
-    try {
-        const rows = db.prepare('SELECT key, value FROM settings WHERE key IN (?,?,?,?)')
-            .all('ai_base_url', 'ai_api_key', 'ai_model', 'ai_batch_size') as Array<{ key: string; value: string }>;
-        const map = new Map(rows.map((row) => [row.key, row.value]));
-        const config = {
-            baseUrl: (map.get('ai_base_url') ?? '').trim(),
-            apiKey: (map.get('ai_api_key') ?? '').trim(),
-            model: (map.get('ai_model') ?? '').trim(),
-            batchSize: (map.get('ai_batch_size') ?? '30').trim() || '30',
-        };
-        if (!config.baseUrl || !config.apiKey || !config.model) {
-            throw new Error('source DB does not contain a complete AI configuration');
-        }
-        return { config, source: 'settings_db' };
-    } finally {
-        db.close();
-    }
 }
 
 function persistReport(reportPath: string, report: DiagnosticReport): void {
@@ -276,7 +238,7 @@ function collectFailures(report: DiagnosticReport): string[] {
 
 async function main() {
     const args = parseArgs(process.argv.slice(2));
-    const { config, source } = loadAiConfig(args.sourceDbPath);
+    const { config, source, provider } = loadValidationAIConfig(args.sourceDbPath, args.provider);
 
     const report: DiagnosticReport = {
         startedAt: new Date().toISOString(),
@@ -284,6 +246,7 @@ async function main() {
         sourceDbPath: args.sourceDbPath,
         reportPath: args.reportPath,
         provider: {
+            selected: provider,
             baseUrlMasked: maskBaseUrl(config.baseUrl),
             modelMasked: maskText(config.model, 6, 3),
             batchSize: config.batchSize,

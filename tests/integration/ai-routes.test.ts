@@ -7,6 +7,7 @@ import {
     activateAiTestTemplate,
     createQueuedAIHarness,
     jsonCompletion,
+    sseCompletion,
     seedAISettings,
     textCompletion,
     type MockAIStep,
@@ -193,6 +194,34 @@ describe('integration: ai route contracts', () => {
         expect(successHarness.calls[0].messages[1].content).toContain('候选分类（必须原样选择其一');
         expect(successHarness.calls[0].messages[1].content).toContain('技术开发/前端');
         expect(successHarness.calls[0].messages[1].content).toContain('学习资源/文档');
+
+        const streamedHarness = createQueuedAIHarness([
+            sseCompletion([
+                '<think>\n',
+                'browse_page {"url":"https://react.dev/reference/react/useState"}\n',
+                '</think>\n',
+                '学习资源',
+                '/',
+                '官方文档',
+            ]),
+        ]);
+        await ctx.cleanup();
+        ctx = await createTestApp({ aiClientFactory: streamedHarness.aiClientFactory });
+        const streamedSession = await ctx.login();
+        seedAISettings(ctx.db);
+        activateAiTestTemplate(ctx.db);
+
+        const streamedResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify',
+            headers: streamedSession.headers,
+            payload: {
+                title: 'React useState Reference',
+                url: 'https://react.dev/reference/react/useState',
+            },
+        });
+        expect(streamedResponse.statusCode).toBe(200);
+        expect(streamedResponse.json()).toEqual({ category: '学习资源/文档' });
 
         const normalizedHarness = createQueuedAIHarness([textCompletion('学习资源/React')]);
         await ctx.cleanup();

@@ -65,6 +65,8 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="ai-api-key-input"');
         expect(response.body).toContain('data-testid="ai-model-input"');
         expect(response.body).toContain('基础连通正常，聊天补全未通过');
+        expect(response.body).toContain('https://grok2api.1018666.xyz/v1');
+        expect(response.body).not.toContain('grop2api.1018666.xyz');
     });
 
     it('serves the generated tailwind asset as a static file', async () => {

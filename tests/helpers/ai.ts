@@ -117,3 +117,30 @@ export function textCompletion(content: string): AIChatCompletionResponse {
 export function jsonCompletion(value: unknown): AIChatCompletionResponse {
     return textCompletion(JSON.stringify(value));
 }
+
+export function sseCompletion(chunks: string[]): AIChatCompletionResponse {
+    const streamChunks = chunks.map((content, index) => `data: ${JSON.stringify({
+        id: `chunk-${index + 1}`,
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'mock-model',
+        choices: [{
+            index: 0,
+            delta: { content },
+            finish_reason: null,
+        }],
+    })}`);
+    streamChunks.push(`data: ${JSON.stringify({
+        id: `chunk-${chunks.length + 1}`,
+        object: 'chat.completion.chunk',
+        created: 1,
+        model: 'mock-model',
+        choices: [{
+            index: 0,
+            delta: {},
+            finish_reason: 'stop',
+        }],
+    })}`);
+    streamChunks.push('data: [DONE]');
+    return `${streamChunks.join('\n\n')}\n`;
+}

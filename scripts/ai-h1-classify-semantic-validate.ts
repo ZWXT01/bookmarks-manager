@@ -8,6 +8,12 @@ import Database from 'better-sqlite3';
 import { createOpenAIClient } from '../src/ai-client';
 import { buildApp } from '../src/app';
 import type { Db } from '../src/db';
+import {
+    loadValidationAIConfig,
+    parseValidationProviderName,
+    type ValidationProviderName,
+    type ValidationProviderSource,
+} from '../src/provider-validation-config';
 import { applyTemplate, createTemplate, type CategoryNode, type TemplateRow } from '../src/template-service';
 
 interface SemanticTemplate {
@@ -31,13 +37,6 @@ interface SemanticSampleCase {
 interface SemanticSampleDataset {
     templates: SemanticTemplate[];
     cases: SemanticSampleCase[];
-}
-
-interface AIConfig {
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    batchSize: string;
 }
 
 interface SemanticSampleResult {
@@ -64,11 +63,12 @@ interface ValidationReport {
     tempDir: string | null;
     tempDirCleaned: boolean;
     provider: {
+        selected: ValidationProviderName;
         baseUrlMasked: string;
         modelMasked: string;
         batchSize: string;
         timeoutCapMs: number;
-        source: 'env' | 'settings_db';
+        source: ValidationProviderSource;
     };
     totals: {
         samples: number;
@@ -120,6 +120,7 @@ function parseArgs(argv: string[]) {
         retries: 2,
         skipTest: false,
         ids: [] as string[],
+        provider: parseValidationProviderName(process.env.H1_AI_PROVIDER ?? 'grok'),
     };
 
     const args = { ...defaults };
@@ -134,8 +135,9 @@ function parseArgs(argv: string[]) {
         else if (arg === '--retries') args.retries = Number(argv[++index]) || defaults.retries;
         else if (arg === '--skip-test') args.skipTest = true;
         else if (arg === '--ids') args.ids = argv[++index].split(',').map((value) => value.trim()).filter(Boolean);
+        else if (arg === '--provider') args.provider = parseValidationProviderName(argv[++index]);
         else if (arg === '--help') {
-            console.log('Usage: npx tsx scripts/ai-h1-classify-semantic-validate.ts [--source-db data/app.db] [--dataset path] [--report path] [--timeout-cap-ms 60000] [--retries 2] [--skip-test] [--ids sample-a,sample-b] [--keep-temp]');
+            console.log('Usage: npx tsx scripts/ai-h1-classify-semantic-validate.ts [--provider grok|current] [--source-db data/app.db] [--dataset path] [--report path] [--timeout-cap-ms 60000] [--retries 2] [--skip-test] [--ids sample-a,sample-b] [--keep-temp]');
             process.exit(0);
         } else {
             throw new Error(`unknown argument: ${arg}`);
@@ -147,48 +149,6 @@ function parseArgs(argv: string[]) {
 
 function loadDataset(datasetPath: string): SemanticSampleDataset {
     return JSON.parse(fs.readFileSync(datasetPath, 'utf8')) as SemanticSampleDataset;
-}
-
-function loadAiConfig(sourceDbPath: string): { config: AIConfig; source: 'env' | 'settings_db' } {
-    const envBaseUrl = process.env.H1_AI_BASE_URL?.trim();
-    const envApiKey = process.env.H1_AI_API_KEY?.trim();
-    const envModel = process.env.H1_AI_MODEL?.trim();
-    const envBatchSize = process.env.H1_AI_BATCH_SIZE?.trim();
-
-    if (envBaseUrl && envApiKey && envModel) {
-        return {
-            source: 'env',
-            config: {
-                baseUrl: envBaseUrl,
-                apiKey: envApiKey,
-                model: envModel,
-                batchSize: envBatchSize || '30',
-            },
-        };
-    }
-
-    if (!fs.existsSync(sourceDbPath)) {
-        throw new Error(`source DB not found: ${sourceDbPath}`);
-    }
-
-    const db = new Database(sourceDbPath, { readonly: true });
-    try {
-        const rows = db.prepare('SELECT key, value FROM settings WHERE key IN (?,?,?,?)')
-            .all('ai_base_url', 'ai_api_key', 'ai_model', 'ai_batch_size') as Array<{ key: string; value: string }>;
-        const map = new Map(rows.map((row) => [row.key, row.value]));
-        const config = {
-            baseUrl: (map.get('ai_base_url') ?? '').trim(),
-            apiKey: (map.get('ai_api_key') ?? '').trim(),
-            model: (map.get('ai_model') ?? '').trim(),
-            batchSize: (map.get('ai_batch_size') ?? '30').trim() || '30',
-        };
-        if (!config.baseUrl || !config.apiKey || !config.model) {
-            throw new Error('source DB does not contain a complete AI configuration');
-        }
-        return { config, source: 'settings_db' };
-    } finally {
-        db.close();
-    }
 }
 
 function upsertSetting(db: Db, key: string, value: string): void {
@@ -275,7 +235,7 @@ async function main() {
         const missing = [...selectedIds].filter((id) => !cases.some((sample) => sample.id === id));
         throw new Error(`unknown sample id(s): ${missing.join(', ')}`);
     }
-    const { config, source } = loadAiConfig(args.sourceDbPath);
+    const { config, source, provider } = loadValidationAIConfig(args.sourceDbPath, args.provider);
 
     const startedAt = new Date().toISOString();
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bookmarks-ai-h1-classify-semantic-'));
@@ -294,6 +254,7 @@ async function main() {
         tempDir,
         tempDirCleaned: false,
         provider: {
+            selected: provider,
             baseUrlMasked: maskBaseUrl(config.baseUrl),
             modelMasked: maskText(config.model, 6, 3),
             batchSize: config.batchSize,

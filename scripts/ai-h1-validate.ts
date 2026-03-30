@@ -10,6 +10,12 @@ import { buildApp } from '../src/app';
 import { getPlan } from '../src/ai-organize-plan';
 import type { Db } from '../src/db';
 import { getJob } from '../src/jobs';
+import {
+    loadValidationAIConfig,
+    parseValidationProviderName,
+    type ValidationProviderName,
+    type ValidationProviderSource,
+} from '../src/provider-validation-config';
 import { applyTemplate, createTemplate, type CategoryNode } from '../src/template-service';
 
 interface SampleBookmark {
@@ -26,13 +32,6 @@ interface ValidationDataset {
     };
     singleClassify: string[];
     bookmarks: SampleBookmark[];
-}
-
-interface AIConfig {
-    baseUrl: string;
-    apiKey: string;
-    model: string;
-    batchSize: string;
 }
 
 interface ClassifiedSampleResult {
@@ -82,11 +81,12 @@ interface ValidationReport {
     tempDir: string | null;
     tempDirCleaned: boolean;
     provider: {
+        selected: ValidationProviderName;
         baseUrlMasked: string;
         modelMasked: string;
         batchSize: string;
         timeoutCapMs: number;
-        source: 'env' | 'settings_db';
+        source: ValidationProviderSource;
     };
     sampleCount: number;
     selectedSteps: string[];
@@ -150,6 +150,7 @@ function parseArgs(argv: string[]) {
         keepTemp: false,
         timeoutCapMs: 25_000,
         steps: ['test', 'classify', 'classify-batch', 'organize'],
+        provider: parseValidationProviderName(process.env.H1_AI_PROVIDER ?? 'grok'),
     };
 
     const args = { ...defaults };
@@ -162,8 +163,9 @@ function parseArgs(argv: string[]) {
         else if (arg === '--keep-temp') args.keepTemp = true;
         else if (arg === '--timeout-cap-ms') args.timeoutCapMs = Number(argv[++index]) || defaults.timeoutCapMs;
         else if (arg === '--steps') args.steps = argv[++index].split(',').map((step) => step.trim()).filter(Boolean);
+        else if (arg === '--provider') args.provider = parseValidationProviderName(argv[++index]);
         else if (arg === '--help') {
-            console.log('Usage: npx tsx scripts/ai-h1-validate.ts [--source-db data/app.db] [--dataset path] [--report path] [--steps test,classify,classify-batch,organize] [--timeout-cap-ms 25000] [--keep-temp]');
+            console.log('Usage: npx tsx scripts/ai-h1-validate.ts [--provider grok|current] [--source-db data/app.db] [--dataset path] [--report path] [--steps test,classify,classify-batch,organize] [--timeout-cap-ms 25000] [--keep-temp]');
             process.exit(0);
         } else {
             throw new Error(`unknown argument: ${arg}`);
@@ -175,48 +177,6 @@ function parseArgs(argv: string[]) {
 
 function loadDataset(datasetPath: string): ValidationDataset {
     return JSON.parse(fs.readFileSync(datasetPath, 'utf8')) as ValidationDataset;
-}
-
-function loadAiConfig(sourceDbPath: string): { config: AIConfig; source: 'env' | 'settings_db' } {
-    const envBaseUrl = process.env.H1_AI_BASE_URL?.trim();
-    const envApiKey = process.env.H1_AI_API_KEY?.trim();
-    const envModel = process.env.H1_AI_MODEL?.trim();
-    const envBatchSize = process.env.H1_AI_BATCH_SIZE?.trim();
-
-    if (envBaseUrl && envApiKey && envModel) {
-        return {
-            source: 'env',
-            config: {
-                baseUrl: envBaseUrl,
-                apiKey: envApiKey,
-                model: envModel,
-                batchSize: envBatchSize || '30',
-            },
-        };
-    }
-
-    if (!fs.existsSync(sourceDbPath)) {
-        throw new Error(`source DB not found: ${sourceDbPath}`);
-    }
-
-    const db = new Database(sourceDbPath, { readonly: true });
-    try {
-        const rows = db.prepare('SELECT key, value FROM settings WHERE key IN (?,?,?,?)')
-            .all('ai_base_url', 'ai_api_key', 'ai_model', 'ai_batch_size') as Array<{ key: string; value: string }>;
-        const map = new Map(rows.map((row) => [row.key, row.value]));
-        const config = {
-            baseUrl: (map.get('ai_base_url') ?? '').trim(),
-            apiKey: (map.get('ai_api_key') ?? '').trim(),
-            model: (map.get('ai_model') ?? '').trim(),
-            batchSize: (map.get('ai_batch_size') ?? '30').trim() || '30',
-        };
-        if (!config.baseUrl || !config.apiKey || !config.model) {
-            throw new Error('source DB does not contain a complete AI configuration');
-        }
-        return { config, source: 'settings_db' };
-    } finally {
-        db.close();
-    }
 }
 
 function upsertSetting(db: Db, key: string, value: string): void {
@@ -319,7 +279,7 @@ function evaluateAssignments(
 async function main() {
     const args = parseArgs(process.argv.slice(2));
     const dataset = loadDataset(args.datasetPath);
-    const { config, source } = loadAiConfig(args.sourceDbPath);
+    const { config, source, provider } = loadValidationAIConfig(args.sourceDbPath, args.provider);
 
     const startedAt = new Date().toISOString();
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'bookmarks-ai-h1-'));
@@ -337,6 +297,7 @@ async function main() {
         tempDir,
         tempDirCleaned: false,
         provider: {
+            selected: provider,
             baseUrlMasked: maskBaseUrl(config.baseUrl),
             modelMasked: maskText(config.model, 6, 3),
             batchSize: config.batchSize,

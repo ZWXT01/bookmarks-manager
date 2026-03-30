@@ -1,6 +1,6 @@
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
-import { createOpenAIClient, type AIClientFactory } from '../ai-client';
+import { createOpenAIClient, extractAICompletionText, type AIClientFactory } from '../ai-client';
 import {
     getSingleClassifyAllowedPaths,
     normalizeClassifyPath,
@@ -167,7 +167,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                 }, { role: 'user', content: prompt }],
                 temperature: 0.2,
             });
-            const rawContent = completion.choices?.[0]?.message?.content?.trim() || '';
+            const rawContent = extractAICompletionText(completion);
             if (!rawContent) return reply.code(502).send({ error: 'AI 未返回分类结果' });
 
             const resolvedCategory = selectSingleClassifyCategory({

@@ -3,7 +3,7 @@ import type { Assignment, CategoryNode, PlanRow } from './ai-organize-plan';
 import { updatePlan, transitionStatus, getPlan, buildPlanSourceSnapshot } from './ai-organize-plan';
 import { updateJob, jobQueue, publishJobEvent } from './jobs';
 import { getCategoryTree } from './category-service';
-import { createOpenAIClient, type AIClientFactory } from './ai-client';
+import { createOpenAIClient, extractAICompletionText, type AIClientFactory } from './ai-client';
 import { getTemplate, getActiveTemplate } from './template-service';
 
 export interface AIConfig {
@@ -193,7 +193,7 @@ ${categoriesText}
           temperature: 0.2,
         });
 
-        const raw = completion.choices?.[0]?.message?.content?.trim() ?? '';
+        const raw = extractAICompletionText(completion);
         const jsonMatch = raw.match(/\{[\s\S]*\}/);
         if (!jsonMatch) throw new Error('no JSON in response');
 
