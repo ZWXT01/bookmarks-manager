@@ -142,7 +142,7 @@
       <div class="flex items-center gap-2">
         <select id="ai-preset-select" class="rounded border px-2 py-1 text-xs">
           <option value="">— 快捷预设 —</option>
-          <option value="grok">Grok (grok2api)</option>
+          <option value="grok">Grok (grop2api)</option>
           <option value="openai">OpenAI</option>
         </select>
         <button id="ai-test-btn" data-testid="ai-test-btn" type="button" class="btn-secondary btn-sm">测试连接</button>
@@ -152,7 +152,7 @@
       <label class="block">
         <div class="text-xs text-slate-600">Base URL</div>
         <input data-testid="ai-base-url-input" name="ai_base_url" value="<%- aiBaseUrl %>"
-          placeholder="例如 https://api.openai.com/v1 或 https://grok2api.1018666.xyz/v1"
+          placeholder="例如 https://api.openai.com/v1 或 https://grop2api.1018666.xyz"
           class="mt-1 w-full rounded border px-3 py-2 text-sm" />
       </label>
       <label class="block">
@@ -511,7 +511,7 @@
       var aiPresetSelect = document.getElementById('ai-preset-select');
       if (aiPresetSelect) {
         var presets = {
-          grok: { base_url: 'https://grok2api.1018666.xyz/v1', model: 'grok-4' },
+          grok: { base_url: 'https://grop2api.1018666.xyz', model: 'grok-4' },
           openai: { base_url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
         };
         aiPresetSelect.addEventListener('change', function () {
