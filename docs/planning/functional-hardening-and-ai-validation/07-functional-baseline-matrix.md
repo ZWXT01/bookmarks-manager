@@ -13,13 +13,14 @@
 
 | 项目 | 当前结论 | 证据 |
 |---|---|---|
-| 构建基线 | `npm run build` 于 2026-03-30 通过。 | 当前工作区在 `R6-EXT-05` 内置扩展 SingleFile 稳健性收口后重新 clean run 通过。 |
-| 自动化测试基线 | `npm test` 于 2026-03-30 通过，`22` 个测试文件、`171` 条测试全部通过。 | 当前工作区在 `R6-EXT-05` 内置扩展 SingleFile 稳健性收口后重新 clean run 通过。 |
+| 构建基线 | `npm run build` 于 2026-03-30 通过。 | 当前工作区在 `R6-TPL-06` 预置模板库扩容与切换基线收口后重新 clean run 通过。 |
+| 自动化测试基线 | `npm test` 于 2026-03-30 通过，`22` 个测试文件、`171` 条测试全部通过。 | 当前工作区在 `R6-TPL-06` 预置模板库扩容与切换基线收口后重新 clean run 通过。 |
 | 仓库内 Playwright 资产 | `e2e/` 与 `playwright.config.ts` 仍在仓库中，但已经明确是历史资产，不作为 release gate。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)。 |
 | UI 验证主路径 | 当前主路径是内置 Playwright MCP，已覆盖最小 smoke、关键业务旅程，以及 `R1-DOC-04` 的本地 `/login + /jobs` 补验收。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)、[最终回归与交接说明](./13-release-handoff.md)。 |
 | 前端静态样式 gate | 页面已不再依赖运行时 `tailwind.js`，静态样式生成、页面资产合同和分类交互浏览器 harness 于 2026-03-29 全部通过。 | [静态 Tailwind 迁移验收](./21-static-tailwind-validation.md)。 |
 | 模板编辑弹窗可达性 gate | 模板选择 / 编辑弹窗已经显式收口为视口高度边界 + 固定头尾布局，并在 2026-03-30 通过页面壳体回归和小视口浏览器长树验收。 | [模板编辑弹窗长树可达性验收记录](./31-template-editor-modal-validation.md)。 |
 | 模板编辑后 AI 默认源 gate | 默认单条 `classify`、`classify-batch` 与 `organize` 现在统一跟随最新活动模板；显式 `template_id` 继续隔离，assigning 中途改模板时旧 preview 会被明确判 stale。 | [模板编辑后 AI 默认源验收记录](./32-ai-template-source-validation.md)。 |
+| 预置模板库 gate | 内置预置模板现在已扩到 8 套，并支持在模板库里直接创建自定义副本或创建后立即应用；浏览器 harness 已证明首页导航、分类管理和 AI 默认候选分类会一起切换。 | [预置模板库扩容与切换验收记录](./35-preset-template-library-validation.md)。 |
 | 扩展 popup UI gate | 内置扩展 popup 现在具备明确的主操作层级、连接设置摘要、状态卡和按钮 busy / 恢复反馈，并在 2026-03-30 通过 shell test 与真实扩展 runtime 验收。 | [内置扩展 popup UI 验收记录](./33-extension-popup-ui-validation.md)。 |
 | 扩展 SingleFile 稳健性 gate | 内置扩展现在会先检查目标页和 capture bridge，再进入快照 / save-all；不支持页面、目标页失效、timeout 恢复和重复点击都已在真实扩展 runtime 下验收。 | [内置扩展 SingleFile 稳健性验收记录](./34-extension-singlefile-robustness-validation.md)。 |
 | 单条 classify 语义 gate | 单条 `/api/ai/classify` 已在 taxonomy guardrail 之上补齐本地语义择优，并新增固定样本集与复验脚本，于 2026-03-30 通过。 | [单条 classify 语义择优验收](./22-single-classify-semantic-validation.md)、[单条 classify 语义样本集验收](./23-single-classify-sample-gate-validation.md)。 |
@@ -82,7 +83,8 @@
 | 内置扩展 SingleFile 稳健性 | `tests/extension-popup-shell.test.ts` + `scripts/extension-runtime-validate.ts` + [34-extension-singlefile-robustness-validation.md](./34-extension-singlefile-robustness-validation.md) | 已纳入回归 | 当前已验证不支持页面、目标页失效、timeout 恢复与重复 `save-all` 去重；后续若升级 SingleFile 或改注入策略，必须复跑真实 runtime。 |
 | 前端资产完整性 | `scripts/generate-static-tailwind.ts` + `public/tailwind.generated.css` + `tests/integration/page-assets.test.ts` + [21-static-tailwind-validation.md](./21-static-tailwind-validation.md) | 已纳入回归 | 页面运行时 Tailwind `<script>` 和 warning shim 已移除；`public/lib/tailwind.js` 只保留为生成脚本输入，后续新增 utility class 时要同步再生成静态 CSS。 |
 | 模板编辑后 AI 默认源 | `tests/integration/ai-routes.test.ts` + `tests/integration/ai-organize-routes.test.ts` + `tests/integration/ai-harness.test.ts` + [32-ai-template-source-validation.md](./32-ai-template-source-validation.md) | 已纳入回归 | 当前已验证默认单条 `classify`、`classify-batch` 和 `organize` 会跟随最新活动模板，显式 `template_id` 仍保持隔离，assigning 中途改模板会把旧 preview 判 stale。 |
-| 模板弹窗 UI 可达性 | `tests/integration/page-assets.test.ts` + `scripts/template-editor-validate.ts` + [31-template-editor-modal-validation.md](./31-template-editor-modal-validation.md) | 已纳入回归 | 当前已验证模板选择 / 编辑弹窗在长树、小视口下的保存 / 取消可达性；剩余模板相关工作主要转入 `R6-TPL-06`。 |
+| 模板弹窗 UI 可达性 | `tests/integration/page-assets.test.ts` + `scripts/template-editor-validate.ts` + [31-template-editor-modal-validation.md](./31-template-editor-modal-validation.md) | 已纳入回归 | 当前已验证模板选择 / 编辑弹窗在长树、小视口下的保存 / 取消可达性；模板弹窗自身当前无主要遗留债务。 |
+| 预置模板库 / 切换 | `tests/integration/ops-routes.test.ts` + `tests/integration/page-assets.test.ts` + `scripts/preset-template-validate.ts` + [35-preset-template-library-validation.md](./35-preset-template-library-validation.md) | 已纳入回归 | 当前已扩到 8 套预置模板，并已验证“模板库创建副本 / 创建并应用 -> 首页导航 / 分类管理 -> AI 默认候选分类”同步切换；当前无主要预置模板覆盖盲区。 |
 | 文档 / 页面漂移 | README、设置说明、任务详情页 simplify 遗留已清理；`R4-CLEAN-01` 又移除了 `ai_simplify` 专属任务页分支 | `R1-DOC-04`、`R4-CLEAN-01` 可关闭 | `ai_simplify` 只保留 backlog / 历史任务兼容类型与旧表迁移清理，不再视为活跃功能。 |
 | 跨页面交互 UI gate | `scripts/category-interaction-validate.ts` + [16-category-interaction-validation.md](./16-category-interaction-validation.md) + [17-cross-view-interaction-validation.md](./17-cross-view-interaction-validation.md) | 已扩展到排序、删除分类、移动子分类、单条 / 批量书签移动、模板切换与刷新保持 | 后续若继续改分类导航、模板切换或书签移动链路，应只在同一 harness 上继续加场景。 |
 | UI gate 归属 | 内置 Playwright MCP 是唯一 UI gate；仓库内 `e2e/` 只做历史资产保留 | 基线稳定 | 后续若继续扩展 UI 验收，只追加 MCP 旅程，不恢复仓库内 Playwright 为主 gate。 |
