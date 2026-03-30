@@ -143,6 +143,16 @@ function bookmarkApp() {
 
     get presetTemplates() { return this.templates.filter(t => t.type === 'preset'); },
     get customTemplates() { return this.templates.filter(t => t.type === 'custom'); },
+    get templateEditRootCount() { return Array.isArray(this.templateEditTree) ? this.templateEditTree.length : 0; },
+    get templateEditChildCount() {
+      return (this.templateEditTree || []).reduce((total, node) => total + ((node.children || []).length), 0);
+    },
+    get templateEditSummary() {
+      const roots = this.templateEditRootCount;
+      const children = this.templateEditChildCount;
+      if (!roots && !children) return '暂无分类，先添加一级分类或从现有模板复制。';
+      return `${roots} 个一级分类 · ${children} 个子分类`;
+    },
 
     // 多入口 AI 分类
     showBatchSizeModal: false,
@@ -2218,6 +2228,15 @@ function bookmarkApp() {
       this.templateEditSourceId = null;
       this.templateEditSnapshot = JSON.stringify({ name: '', tree: [] });
       this.showTemplateEditModal = true;
+    },
+
+    async confirmCloseTemplateEditor() {
+      if (!this.showTemplateEditModal) return;
+      if (this.hasUnsavedTemplateChanges()) {
+        const confirmed = await AppDialog.confirm('有未保存的修改，确定要关闭吗？');
+        if (!confirmed) return;
+      }
+      this.showTemplateEditModal = false;
     },
 
     hasUnsavedTemplateChanges() {

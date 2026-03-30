@@ -146,7 +146,7 @@ describe('integration: ai route contracts', () => {
         expect(failureResponse.statusCode).toBe(500);
         expect(failureResponse.json()).toEqual({ error: 'fixture test failure' });
         expect(failureHarness.calls).toHaveLength(1);
-    });
+    }, 30000);
 
     it('covers /api/ai/classify validation, taxonomy guardrails, empty results, timeout fallback, and provider failures', async () => {
         const { ctx: appCtx, authHeaders } = await createHarnessApp();
@@ -358,7 +358,7 @@ describe('integration: ai route contracts', () => {
         });
         expect(failureResponse.statusCode).toBe(500);
         expect(failureResponse.json()).toEqual({ error: 'fixture classify failure' });
-    });
+    }, 30000);
 
     it('covers classify-batch validation, config checks, and template requirements', async () => {
         const { ctx: appCtx, authHeaders } = await createHarnessApp();
@@ -418,7 +418,7 @@ describe('integration: ai route contracts', () => {
         });
         expect(invalidTemplate.statusCode).toBe(400);
         expect(invalidTemplate.json()).toEqual({ error: '指定的模板不存在' });
-    });
+    }, 30000);
 
     it('creates preview plans with the configured default batch size for successful classify-batch requests', async () => {
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([

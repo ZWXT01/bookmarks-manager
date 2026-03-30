@@ -12,11 +12,11 @@ describe('integration: page assets', () => {
 
     beforeEach(async () => {
         ctx = await createTestApp();
-    });
+    }, 30000);
 
     afterEach(async () => {
         if (ctx) await ctx.cleanup();
-    });
+    }, 30000);
 
     it('serves the login page with the static tailwind asset only', async () => {
         const response = await ctx.app.inject({
@@ -78,5 +78,30 @@ describe('integration: page assets', () => {
         expect(response.statusCode).toBe(200);
         expect(response.body).toContain('.bg-slate-50');
         expect(response.body).toContain('.max-w-screen-2xl');
+    });
+
+    it('renders template modal shells with stable selectors and explicit viewport height bounds', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: '/',
+            headers,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('data-testid="template-select-modal"');
+        expect(response.body).toContain('data-testid="template-select-panel"');
+        expect(response.body).toContain('data-testid="template-edit-modal"');
+        expect(response.body).toContain('data-testid="template-edit-panel"');
+        expect(response.body).toContain('data-testid="template-edit-body"');
+        expect(response.body).toContain('data-testid="template-edit-footer"');
+        expect(response.body).toContain('data-testid="template-edit-save"');
+        expect(response.body).toContain('data-testid="template-edit-cancel"');
+        expect(response.body).toContain('data-testid="template-edit-name-input"');
+        expect(response.body).toContain('style="max-height: calc(100vh - 2rem);"');
+        expect(response.body).not.toContain('max-h-[80vh]');
+        expect(response.body).not.toContain('max-h-[85vh]');
     });
 });

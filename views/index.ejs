@@ -940,16 +940,20 @@
         <!-- Template Select Modal -->
         <div x-cloak x-show="showTemplateSelectModal"
             data-testid="template-select-modal"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-4"
             @click.self="showTemplateSelectModal = false">
-            <div class="w-full max-w-3xl rounded-lg bg-white p-4 shadow-xl max-h-[80vh] flex flex-col" x-data="{ activeTab: 'custom' }">
-                <div class="flex items-center justify-between mb-3 flex-shrink-0">
+            <div class="w-full max-w-3xl rounded-lg bg-white shadow-xl flex flex-col overflow-hidden"
+                style="max-height: calc(100vh - 2rem);"
+                data-testid="template-select-panel"
+                x-data="{ activeTab: 'custom' }">
+                <div class="flex items-center justify-between gap-3 border-b bg-white px-4 py-3 flex-shrink-0">
                     <h3 class="text-lg font-semibold">🗂️ 选择分类模板</h3>
                     <button @click="showTemplateSelectModal = false"
+                        data-testid="template-select-close"
                         class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                 </div>
                 <!-- Tab Navigation -->
-                <div class="flex border-b mb-3 flex-shrink-0" role="tablist" aria-label="模板类型">
+                <div class="flex border-b px-4 pt-2 flex-shrink-0" role="tablist" aria-label="模板类型">
                     <button @click="activeTab = 'custom'"
                         class="px-4 py-2 text-sm font-medium transition-colors"
                         role="tab" :aria-selected="activeTab === 'custom'" aria-controls="tabpanel-custom" id="tab-custom"
@@ -963,7 +967,8 @@
                         📚 模板库
                     </button>
                 </div>
-                <div class="flex-1 overflow-y-auto min-h-0">
+                <div class="flex-1 min-h-0 overflow-y-auto px-4 py-4"
+                    data-testid="template-select-body">
                     <!-- Tab 1: My Templates (Custom) -->
                     <div x-show="activeTab === 'custom'" class="space-y-2" role="tabpanel" id="tabpanel-custom" aria-labelledby="tab-custom">
                         <template x-for="tpl in customTemplates" :key="tpl.id">
@@ -984,6 +989,7 @@
                                 </div>
                                 <div class="flex items-center gap-1 ml-2 flex-shrink-0">
                                     <button @click="openTemplateEditor(tpl.id)"
+                                        data-testid="edit-template-button"
                                         class="text-xs px-2 py-1 rounded border hover:bg-slate-100">编辑</button>
                                     <template x-if="tpl.is_active === 1">
                                         <div class="relative group cursor-not-allowed">
@@ -1071,8 +1077,11 @@
                     </div>
                 </div>
                 <!-- New Template Button -->
-                <button @click="openNewTemplateEditor()"
-                    class="w-full mt-2 rounded border border-dashed border-slate-300 px-3 py-1.5 text-xs text-slate-500 hover:border-slate-400 hover:text-slate-700 flex-shrink-0">+ 新建自定义模板</button>
+                <div class="border-t bg-white px-4 py-3 flex-shrink-0">
+                    <button @click="openNewTemplateEditor()"
+                        data-testid="template-select-new-custom"
+                        class="w-full rounded border border-dashed border-slate-300 px-3 py-1.5 text-xs text-slate-500 hover:border-slate-400 hover:text-slate-700">+ 新建自定义模板</button>
+                </div>
             </div>
         </div>
 
@@ -1156,71 +1165,92 @@
 
         <!-- Template Edit Modal -->
         <div x-cloak x-show="showTemplateEditModal"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
-            @keydown.escape.window="if(showTemplateEditModal) { if(hasUnsavedTemplateChanges()) { if(await AppDialog.confirm('有未保存的修改，确定要关闭吗？')) showTemplateEditModal = false; } else { showTemplateEditModal = false; } }">
-            <div class="w-full max-w-3xl rounded-lg bg-white p-4 shadow-xl max-h-[85vh] flex flex-col">
-                <div class="flex items-center justify-between mb-3 flex-shrink-0">
+            data-testid="template-edit-modal"
+            class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/50 px-4 py-4"
+            @click.self="confirmCloseTemplateEditor()"
+            @keydown.escape.window="if(showTemplateEditModal) confirmCloseTemplateEditor()">
+            <div class="w-full max-w-3xl rounded-lg bg-white shadow-xl flex flex-col overflow-hidden"
+                style="max-height: calc(100vh - 2rem);"
+                data-testid="template-edit-panel">
+                <div class="flex items-center justify-between gap-3 border-b bg-white px-4 py-3 flex-shrink-0">
                     <h3 class="text-lg font-semibold" x-text="templateEditTarget ? '编辑模板' : '新建自定义模板'"></h3>
-                    <button @click="if(hasUnsavedTemplateChanges()) { if(await AppDialog.confirm('有未保存的修改，确定要关闭吗？')) showTemplateEditModal = false; } else { showTemplateEditModal = false; }"
+                    <button @click="confirmCloseTemplateEditor()"
+                        data-testid="template-edit-close"
                         class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                 </div>
-                <template x-if="!templateEditTarget">
-                    <div class="mb-3 flex-shrink-0">
-                        <label class="text-xs text-slate-600">基于</label>
-                        <select x-model="templateEditSourceId"
-                            @change="loadTemplateForEdit(templateEditSourceId)"
-                            class="w-full rounded border px-3 py-2 text-sm mt-1">
-                            <option :value="null">空白模板</option>
-                            <template x-for="tpl in templates" :key="tpl.id">
-                                <option :value="tpl.id" x-text="tpl.name + (tpl.type === 'preset' ? ' [预置]' : ' [自定义]')"></option>
-                            </template>
-                        </select>
+                <div class="flex-1 min-h-0 overflow-y-auto px-4 py-4 space-y-4"
+                    data-testid="template-edit-body">
+                    <template x-if="!templateEditTarget">
+                        <div>
+                            <label class="text-xs text-slate-600">基于</label>
+                            <select x-model="templateEditSourceId"
+                                data-testid="template-edit-source-select"
+                                @change="loadTemplateForEdit(templateEditSourceId)"
+                                class="w-full rounded border px-3 py-2 text-sm mt-1">
+                                <option :value="null">空白模板</option>
+                                <template x-for="tpl in templates" :key="tpl.id">
+                                    <option :value="tpl.id" x-text="tpl.name + (tpl.type === 'preset' ? ' [预置]' : ' [自定义]')"></option>
+                                </template>
+                            </select>
+                        </div>
+                    </template>
+                    <div>
+                        <label class="text-xs text-slate-600">模板名称</label>
+                        <input type="text" x-model="templateEditName"
+                            data-testid="template-edit-name-input"
+                            class="w-full rounded border px-3 py-2 text-sm mt-1" placeholder="输入模板名称">
                     </div>
-                </template>
-                <div class="mb-3 flex-shrink-0">
-                    <label class="text-xs text-slate-600">模板名称</label>
-                    <input type="text" x-model="templateEditName"
-                        class="w-full rounded border px-3 py-2 text-sm mt-1" placeholder="输入模板名称">
-                </div>
-                <div class="flex items-center justify-between mb-2 flex-shrink-0">
-                    <span class="text-xs text-slate-600">分类树</span>
-                    <button @click="addTemplateTreeNode()"
-                        class="text-xs text-blue-500 hover:underline">+ 添加一级分类</button>
-                </div>
-                <div class="flex-1 overflow-y-auto border rounded p-2 space-y-2 min-h-0">
-                    <template x-for="(node, pi) in templateEditTree" :key="pi">
-                        <div class="space-y-1">
-                            <div class="flex items-center gap-2">
-                                <input type="text" x-model="templateEditTree[pi].name"
-                                    class="flex-1 rounded border px-2 py-1 text-sm">
-                                <button @click="addTemplateTreeNode(pi)"
-                                    class="text-xs text-blue-500 hover:underline">+ 子分类</button>
-                                <button @click="removeTemplateTreeNode(pi)"
-                                    class="text-xs text-rose-500 hover:underline">删除</button>
+                    <div class="rounded border overflow-hidden">
+                        <div class="flex items-center justify-between gap-3 border-b bg-slate-50 px-3 py-2">
+                            <div>
+                                <div class="text-xs font-medium text-slate-600">分类树</div>
+                                <div class="mt-1 text-xs text-slate-400" x-text="templateEditSummary"></div>
                             </div>
-                            <template x-if="node.children && node.children.length > 0">
-                                <div class="ml-6 space-y-1">
-                                    <template x-for="(child, ci) in node.children" :key="ci">
-                                        <div class="flex items-center gap-2">
-                                            <input type="text"
-                                                x-model="templateEditTree[pi].children[ci].name"
-                                                class="flex-1 rounded border px-2 py-1 text-sm">
-                                            <button @click="removeTemplateTreeNode(pi, ci)"
-                                                class="text-xs text-rose-500 hover:underline">删除</button>
+                            <button @click="addTemplateTreeNode()"
+                                data-testid="template-edit-add-root"
+                                class="text-xs text-blue-500 hover:underline flex-shrink-0">+ 添加一级分类</button>
+                        </div>
+                        <div class="p-3 space-y-2"
+                            data-testid="template-edit-tree">
+                            <template x-for="(node, pi) in templateEditTree" :key="pi">
+                                <div class="space-y-1">
+                                    <div class="flex items-center gap-2">
+                                        <input type="text" x-model="templateEditTree[pi].name"
+                                            class="flex-1 rounded border px-2 py-1 text-sm">
+                                        <button @click="addTemplateTreeNode(pi)"
+                                            class="text-xs text-blue-500 hover:underline flex-shrink-0">+ 子分类</button>
+                                        <button @click="removeTemplateTreeNode(pi)"
+                                            class="text-xs text-rose-500 hover:underline flex-shrink-0">删除</button>
+                                    </div>
+                                    <template x-if="node.children && node.children.length > 0">
+                                        <div class="ml-6 space-y-1">
+                                            <template x-for="(child, ci) in node.children" :key="ci">
+                                                <div class="flex items-center gap-2">
+                                                    <input type="text"
+                                                        x-model="templateEditTree[pi].children[ci].name"
+                                                        class="flex-1 rounded border px-2 py-1 text-sm">
+                                                    <button @click="removeTemplateTreeNode(pi, ci)"
+                                                        class="text-xs text-rose-500 hover:underline flex-shrink-0">删除</button>
+                                                </div>
+                                            </template>
                                         </div>
                                     </template>
                                 </div>
                             </template>
+                            <template x-if="templateEditTree.length === 0">
+                                <div data-testid="template-edit-empty-state"
+                                    class="text-xs text-slate-400 text-center py-4">暂无分类，点击上方按钮添加</div>
+                            </template>
                         </div>
-                    </template>
-                    <template x-if="templateEditTree.length === 0">
-                        <div class="text-xs text-slate-400 text-center py-4">暂无分类，点击上方按钮添加</div>
-                    </template>
+                    </div>
                 </div>
-                <div class="flex justify-end gap-2 mt-3 pt-3 border-t flex-shrink-0">
-                    <button @click="if(hasUnsavedTemplateChanges()) { if(await AppDialog.confirm('有未保存的修改，确定要关闭吗？')) showTemplateEditModal = false; } else { showTemplateEditModal = false; }"
+                <div class="flex justify-end gap-2 border-t bg-white px-4 py-3 flex-shrink-0"
+                    data-testid="template-edit-footer">
+                    <button @click="confirmCloseTemplateEditor()"
+                        data-testid="template-edit-cancel"
                         class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
                     <button @click="saveTemplateEdit()"
+                        data-testid="template-edit-save"
                         class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">保存</button>
                 </div>
             </div>
