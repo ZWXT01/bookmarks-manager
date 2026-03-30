@@ -70,10 +70,12 @@ export interface PlanSourceSnapshot {
 
 export class PlanError extends Error {
   statusCode: number;
-  constructor(statusCode: number, message: string) {
+  activePlanId?: string;
+  constructor(statusCode: number, message: string, options?: { activePlanId?: string }) {
     super(message);
     this.name = 'PlanError';
     this.statusCode = statusCode;
+    this.activePlanId = options?.activePlanId;
   }
 }
 
@@ -328,6 +330,47 @@ function logStateChange(db: Db, planId: string, from: string | null, to: string,
   db.prepare('INSERT INTO plan_state_logs (plan_id, from_status, to_status, reason, created_at) VALUES (?, ?, ?, ?, ?)').run(planId, from, to, reason, nowIso());
 }
 
+function expireAssigningPlan(db: Db, plan: PlanRow): void {
+  updatePlan(db, plan.id, { status: 'error', phase: null });
+  logStateChange(db, plan.id, plan.status, 'error', 'timeout');
+  if (!plan.job_id) return;
+  jobQueue.cancelJob(plan.job_id);
+  if (getJob(db, plan.job_id)) {
+    updateJob(db, plan.job_id, { status: 'failed', message: 'plan timeout' });
+  }
+}
+
+function ensureAssigningSlotAvailable(db: Db, excludePlanId?: string | null): void {
+  const rows = excludePlanId
+    ? db.prepare(`
+      SELECT *
+      FROM ai_organize_plans
+      WHERE status = 'assigning' AND id <> ?
+      ORDER BY created_at DESC
+    `).all(excludePlanId) as PlanRow[]
+    : db.prepare(`
+      SELECT *
+      FROM ai_organize_plans
+      WHERE status = 'assigning'
+      ORDER BY created_at DESC
+    `).all() as PlanRow[];
+
+  let activeConflict: PlanRow | null = null;
+  for (const row of rows) {
+    const createdMs = Date.parse(row.created_at);
+    const age = Number.isFinite(createdMs) ? Date.now() - createdMs : Infinity;
+    if (age > PLAN_TIMEOUT_MS) {
+      expireAssigningPlan(db, row);
+      continue;
+    }
+    if (!activeConflict) activeConflict = row;
+  }
+
+  if (activeConflict) {
+    throw new PlanError(409, 'active plan already exists', { activePlanId: activeConflict.id });
+  }
+}
+
 export function buildPlanSourceSnapshot(
   db: Db,
   plan: Pick<PlanRow, 'template_id' | 'target_tree' | 'assignments' | 'source_snapshot'>,
@@ -545,24 +588,7 @@ function collectSoftApplyConflicts(
 export function createPlan(db: Db, scope: string, templateId?: number | null): PlanRow {
   return db.transaction(() => {
     cleanupExpiredSnapshots(db);
-    const active = db.prepare(`SELECT * FROM ai_organize_plans WHERE status = 'assigning' ORDER BY created_at DESC LIMIT 1`).get() as PlanRow | undefined;
-
-    if (active) {
-      const createdMs = Date.parse(active.created_at);
-      const age = Number.isFinite(createdMs) ? Date.now() - createdMs : Infinity;
-      if (age > PLAN_TIMEOUT_MS) {
-        updatePlan(db, active.id, { status: 'error' as PlanStatus, phase: null });
-        logStateChange(db, active.id, active.status, 'error', 'timeout');
-        if (active.job_id) {
-          jobQueue.cancelJob(active.job_id);
-          if (getJob(db, active.job_id)) updateJob(db, active.job_id, { status: 'failed', message: 'plan timeout' });
-        }
-      } else {
-        const err = new PlanError(409, 'active plan already exists');
-        (err as any).activePlanId = active.id;
-        throw err;
-      }
-    }
+    ensureAssigningSlotAvailable(db);
 
     // Use provided templateId or fallback to active template
     let targetTemplateId = templateId;
@@ -623,15 +649,16 @@ export function deletePlan(db: Db, planId: string): boolean {
 export function transitionStatus(db: Db, planId: string, target: PlanStatus, reason?: string): PlanRow {
   return db.transaction(() => {
     const plan = getPlan(db, planId);
-    if (!plan) throw new Error('plan not found');
+    if (!plan) throw new PlanError(404, 'plan not found');
 
     // terminal no-op (except applied→rolled_back)
     if (TERMINAL_STATUSES.has(plan.status) && !(plan.status === 'applied' && target === 'rolled_back')) return plan;
     if (plan.status === target) return plan;
-    if (!canTransition(plan.status, target)) throw new Error(`invalid transition: ${plan.status} → ${target}`);
+    if (!canTransition(plan.status, target)) throw new PlanError(409, `invalid transition: ${plan.status} → ${target}`);
 
     const patch: Partial<PlanRow> = { status: target };
     if (target === 'assigning') {
+      ensureAssigningSlotAvailable(db, planId);
       const job = createJob(db, 'ai_organize', `AI organize plan ${planId}`, 0);
       patch.job_id = job.id;
       patch.phase = 'assigning';

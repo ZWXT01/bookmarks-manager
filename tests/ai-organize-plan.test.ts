@@ -164,6 +164,37 @@ describe('ai-organize-plan', () => {
         expect(logs[i].from_status).toBe(logs[i - 1].to_status);
       }
     });
+
+    it('should reject retrying to assigning when another plan is already assigning', () => {
+      const failedPlan = createPlan(db, 'all');
+      transitionStatus(db, failedPlan.id, 'canceled');
+      updatePlan(db, failedPlan.id, { status: 'failed', phase: null });
+      const activePlan = createPlan(db, 'all');
+
+      expect(() => transitionStatus(db, failedPlan.id, 'assigning')).toThrowError(PlanError);
+
+      try {
+        transitionStatus(db, failedPlan.id, 'assigning');
+        expect.unreachable('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(PlanError);
+        expect(e.statusCode).toBe(409);
+        expect(e.activePlanId).toBe(activePlan.id);
+      }
+    });
+
+    it('should surface not found as a 404 plan error', () => {
+      expect(() => transitionStatus(db, 'missing-plan', 'canceled')).toThrowError(PlanError);
+
+      try {
+        transitionStatus(db, 'missing-plan', 'canceled');
+        expect.unreachable('should have thrown');
+      } catch (e: any) {
+        expect(e).toBeInstanceOf(PlanError);
+        expect(e.statusCode).toBe(404);
+        expect(e.message).toBe('plan not found');
+      }
+    });
   });
 
   describe('getActivePlan', () => {

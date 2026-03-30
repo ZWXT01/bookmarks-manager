@@ -958,6 +958,88 @@ describe('integration: ai organize route contracts', () => {
         expect(harness.calls).toHaveLength(1);
     });
 
+    it('rejects starting a second organize plan while another plan is assigning and returns activePlanId', async () => {
+        const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
+        const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([() => deferred.promise]);
+        seedAISettings(appCtx.db, { batchSize: 10 });
+        activateAiTestTemplate(appCtx.db);
+        seedBookmarks(appCtx.db, [
+            { title: 'Assigning Lock Bookmark', url: 'https://assigning-lock.example.test' },
+        ]);
+
+        const firstResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: authHeaders,
+            payload: { scope: 'all', batch_size: 10 },
+        });
+
+        expect(firstResponse.statusCode).toBe(200);
+        const { planId, jobId } = firstResponse.json() as { planId: string; jobId: string };
+        await waitForCondition(() => harness.calls.length === 1);
+
+        const secondResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: authHeaders,
+            payload: { scope: 'all', batch_size: 10 },
+        });
+
+        expect(secondResponse.statusCode).toBe(409);
+        expect(secondResponse.json()).toEqual({
+            error: 'active plan already exists',
+            activePlanId: planId,
+        });
+
+        deferred.resolve(jsonCompletion({ assignments: buildAssignments(1, '技术开发/前端') }));
+        await waitForCondition(() => getPlan(appCtx.db, planId)?.status === 'preview');
+        await waitForCondition(() => getJob(appCtx.db, jobId)?.status === 'done');
+    });
+
+    it('rejects retry when another organize plan is already assigning and returns activePlanId', async () => {
+        const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
+        const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([() => deferred.promise]);
+        seedAISettings(appCtx.db, { batchSize: 10 });
+        const template = activateAiTestTemplate(appCtx.db);
+        seedBookmarks(appCtx.db, [
+            { title: 'Retry Lock Bookmark', url: 'https://retry-lock.example.test' },
+        ]);
+
+        const activeResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: authHeaders,
+            payload: { scope: 'all', batch_size: 10 },
+        });
+
+        expect(activeResponse.statusCode).toBe(200);
+        const { planId: activePlanId, jobId: activeJobId } = activeResponse.json() as { planId: string; jobId: string };
+        await waitForCondition(() => harness.calls.length === 1);
+
+        const failedPlan = seedPlan(appCtx.db, {
+            status: 'failed',
+            template_id: template.id,
+            scope: 'all',
+        });
+
+        const retryResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${failedPlan.id}/retry`,
+            headers: authHeaders,
+        });
+
+        expect(retryResponse.statusCode).toBe(409);
+        expect(retryResponse.json()).toEqual({
+            error: 'active plan already exists',
+            activePlanId,
+        });
+        expect(getPlan(appCtx.db, failedPlan.id)?.status).toBe('failed');
+
+        deferred.resolve(jsonCompletion({ assignments: buildAssignments(1, '技术开发/前端') }));
+        await waitForCondition(() => getPlan(appCtx.db, activePlanId)?.status === 'preview');
+        await waitForCondition(() => getJob(appCtx.db, activeJobId)?.status === 'done');
+    });
+
     it('covers cancel transitions for assigning plans', async () => {
         ctx = await createTestApp();
         const session = await ctx.login();
@@ -987,6 +1069,98 @@ describe('integration: ai organize route contracts', () => {
             status: 'canceled',
             message: 'plan canceled',
         });
+    });
+
+    it('keeps a canceled in-flight plan from writing stale preview data and allows the next plan to proceed', async () => {
+        const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
+        const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
+            () => deferred.promise,
+            jsonCompletion({ assignments: [{ index: 1, category: '技术开发/后端' }] }),
+        ]);
+        seedAISettings(appCtx.db, { batchSize: 10 });
+        activateAiTestTemplate(appCtx.db);
+        const [firstBookmarkId, secondBookmarkId] = seedBookmarks(appCtx.db, [
+            { title: 'Canceled Bookmark', url: 'https://canceled.example.test' },
+            { title: 'Queued Next Bookmark', url: 'https://queued-next.example.test' },
+        ]);
+
+        const firstResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: authHeaders,
+            payload: { scope: `ids:${firstBookmarkId}`, batch_size: 10 },
+        });
+
+        expect(firstResponse.statusCode).toBe(200);
+        const { planId: firstPlanId, jobId: firstJobId } = firstResponse.json() as { planId: string; jobId: string };
+        await waitForCondition(() => harness.calls.length === 1);
+
+        const cancelResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${firstPlanId}/cancel`,
+            headers: authHeaders,
+        });
+
+        expect(cancelResponse.statusCode).toBe(200);
+        expect(cancelResponse.json()).toEqual({ success: true, status: 'canceled' });
+
+        const secondResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: authHeaders,
+            payload: { scope: `ids:${secondBookmarkId}`, batch_size: 10 },
+        });
+
+        expect(secondResponse.statusCode).toBe(200);
+        const { planId: secondPlanId, jobId: secondJobId } = secondResponse.json() as { planId: string; jobId: string };
+        expect(harness.calls).toHaveLength(1);
+
+        deferred.resolve(jsonCompletion({ assignments: [{ index: 1, category: '技术开发/前端' }] }));
+        await waitForCondition(() => harness.calls.length === 2);
+        await waitForCondition(() => getPlan(appCtx.db, secondPlanId)?.status === 'preview');
+        await waitForCondition(() => getJob(appCtx.db, secondJobId)?.status === 'done');
+
+        expect(getPlan(appCtx.db, firstPlanId)).toMatchObject({
+            status: 'canceled',
+            assignments: null,
+            batches_done: 0,
+            needs_review_count: 0,
+        });
+        expect(getJob(appCtx.db, firstJobId)).toMatchObject({
+            status: 'canceled',
+            message: 'plan canceled',
+        });
+
+        expect(getPlan(appCtx.db, secondPlanId)).toMatchObject({
+            status: 'preview',
+            assignments: JSON.stringify([
+                { bookmark_id: secondBookmarkId, category_path: '技术开发/后端', status: 'assigned' },
+            ]),
+            batches_done: 1,
+            batches_total: 1,
+            needs_review_count: 0,
+        });
+        expect(getJob(appCtx.db, secondJobId)).toMatchObject({
+            status: 'done',
+            processed: 1,
+            inserted: 1,
+            skipped: 0,
+        });
+    });
+
+    it('returns 404 when canceling a missing plan instead of collapsing into 500', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+
+        const cancelResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize/missing-plan/cancel',
+            headers: authHeaders,
+        });
+
+        expect(cancelResponse.statusCode).toBe(404);
+        expect(cancelResponse.json()).toEqual({ error: 'plan not found' });
     });
 
     it('covers rollback guard rails for expired and corrupted snapshots', async () => {

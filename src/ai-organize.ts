@@ -108,6 +108,12 @@ function buildCategoryListFromTree(tree: CategoryNode[]): string[] {
   return flattenTargetTreePaths(tree);
 }
 
+function isPlanExecutionCanceled(db: Db, planId: string, jobId: string | null): boolean {
+  if (jobId && jobQueue.isCanceled(jobId)) return true;
+  const currentPlan = getPlan(db, planId);
+  return !currentPlan || currentPlan.status === 'canceled';
+}
+
 export async function assignBookmarks(
   db: Db,
   planId: string,
@@ -174,15 +180,13 @@ export async function assignBookmarks(
   });
 
   for (let bi = 0; bi < batches.length; bi++) {
-    if (jobQueue.isCanceled(plan.job_id ?? '')) {
-      transitionStatus(db, planId, 'canceled');
-      return;
-    }
+    if (isPlanExecutionCanceled(db, planId, plan.job_id)) return;
 
     const batch = batches[bi];
     let success = false;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (isPlanExecutionCanceled(db, planId, plan.job_id)) return;
       try {
         const batchList = batch.map((b, i) => `${i + 1}. [${b.title}] ${b.url}`).join('\n');
         const completion = await aiClient.createChatCompletion({
@@ -211,6 +215,7 @@ ${categoriesText}
         const parsed = JSON.parse(jsonMatch[0]) as { assignments: { index: number; category: string }[] };
         const assignMap = new Map<number, string>();
         for (const a of (parsed.assignments ?? [])) assignMap.set(a.index, a.category);
+        if (isPlanExecutionCanceled(db, planId, plan.job_id)) return;
 
         for (let i = 0; i < batch.length; i++) {
           const cat = assignMap.get(i + 1);
@@ -240,6 +245,7 @@ ${categoriesText}
       }
 
       if (consecutiveFails >= failThreshold) {
+        if (isPlanExecutionCanceled(db, planId, plan.job_id)) return;
         updatePlan(db, planId, {
           assignments: JSON.stringify(allAssignments),
           failed_batch_ids: JSON.stringify(failedBatchIds),
@@ -268,6 +274,7 @@ ${categoriesText}
       url: bmMap.get(a.bookmark_id)?.url ?? '',
     }));
 
+    if (isPlanExecutionCanceled(db, planId, plan.job_id)) return;
     updatePlan(db, planId, { batches_done: bi + 1, needs_review_count: needsReviewCount, assignments: JSON.stringify(allAssignments) });
     if (plan.job_id) {
       updateJob(db, plan.job_id, {
@@ -279,6 +286,7 @@ ${categoriesText}
     }
   }
 
+  if (isPlanExecutionCanceled(db, planId, plan.job_id)) return;
   updatePlan(db, planId, {
     target_tree: serializedTargetTree,
     assignments: JSON.stringify(allAssignments),
@@ -296,5 +304,6 @@ ${categoriesText}
     });
   }
 
+  if (isPlanExecutionCanceled(db, planId, plan.job_id)) return;
   transitionStatus(db, planId, 'preview');
 }

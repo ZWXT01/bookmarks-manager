@@ -573,7 +573,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             const plan = transitionStatus(db, planId, 'canceled');
             return reply.send({ success: true, status: plan.status });
         } catch (e: any) {
-            return reply.code(500).send({ error: e.message });
+            return reply.code(e.statusCode || 500).send({ error: e.message });
         }
     });
 
@@ -581,7 +581,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
     app.post('/api/ai/organize/:planId/retry', async (req: FastifyRequest, reply: FastifyReply) => {
         const { planId } = req.params as { planId: string };
         try {
-            const { transitionStatus, getPlan } = await import('../ai-organize-plan');
+            const { transitionStatus } = await import('../ai-organize-plan');
             const plan = transitionStatus(db, planId, 'assigning');
 
             // restart assignment job
@@ -603,7 +603,9 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
             return reply.send({ success: true, status: plan.status });
         } catch (e: any) {
-            return reply.code(500).send({ error: e.message });
+            const resp: Record<string, unknown> = { error: e.message };
+            if (e.statusCode === 409 && e.activePlanId) resp.activePlanId = e.activePlanId;
+            return reply.code(e.statusCode || 500).send(resp);
         }
     });
 
