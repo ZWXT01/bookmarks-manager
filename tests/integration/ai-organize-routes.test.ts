@@ -438,7 +438,7 @@ describe('integration: ai organize route contracts', () => {
         expect(getPlan(ctx.db, plan.id)?.status).toBe('preview');
     });
 
-    it('rejects stale apply when bookmark category drifted without changing updated_at', async () => {
+    it('surfaces a conflict when bookmark category drifted without changing updated_at', async () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
@@ -478,8 +478,18 @@ describe('integration: ai organize route contracts', () => {
             headers: authHeaders,
         });
 
-        expect(applyResponse.statusCode).toBe(409);
-        expect(applyResponse.json()).toEqual({ error: 'plan is stale: bookmarks changed' });
+        expect(applyResponse.statusCode).toBe(200);
+        expect(applyResponse.json()).toMatchObject({
+            success: true,
+            needs_confirm: true,
+            applied_count: 0,
+            empty_categories: [],
+        });
+        expect(applyResponse.json().conflicts).toHaveLength(1);
+        expect(applyResponse.json().conflicts[0]).toMatchObject({
+            bookmark_id: bookmarkId,
+            reason: 'bookmark_changed',
+        });
         expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(driftedCategory!.id);
     });
 
@@ -525,7 +535,7 @@ describe('integration: ai organize route contracts', () => {
         expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
     });
 
-    it('rejects an older overlapping preview plan once a newer preview exists for the same bookmarks', async () => {
+    it('allows overlapping preview plans to apply through explicit conflict resolution', async () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
@@ -567,10 +577,42 @@ describe('integration: ai organize route contracts', () => {
             headers: authHeaders,
         });
 
-        expect(olderApplyResponse.statusCode).toBe(409);
-        expect(olderApplyResponse.json()).toEqual({ error: 'plan is stale: newer overlapping plan exists' });
+        expect(olderApplyResponse.statusCode).toBe(200);
+        expect(olderApplyResponse.json()).toMatchObject({
+            success: true,
+            needs_confirm: true,
+            applied_count: 0,
+            empty_categories: [],
+        });
+        expect(olderApplyResponse.json().conflicts).toHaveLength(1);
+        expect(olderApplyResponse.json().conflicts[0]).toMatchObject({
+            bookmark_id: bookmarkId,
+            reason: 'overlapping_plan',
+            newer_plan_id: newerPlan.id,
+            newer_plan_status: 'preview',
+        });
         expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
         expect(getBookmarkCategoryId(ctx, keeperBookmarkId)).toBe(sourceCategory!.id);
+
+        const olderResolveResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${olderPlan.id}/apply/resolve`,
+            headers: authHeaders,
+            payload: {
+                conflicts: [{ bookmark_id: bookmarkId, action: 'override' }],
+                empty_categories: [],
+            },
+        });
+
+        expect(olderResolveResponse.statusCode).toBe(200);
+        expect(olderResolveResponse.json()).toEqual({
+            success: true,
+            conflicts: [],
+            empty_categories: [],
+            applied_count: 1,
+        });
+        expect(getPlan(ctx.db, olderPlan.id)?.status).toBe('applied');
+        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(targetCategory!.id);
 
         const newerApplyResponse = await ctx.app.inject({
             method: 'POST',
@@ -581,14 +623,94 @@ describe('integration: ai organize route contracts', () => {
         expect(newerApplyResponse.statusCode).toBe(200);
         expect(newerApplyResponse.json()).toMatchObject({
             success: true,
+            needs_confirm: true,
+            applied_count: 0,
+            empty_categories: [],
+        });
+        expect(newerApplyResponse.json().conflicts).toHaveLength(1);
+        expect(newerApplyResponse.json().conflicts[0]).toMatchObject({
+            bookmark_id: bookmarkId,
+            reason: 'bookmark_changed',
+            current_category: '技术开发/前端',
+        });
+
+        const newerResolveResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${newerPlan.id}/apply/resolve`,
+            headers: authHeaders,
+            payload: {
+                conflicts: [{ bookmark_id: bookmarkId, action: 'override' }],
+                empty_categories: [],
+            },
+        });
+
+        expect(newerResolveResponse.statusCode).toBe(200);
+        expect(newerResolveResponse.json()).toMatchObject({
+            success: true,
+            conflicts: [],
+            applied_count: 1,
+        });
+        expect(newerResolveResponse.json().empty_categories).toEqual([
+            { id: targetCategory!.id, name: targetCategory!.name },
+        ]);
+        expect(getPlan(ctx.db, newerPlan.id)?.status).toBe('applied');
+        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(newerTargetCategory!.id);
+        expect(getBookmarkCategoryId(ctx, keeperBookmarkId)).toBe(sourceCategory!.id);
+    });
+
+    it('allows a same-template preview plan to apply directly when newer plans do not overlap', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        const template = activateAiTestTemplate(ctx.db);
+        const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
+        const firstTarget = getCategoryByPath(ctx.db, '技术开发/前端');
+        const secondTarget = getCategoryByPath(ctx.db, '技术开发/后端');
+
+        expect(sourceCategory).toBeTruthy();
+        expect(firstTarget).toBeTruthy();
+        expect(secondTarget).toBeTruthy();
+
+        const [olderBookmarkId, newerBookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Older Non-overlap Bookmark', url: 'https://non-overlap-older.example.test', categoryId: sourceCategory!.id },
+            { title: 'Newer Non-overlap Bookmark', url: 'https://non-overlap-newer.example.test', categoryId: sourceCategory!.id },
+        ]);
+
+        const olderPlan = seedPlan(ctx.db, {
+            status: 'preview',
+            template_id: template.id,
+            created_at: '2026-03-29T09:00:00.000Z',
+            assignments: [
+                { bookmark_id: olderBookmarkId, category_path: '技术开发/前端', status: 'assigned' },
+            ],
+        });
+
+        seedPlan(ctx.db, {
+            status: 'preview',
+            template_id: template.id,
+            created_at: '2026-03-29T09:05:00.000Z',
+            assignments: [
+                { bookmark_id: newerBookmarkId, category_path: '技术开发/后端', status: 'assigned' },
+            ],
+        });
+
+        const olderApplyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${olderPlan.id}/apply`,
+            headers: authHeaders,
+        });
+
+        expect(olderApplyResponse.statusCode).toBe(200);
+        expect(olderApplyResponse.json()).toMatchObject({
+            success: true,
             needs_confirm: false,
             applied_count: 1,
             conflicts: [],
             empty_categories: [],
         });
-        expect(getPlan(ctx.db, newerPlan.id)?.status).toBe('applied');
-        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(newerTargetCategory!.id);
-        expect(getBookmarkCategoryId(ctx, keeperBookmarkId)).toBe(sourceCategory!.id);
+        expect(getPlan(ctx.db, olderPlan.id)?.status).toBe('applied');
+        expect(getBookmarkCategoryId(ctx, olderBookmarkId)).toBe(firstTarget!.id);
+        expect(getBookmarkCategoryId(ctx, newerBookmarkId)).toBe(sourceCategory!.id);
     });
 
     it('rejects cross-template apply when the target template changed after preview generation', async () => {

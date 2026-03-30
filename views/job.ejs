@@ -154,7 +154,7 @@
           <div class="text-xs text-slate-500">将应用于模板：<span class="font-medium text-slate-700"><%= organizePlanTemplateName %></span></div>
         <% } %>
         <div id="resolve-conflicts" class="hidden">
-          <div class="text-xs text-slate-500 mb-2">以下书签在整理期间被修改，请选择处理方式：</div>
+          <div class="text-xs text-slate-500 mb-2">以下书签存在冲突，请选择处理方式：</div>
           <div id="resolve-conflicts-list" class="max-h-48 overflow-y-auto border rounded divide-y"></div>
         </div>
         <div id="resolve-empty" class="hidden">
@@ -729,6 +729,27 @@
         }
       });
 
+      function formatConflictStatus(status) {
+        if (status === 'preview') return '待应用';
+        if (status === 'applied') return '已应用';
+        return status || '未知';
+      }
+
+      function formatConflictReason(conflict) {
+        if (conflict.reason === 'overlapping_plan') {
+          var detail = '与更新的整理计划重叠';
+          if (conflict.newer_plan_id) detail += '（计划 ' + String(conflict.newer_plan_id).slice(0, 8) + '，' + formatConflictStatus(conflict.newer_plan_status) + '）';
+          return detail;
+        }
+        if (conflict.reason === 'bookmark_changed') {
+          return conflict.current_category ? '书签当前分类已变化：' + conflict.current_category : '书签当前分类已变化';
+        }
+        if (conflict.reason === 'bookmark_updated') {
+          return conflict.current_category ? '书签在预览后被编辑，当前分类：' + conflict.current_category : '书签在预览后被编辑';
+        }
+        return '检测到需要人工确认的冲突';
+      }
+
       function showResolveUI() {
         document.getElementById('plan-actions').classList.add('hidden');
         var resolveEl = document.getElementById('plan-resolve');
@@ -740,7 +761,10 @@
           var cList = document.getElementById('resolve-conflicts-list');
           cList.innerHTML = planConflicts.map(function (c, i) {
             return '<div class="px-3 py-2 flex items-center gap-2">' +
-              '<div class="flex-1 min-w-0"><div class="text-sm truncate">' + escapeHtml(c.title || c.url || '#' + c.bookmark_id) + '</div></div>' +
+              '<div class="flex-1 min-w-0">' +
+                '<div class="text-sm truncate">' + escapeHtml(c.title || c.url || '#' + c.bookmark_id) + '</div>' +
+                '<div class="text-xs text-slate-500 mt-1">' + escapeHtml(formatConflictReason(c)) + '</div>' +
+              '</div>' +
               '<select data-conflict-idx="' + i + '" class="conflict-select rounded border px-2 py-1 text-xs">' +
               '<option value="skip"' + (c.action === 'skip' ? ' selected' : '') + '>跳过</option>' +
               '<option value="override"' + (c.action === 'override' ? ' selected' : '') + '>覆盖</option></select></div>';
