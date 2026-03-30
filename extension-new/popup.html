@@ -9,56 +9,119 @@
 </head>
 
 <body>
-    <div class="popup">
-        <!-- Header -->
-        <header class="header">
-            <div class="logo">
-                <span class="logo-icon">📚</span>
-                <span class="logo-text">书签管理器</span>
+    <div class="popup" data-testid="popup-root">
+        <header class="hero" data-testid="popup-header">
+            <div class="brand">
+                <div class="brand-mark">BM</div>
+                <div class="brand-copy">
+                    <p class="eyebrow">收藏 · 快照 · SingleFile</p>
+                    <h1 class="brand-title">书签管理器</h1>
+                    <p class="hero-summary">把当前页面直接收进书签库，并按需保留完整快照。</p>
+                </div>
             </div>
-            <div class="status-badge" id="connection-status">
+            <div class="status-badge" id="connection-status" data-testid="connection-status">
                 <span class="dot" id="connection-dot"></span>
-                <span id="connection-text">连接中</span>
+                <span class="status-copy">
+                    <strong id="connection-text">连接中</strong>
+                    <small id="connection-detail">正在检查服务</small>
+                </span>
             </div>
         </header>
 
-        <!-- Alert -->
-        <div id="status" class="alert hidden"></div>
-
-        <!-- Form -->
-        <div class="form">
-            <input type="text" id="title" class="input" placeholder="📝 标题">
-            <input type="text" id="url" class="input" placeholder="🔗 网址">
-            <select id="category" class="input">
-                <option value="">-- 选择分类 --</option>
-            </select>
-        </div>
-
-        <!-- Main Actions - 重新设计按钮 -->
-        <div class="actions">
-            <button id="save-btn" class="btn primary">➕ 收藏</button>
-            <button id="snapshot-btn" class="btn secondary">📸 存档</button>
-            <button id="save-all-btn" class="btn success">⭐ 收藏+存档</button>
-        </div>
-
-        <!-- Quick Links -->
-        <div class="quick-links">
-            <button id="open-manager-btn" class="link">📋 管理页面</button>
-            <button id="settings-toggle" class="link">⚙️ 设置</button>
-        </div>
-
-        <!-- Settings (collapsible) -->
-        <div id="settings-content" class="settings hidden">
-            <input type="text" id="server-url" class="input" placeholder="服务器地址">
-            <div class="token-row">
-                <input type="password" id="api-token" class="input" placeholder="API Token">
-                <button id="toggle-token-btn" class="icon-btn">👁</button>
-            </div>
-            <div class="settings-actions">
-                <button id="save-settings-btn" class="btn primary small">保存</button>
-                <a id="open-settings-link" href="#" class="link">获取 Token</a>
+        <div id="status" class="alert hidden" data-testid="status-panel" aria-live="polite">
+            <span id="status-icon" class="alert-icon" aria-hidden="true">…</span>
+            <div class="alert-copy">
+                <strong id="status-title">处理中</strong>
+                <p id="status-message">正在准备操作</p>
             </div>
         </div>
+
+        <section class="panel capture-panel" data-testid="capture-panel">
+            <div class="section-heading">
+                <div>
+                    <p class="section-kicker">当前页面</p>
+                    <h2 class="section-title">保存目标</h2>
+                </div>
+                <span class="section-badge">实时读取标签页</span>
+            </div>
+
+            <label class="field" for="title">
+                <span class="field-label">页面标题</span>
+                <input type="text" id="title" class="input" placeholder="输入或调整标题">
+            </label>
+
+            <label class="field" for="url">
+                <span class="field-label">页面网址</span>
+                <input type="text" id="url" class="input" placeholder="输入页面 URL">
+            </label>
+
+            <label class="field" for="category">
+                <span class="field-label">目标分类</span>
+                <select id="category" class="input" data-testid="category-select">
+                    <option value="">-- 选择分类 --</option>
+                </select>
+            </label>
+
+            <p id="selection-summary" class="field-hint">未选择分类，将保存到未分类。</p>
+        </section>
+
+        <section class="panel action-panel" data-testid="action-panel">
+            <div class="section-heading">
+                <div>
+                    <p class="section-kicker">主操作</p>
+                    <h2 class="section-title">一键保存</h2>
+                </div>
+            </div>
+
+            <button id="save-all-btn" class="btn hero-action" data-testid="save-all-btn">
+                <span class="btn-title">收藏并存档</span>
+                <span class="btn-subtitle">同时创建书签和 SingleFile 快照</span>
+            </button>
+
+            <div class="action-grid">
+                <button id="save-btn" class="btn action-secondary" data-testid="save-btn">
+                    <span class="btn-title">仅收藏</span>
+                    <span class="btn-subtitle">保存标题、网址和分类</span>
+                </button>
+                <button id="snapshot-btn" class="btn action-tertiary" data-testid="snapshot-btn">
+                    <span class="btn-title">仅存档</span>
+                    <span class="btn-subtitle">抓取当前页面完整快照</span>
+                </button>
+            </div>
+        </section>
+
+        <section class="panel utility-panel" data-testid="utility-panel">
+            <div class="utility-links">
+                <button id="open-manager-btn" class="utility-link" data-testid="open-manager-btn">
+                    <span class="utility-label">打开管理页</span>
+                    <span class="utility-meta">查看收藏、快照和任务记录</span>
+                </button>
+                <button id="settings-toggle" class="utility-link settings-trigger" data-testid="settings-toggle" aria-expanded="false">
+                    <span class="utility-label">连接设置</span>
+                    <span id="settings-summary" class="utility-meta">未配置 Token</span>
+                </button>
+            </div>
+
+            <div id="settings-content" class="settings hidden" data-testid="settings-panel">
+                <label class="field" for="server-url">
+                    <span class="field-label">服务器地址</span>
+                    <input type="text" id="server-url" class="input" placeholder="http://localhost:8080">
+                </label>
+
+                <div class="field">
+                    <span class="field-label">API Token</span>
+                    <div class="token-row">
+                        <input type="password" id="api-token" class="input" placeholder="输入 API Token">
+                        <button id="toggle-token-btn" class="icon-btn" type="button" aria-label="显示或隐藏 Token">显示</button>
+                    </div>
+                </div>
+
+                <div class="settings-actions">
+                    <button id="save-settings-btn" class="btn inline-action" type="button">保存设置</button>
+                    <a id="open-settings-link" href="#" class="text-link">打开服务端设置页</a>
+                </div>
+            </div>
+        </section>
     </div>
     <script src="popup.js"></script>
 </body>

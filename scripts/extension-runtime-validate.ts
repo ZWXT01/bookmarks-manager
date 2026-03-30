@@ -119,6 +119,28 @@ async function waitForText(page: Page, selector: string, expected: string, timeo
     );
 }
 
+async function waitForClass(page: Page, selector: string, expectedClass: string, timeout = 5000): Promise<void> {
+    const locator = page.locator(selector);
+    await locator.waitFor({ timeout });
+    await pollUntil(
+        async () => await locator.getAttribute('class') || '',
+        (value) => value.split(/\s+/).includes(expectedClass),
+        timeout,
+        `${selector} to include class ${expectedClass}`,
+    );
+}
+
+async function waitForAttribute(page: Page, selector: string, attribute: string, expected: string, timeout = 5000): Promise<void> {
+    const locator = page.locator(selector);
+    await locator.waitFor({ timeout });
+    await pollUntil(
+        async () => await locator.getAttribute(attribute) || '',
+        (value) => value === expected,
+        timeout,
+        `${selector} ${attribute} to equal ${expected}`,
+    );
+}
+
 async function waitForInputValue(page: Page, selector: string, expected: string, timeout = 5000): Promise<void> {
     const locator = page.locator(selector);
     await locator.waitFor({ timeout });
@@ -266,15 +288,39 @@ async function main() {
         });
 
         try {
+            await bookmarkPopup.locator('[data-testid="popup-root"]').waitFor();
             await waitForInputValue(bookmarkPopup, '#title', bookmarkTitle);
             await waitForInputValue(bookmarkPopup, '#url', bookmarkUrl);
-            await waitForText(bookmarkPopup, '#connection-text', '请配置 Token');
+            await waitForText(bookmarkPopup, '#connection-text', '待配置');
+            await waitForAttribute(bookmarkPopup, '#settings-toggle', 'aria-expanded', 'true');
+            await waitForText(bookmarkPopup, '#settings-summary', '未配置 Token');
+
+            const popupLayout = await bookmarkPopup.evaluate(() => {
+                const primary = document.querySelector('[data-testid="save-all-btn"]')?.getBoundingClientRect();
+                const save = document.querySelector('[data-testid="save-btn"]')?.getBoundingClientRect();
+                const snapshot = document.querySelector('[data-testid="snapshot-btn"]')?.getBoundingClientRect();
+                return {
+                    primaryWidth: primary?.width ?? 0,
+                    saveWidth: save?.width ?? 0,
+                    snapshotWidth: snapshot?.width ?? 0,
+                    selectionSummary: document.querySelector('#selection-summary')?.textContent?.trim() ?? '',
+                };
+            });
+            assert(
+                popupLayout.primaryWidth > popupLayout.saveWidth && popupLayout.primaryWidth > popupLayout.snapshotWidth,
+                `popup primary action is not visually dominant: ${JSON.stringify(popupLayout)}`,
+            );
+            assert(
+                popupLayout.selectionSummary.includes('未分类'),
+                `popup selection summary mismatch before selection: ${popupLayout.selectionSummary}`,
+            );
 
             await bookmarkPopup.fill('#server-url', baseUrl);
             await bookmarkPopup.fill('#api-token', ctx.auth.apiToken);
             await bookmarkPopup.click('#save-settings-btn');
 
             await waitForText(bookmarkPopup, '#connection-text', '已连接');
+            await waitForText(bookmarkPopup, '#settings-summary', '已连接');
             await waitForOption(bookmarkPopup, '扩展验收/收藏');
 
             const managerPage = await waitForNewPage(
@@ -297,8 +343,17 @@ async function main() {
             await settingsPage.close();
 
             await bookmarkPopup.selectOption('#category', { label: '扩展验收/收藏' });
+            await waitForText(bookmarkPopup, '#selection-summary', '扩展验收/收藏');
             await bookmarkPopup.click('#save-btn');
             await waitForText(bookmarkPopup, '#status', '书签保存成功');
+            await waitForClass(bookmarkPopup, '#status', 'success');
+            await waitForText(bookmarkPopup, '#status-title', '操作完成');
+
+            const saveState = await bookmarkPopup.evaluate(() => ({
+                saveDisabled: Boolean(document.querySelector('#save-btn')?.disabled),
+                saveAllDisabled: Boolean(document.querySelector('#save-all-btn')?.disabled),
+            }));
+            assert(!saveState.saveDisabled && !saveState.saveAllDisabled, `bookmark action buttons did not recover: ${JSON.stringify(saveState)}`);
 
             const bookmark = ctx.db.prepare(`
                 SELECT b.id, b.url, b.title, b.category_id
@@ -312,6 +367,7 @@ async function main() {
 
             await bookmarkPopup.click('#snapshot-btn');
             await waitForText(bookmarkPopup, '#status', '快照已保存', 15000);
+            await waitForClass(bookmarkPopup, '#status', 'success', 15000);
 
             const snapshot = ctx.db.prepare(`
                 SELECT id, bookmark_id, filename
@@ -349,7 +405,7 @@ async function main() {
 
             await saveAllPopup.selectOption('#category', { label: '扩展验收/同时保存' });
             await saveAllPopup.click('#save-all-btn');
-            await waitForText(saveAllPopup, '#status', '快照已保存', 15000);
+            await waitForText(saveAllPopup, '#status', '已完成收藏和存档', 15000);
 
             const bookmark = ctx.db.prepare(`
                 SELECT b.id, b.url, b.title, b.category_id
@@ -387,11 +443,15 @@ async function main() {
         try {
             await waitForText(failurePopup, '#connection-text', '已连接');
             await failurePopup.click('#settings-toggle');
+            await waitForAttribute(failurePopup, '#settings-toggle', 'aria-expanded', 'true');
             await failurePopup.fill('#api-token', 'invalid-token');
             await failurePopup.click('#save-settings-btn');
             await waitForText(failurePopup, '#connection-text', '未连接');
+            await waitForText(failurePopup, '#settings-summary', '待验证');
             await failurePopup.click('#save-btn');
             await waitForText(failurePopup, '#status', '未连接到服务器');
+            await waitForClass(failurePopup, '#status', 'error');
+            await waitForText(failurePopup, '#status-title', '需要处理');
         } finally {
             await failurePopup.close();
         }
@@ -409,11 +469,14 @@ async function main() {
             results: {
                 runtimeLoaded: true,
                 popupBoundToTargetPage: true,
+                popupUiShellVerified: true,
+                popupPrimaryActionHierarchyVerified: true,
                 managerLinkOpened: true,
                 settingsLinkOpened: true,
                 bookmarkSaved: true,
                 snapshotSaved: true,
                 saveAllSaved: true,
+                popupStatusStatesVerified: true,
                 failurePromptVerified: true,
                 bookmarkCount,
                 snapshotCount,
