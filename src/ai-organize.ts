@@ -23,85 +23,89 @@ export type BatchSize = typeof VALID_BATCH_SIZES[number];
 
 // ==================== Batch Assignment ====================
 
+const casefold = (value: string) => value.toLowerCase().trim();
+
+function normalizePath(path: string): string {
+  return path.split('/').map(segment => segment.trim()).filter(Boolean).slice(0, 2).join('/');
+}
+
+function parseTargetTree(rawTree: string | null): CategoryNode[] {
+  if (!rawTree) return [];
+  try {
+    const value = JSON.parse(rawTree) as CategoryNode[];
+    return Array.isArray(value) ? value : [];
+  } catch {
+    return [];
+  }
+}
+
+function buildLiveCategoryTreeSnapshot(db: Db): CategoryNode[] {
+  return getCategoryTree(db).map(node => ({
+    name: node.name,
+    children: (node.children ?? []).map(child => ({ name: child.name })),
+  }));
+}
+
+function resolvePlanTargetTree(db: Db, plan: Pick<PlanRow, 'template_id' | 'target_tree'>): CategoryNode[] {
+  const snapshottedTree = parseTargetTree(plan.target_tree);
+  if (snapshottedTree.length > 0) return snapshottedTree;
+
+  if (plan.template_id != null) {
+    const template = getTemplate(db, plan.template_id);
+    if (template) {
+      const templateTree = parseTargetTree(template.tree);
+      if (templateTree.length > 0) return templateTree;
+    }
+  }
+
+  const activeTemplate = getActiveTemplate(db);
+  if (activeTemplate) {
+    const activeTree = parseTargetTree(activeTemplate.tree);
+    if (activeTree.length > 0) return activeTree;
+  }
+
+  return buildLiveCategoryTreeSnapshot(db);
+}
+
+function flattenTargetTreePaths(tree: CategoryNode[]): string[] {
+  const seen = new Set<string>();
+  const paths: string[] = [];
+
+  for (const node of tree) {
+    const top = normalizePath(node.name);
+    if (top) {
+      const key = casefold(top);
+      if (!seen.has(key)) {
+        seen.add(key);
+        paths.push(top);
+      }
+    }
+
+    for (const child of node.children ?? []) {
+      const childPath = normalizePath(`${node.name}/${child.name}`);
+      if (!childPath) continue;
+      const key = casefold(childPath);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      paths.push(childPath);
+    }
+  }
+
+  return paths;
+}
+
 export function validateAssignment(categoryPath: string, validPaths: Set<string>): boolean {
-  const normalized = categoryPath.split('/').map(s => s.trim()).filter(Boolean).slice(0, 2).join('/');
-  return validPaths.has(normalized.toLowerCase().trim());
+  return validPaths.has(casefold(normalizePath(categoryPath)));
 }
 
 interface BookmarkBatch { id: number; url: string; title: string; current_category: string | null }
 
-function buildValidPathsFromDb(db: Db, templateId?: number | null): Set<string> {
-  const paths = new Set<string>();
-
-  // If templateId is provided and different from active, read from template tree
-  if (templateId != null) {
-    const active = getActiveTemplate(db);
-
-    if (active?.id !== templateId) {
-      // Cross-template: read from template's tree definition
-      const template = getTemplate(db, templateId);
-      if (template) {
-        const tree = JSON.parse(template.tree);
-        for (const node of tree) {
-          const fp = node.name.trim();
-          if (fp) paths.add(fp.toLowerCase());
-          for (const child of node.children || []) {
-            const cfp = `${node.name}/${child.name}`.trim();
-            if (cfp) paths.add(cfp.toLowerCase());
-          }
-        }
-        return paths;
-      }
-    }
-  }
-
-  // Default: read from live categories
-  for (const node of getCategoryTree(db)) {
-    const fp = node.fullPath.trim();
-    if (fp) paths.add(fp.toLowerCase());
-    for (const child of node.children) {
-      const cfp = child.fullPath.trim();
-      if (cfp) paths.add(cfp.toLowerCase());
-    }
-  }
-  return paths;
+function buildValidPathsFromTree(tree: CategoryNode[]): Set<string> {
+  return new Set(flattenTargetTreePaths(tree).map(path => casefold(path)));
 }
 
-function buildCategoryListFromDb(db: Db, templateId?: number | null): string[] {
-  const list: string[] = [];
-
-  // If templateId is provided and different from active, read from template tree
-  if (templateId != null) {
-    const active = getActiveTemplate(db);
-
-    if (active?.id !== templateId) {
-      // Cross-template: read from template's tree definition
-      const template = getTemplate(db, templateId);
-      if (template) {
-        const tree = JSON.parse(template.tree);
-        for (const node of tree) {
-          const fp = node.name.trim();
-          if (fp) list.push(fp);
-          for (const child of node.children || []) {
-            const cfp = `${node.name}/${child.name}`.trim();
-            if (cfp) list.push(cfp);
-          }
-        }
-        return list;
-      }
-    }
-  }
-
-  // Default: read from live categories
-  for (const node of getCategoryTree(db)) {
-    const fp = node.fullPath.trim();
-    if (fp) list.push(fp);
-    for (const child of node.children) {
-      const cfp = child.fullPath.trim();
-      if (cfp) list.push(cfp);
-    }
-  }
-  return list;
+function buildCategoryListFromTree(tree: CategoryNode[]): string[] {
+  return flattenTargetTreePaths(tree);
 }
 
 export async function assignBookmarks(
@@ -119,9 +123,16 @@ export async function assignBookmarks(
   const plan = getPlan(db, planId);
   if (!plan) throw new Error('plan not found');
 
-  // Critical fix: Read categories from target template, not live categories
-  const validPaths = buildValidPathsFromDb(db, plan.template_id);
-  const categoryList = buildCategoryListFromDb(db, plan.template_id);
+  const targetTree = resolvePlanTargetTree(db, plan);
+  const serializedTargetTree = targetTree.length > 0 ? JSON.stringify(targetTree) : null;
+  if (serializedTargetTree && serializedTargetTree !== plan.target_tree) {
+    updatePlan(db, planId, { target_tree: serializedTargetTree });
+  }
+  const planSnapshot: PlanRow = serializedTargetTree && serializedTargetTree !== plan.target_tree
+    ? { ...plan, target_tree: serializedTargetTree }
+    : plan;
+  const validPaths = buildValidPathsFromTree(targetTree);
+  const categoryList = buildCategoryListFromTree(targetTree);
 
   // resolve scope: support bookmark_ids, uncategorized, category:N, or all
   let whereClause = '';
@@ -269,10 +280,11 @@ ${categoriesText}
   }
 
   updatePlan(db, planId, {
+    target_tree: serializedTargetTree,
     assignments: JSON.stringify(allAssignments),
     failed_batch_ids: failedBatchIds.length ? JSON.stringify(failedBatchIds) : null,
     needs_review_count: needsReviewCount,
-    source_snapshot: JSON.stringify(buildPlanSourceSnapshot(db, plan, allAssignments)),
+    source_snapshot: JSON.stringify(buildPlanSourceSnapshot(db, planSnapshot, allAssignments)),
   });
 
   if (plan.job_id) {

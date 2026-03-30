@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getPlan } from '../../src/ai-organize-plan';
 import { getCategoryByPath } from '../../src/category-service';
 import { getJob, jobQueue } from '../../src/jobs';
-import { createTemplate } from '../../src/template-service';
+import { createTemplate, updateTemplate } from '../../src/template-service';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import {
     activateAiTestTemplate,
@@ -194,6 +194,100 @@ describe('integration: ai organize route contracts', () => {
             skipped: 1,
         });
         expect(harness.calls).toHaveLength(1);
+    });
+
+    it('uses the latest active template for default organize while preserving explicit template overrides', async () => {
+        const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
+            jsonCompletion({
+                assignments: [
+                    { index: 1, category: '技术开发/前端' },
+                    { index: 2, category: '学习资源/教程' },
+                ],
+            }),
+            jsonCompletion({
+                assignments: [
+                    { index: 1, category: '归档/稍后阅读' },
+                ],
+            }),
+        ]);
+        seedAISettings(appCtx.db, { batchSize: 10 });
+        const activeTemplate = activateAiTestTemplate(appCtx.db, '活动模板');
+
+        const oldFrontend = getCategoryByPath(appCtx.db, '技术开发/前端');
+        const oldDocs = getCategoryByPath(appCtx.db, '学习资源/文档');
+        expect(oldFrontend).toBeTruthy();
+        expect(oldDocs).toBeTruthy();
+
+        const bookmarkIds = seedBookmarks(appCtx.db, [
+            { title: 'Legacy Frontend Bookmark', url: 'https://legacy-frontend.example.test', categoryId: oldFrontend!.id },
+            { title: 'Legacy Docs Bookmark', url: 'https://legacy-docs.example.test', categoryId: oldDocs!.id },
+        ]);
+
+        const updatedTree = [
+            { name: '技术开发', children: [{ name: 'Web前端' }, { name: '后端' }] },
+            { name: '学习资源', children: [{ name: '教程' }] },
+        ];
+        updateTemplate(appCtx.db, activeTemplate.id, { tree: updatedTree });
+
+        const explicitTree = [
+            { name: '归档', children: [{ name: '稍后阅读' }] },
+            { name: '参考', children: [{ name: 'API' }] },
+        ];
+        const explicitTemplate = createTemplate(appCtx.db, '显式模板', explicitTree);
+
+        const defaultResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: authHeaders,
+            payload: {
+                scope: `ids:${bookmarkIds.join(',')}`,
+                batch_size: 10,
+            },
+        });
+        expect(defaultResponse.statusCode).toBe(200);
+        await jobQueue.onIdle();
+
+        const defaultPrompt = harness.calls[0].messages[0].content as string;
+        expect(defaultPrompt).toContain('\n技术开发/Web前端\n');
+        expect(defaultPrompt).toContain('\n学习资源/教程\n');
+        expect(defaultPrompt.includes('\n技术开发/前端\n')).toBe(false);
+        expect(defaultPrompt.includes('\n学习资源/文档\n')).toBe(false);
+
+        const defaultPlan = getPlan(appCtx.db, (defaultResponse.json() as { planId: string }).planId);
+        expect(defaultPlan).not.toBeNull();
+        expect(defaultPlan?.template_id).toBe(activeTemplate.id);
+        expect(defaultPlan?.target_tree ? JSON.parse(defaultPlan.target_tree) : null).toEqual(updatedTree);
+        expect(defaultPlan?.assignments ? JSON.parse(defaultPlan.assignments) : null).toEqual([
+            { bookmark_id: bookmarkIds[0], category_path: '', status: 'needs_review' },
+            { bookmark_id: bookmarkIds[1], category_path: '学习资源/教程', status: 'assigned' },
+        ]);
+
+        const explicitResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: authHeaders,
+            payload: {
+                scope: `ids:${bookmarkIds[0]}`,
+                batch_size: 10,
+                template_id: explicitTemplate.id,
+            },
+        });
+        expect(explicitResponse.statusCode).toBe(200);
+        await jobQueue.onIdle();
+
+        const explicitPrompt = harness.calls[1].messages[0].content as string;
+        expect(explicitPrompt).toContain('\n归档/稍后阅读\n');
+        expect(explicitPrompt).toContain('\n参考/API\n');
+        expect(explicitPrompt.includes('\n技术开发/Web前端\n')).toBe(false);
+        expect(explicitPrompt.includes('\n学习资源/教程\n')).toBe(false);
+
+        const explicitPlan = getPlan(appCtx.db, (explicitResponse.json() as { planId: string }).planId);
+        expect(explicitPlan).not.toBeNull();
+        expect(explicitPlan?.template_id).toBe(explicitTemplate.id);
+        expect(explicitPlan?.target_tree ? JSON.parse(explicitPlan.target_tree) : null).toEqual(explicitTree);
+        expect(explicitPlan?.assignments ? JSON.parse(explicitPlan.assignments) : null).toEqual([
+            { bookmark_id: bookmarkIds[0], category_path: '归档/稍后阅读', status: 'assigned' },
+        ]);
     });
 
     it('covers live-template apply, confirm-empty, and rollback restoration', async () => {

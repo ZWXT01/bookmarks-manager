@@ -1,10 +1,11 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { assignBookmarks } from '../../src/ai-organize';
-import { createPlan, getPlan, updatePlan } from '../../src/ai-organize-plan';
+import { applyPlan, createPlan, getPlan, updatePlan } from '../../src/ai-organize-plan';
 import { createJob, getJob, jobQueue } from '../../src/jobs';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import {
+    AI_TEST_TEMPLATE_TREE,
     activateAiTestTemplate,
     createQueuedAIHarness,
     jsonCompletion,
@@ -23,6 +24,16 @@ function parseAssignments(planId: string, assignments: string | null) {
         category_path: string;
         status: 'assigned' | 'needs_review';
     }>;
+}
+
+function createDeferred<T>() {
+    let resolve!: (value: T | PromiseLike<T>) => void;
+    let reject!: (reason?: unknown) => void;
+    const promise = new Promise<T>((res, rej) => {
+        resolve = res;
+        reject = rej;
+    });
+    return { promise, resolve, reject };
 }
 
 describe('integration: AI deterministic harness', () => {
@@ -218,6 +229,61 @@ describe('integration: AI deterministic harness', () => {
         });
         expect(harness.calls).toHaveLength(1);
         expect(harness.calls[0].timeout).toBe(123);
+        expect(harness.remainingSteps()).toBe(0);
+    });
+
+    it('freezes the template snapshot used during assignment so later template edits stale the preview', async () => {
+        ctx = await createTestApp();
+        const template = activateAiTestTemplate(ctx.db, '中途变更模板');
+        const config = seedAISettings(ctx.db);
+        const bookmarkIds = seedBookmarks(ctx.db, [
+            { title: 'React', url: 'https://react.dev' },
+        ]);
+        const plan = createPlan(ctx.db, `ids:${bookmarkIds[0]}`, template.id);
+        const job = createJob(ctx.db, 'ai_organize', 'template snapshot freeze', bookmarkIds.length);
+        updatePlan(ctx.db, plan.id, { job_id: job.id });
+
+        const { updateTemplate } = await import('../../src/template-service');
+        const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
+        const harness = createQueuedAIHarness([() => deferred.promise]);
+        const assignPromise = assignBookmarks(
+            ctx.db,
+            plan.id,
+            config,
+            { timeout: 123, maxRetries: 0, failThreshold: 1 },
+            10,
+            harness.aiClientFactory,
+        );
+
+        expect(harness.calls).toHaveLength(1);
+
+        updateTemplate(ctx.db, template.id, {
+            tree: [
+                { name: '技术开发', children: [{ name: 'Web前端' }, { name: '后端' }] },
+                { name: '学习资源', children: [{ name: '教程' }] },
+            ],
+        });
+
+        deferred.resolve(jsonCompletion({
+            assignments: [{ index: 1, category: '技术开发/前端' }],
+        }));
+        await assignPromise;
+
+        const updatedPlan = getPlan(ctx.db, plan.id);
+        expect(updatedPlan).not.toBeNull();
+        expect(updatedPlan?.status).toBe('preview');
+        expect(updatedPlan?.target_tree ? JSON.parse(updatedPlan.target_tree) : null).toEqual(AI_TEST_TEMPLATE_TREE);
+        expect(parseAssignments(updatedPlan!.id, updatedPlan!.assignments)).toEqual([
+            { bookmark_id: bookmarkIds[0], category_path: '技术开发/前端', status: 'assigned' },
+        ]);
+
+        const sourceSnapshot = updatedPlan?.source_snapshot ? JSON.parse(updatedPlan.source_snapshot) : null;
+        expect(sourceSnapshot?.template).toEqual({
+            template_id: template.id,
+            updated_at: template.updated_at,
+            paths: ['技术开发', '技术开发/前端', '技术开发/后端', '学习资源', '学习资源/文档'],
+        });
+        expect(() => applyPlan(ctx.db, plan.id)).toThrow('plan is stale: target template changed');
         expect(harness.remainingSteps()).toBe(0);
     });
 });

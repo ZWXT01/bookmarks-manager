@@ -286,6 +286,32 @@ function parseTemplatePaths(rawTree: string): string[] {
   });
 }
 
+function buildLiveCategoryTreeSnapshot(db: Db): CategoryNode[] {
+  return getCategoryTree(db).map(node => ({
+    name: node.name,
+    children: (node.children ?? []).map(child => ({ name: child.name })),
+  }));
+}
+
+function buildTemplateSnapshot(db: Db, templateId: number | null | undefined): PlanTemplateSnapshot | null {
+  if (templateId == null) return null;
+  const template = getTemplate(db, templateId);
+  if (!template) return null;
+  return {
+    template_id: template.id,
+    updated_at: template.updated_at,
+    paths: parseTemplatePaths(template.tree),
+  };
+}
+
+function buildInitialTargetTree(db: Db, templateId: number | null | undefined): CategoryNode[] {
+  if (templateId != null) {
+    const template = getTemplate(db, templateId);
+    if (template) return parseTree(template.tree);
+  }
+  return buildLiveCategoryTreeSnapshot(db);
+}
+
 function canTransition(from: PlanStatus, to: PlanStatus): boolean {
   if (from === to) return true;
   if (to === 'canceled' && !TERMINAL_STATUSES.has(from)) return true;
@@ -304,7 +330,7 @@ function logStateChange(db: Db, planId: string, from: string | null, to: string,
 
 export function buildPlanSourceSnapshot(
   db: Db,
-  plan: Pick<PlanRow, 'template_id' | 'target_tree' | 'assignments'>,
+  plan: Pick<PlanRow, 'template_id' | 'target_tree' | 'assignments' | 'source_snapshot'>,
   assignmentsInput?: Assignment[],
 ): PlanSourceSnapshot {
   const assignments = assignmentsInput ?? parseAssignments(plan.assignments);
@@ -329,17 +355,11 @@ export function buildPlanSourceSnapshot(
     }
   }
 
-  let template: PlanTemplateSnapshot | null = null;
-  if (plan.template_id != null) {
-    const targetTemplate = getTemplate(db, plan.template_id);
-    if (targetTemplate) {
-      template = {
-        template_id: targetTemplate.id,
-        updated_at: targetTemplate.updated_at,
-        paths: parseTemplatePaths(targetTemplate.tree),
-      };
-    }
-  }
+  const existingSnapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
+  const existingTemplateSnapshot = existingSnapshot?.template;
+  const template = existingTemplateSnapshot && existingTemplateSnapshot.template_id === plan.template_id
+    ? existingTemplateSnapshot
+    : buildTemplateSnapshot(db, plan.template_id);
 
   return {
     bookmark_states: bookmarkSnapshots,
@@ -553,8 +573,18 @@ export function createPlan(db: Db, scope: string, templateId?: number | null): P
 
     const id = randomUUID();
     const now = nowIso();
+    const initialTargetTree = buildInitialTargetTree(db, targetTemplateId);
+    const initialSourceSnapshot: PlanSourceSnapshot = {
+      bookmark_states: [],
+      live_target_categories: [],
+      template: buildTemplateSnapshot(db, targetTemplateId),
+    };
     db.prepare(`INSERT INTO ai_organize_plans (id, status, scope, phase, template_id, batches_done, batches_total, needs_review_count, created_at)
       VALUES (?, 'assigning', ?, 'assigning', ?, 0, 0, 0, ?)`).run(id, scope.trim() || 'all', targetTemplateId, now);
+    updatePlan(db, id, {
+      target_tree: JSON.stringify(initialTargetTree),
+      source_snapshot: JSON.stringify(initialSourceSnapshot),
+    });
     logStateChange(db, id, null, 'assigning', 'plan_created');
 
     // cleanup: keep 5 most recent non-applied

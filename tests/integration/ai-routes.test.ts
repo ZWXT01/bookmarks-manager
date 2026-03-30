@@ -464,4 +464,81 @@ describe('integration: ai route contracts', () => {
         expect(harness.calls).toHaveLength(1);
     });
 
+    it('refreshes default single and batch AI category sources to the latest active template after edits', async () => {
+        const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
+            textCompletion('学习资源/教程'),
+            jsonCompletion({
+                assignments: [
+                    { index: 1, category: '技术开发/前端' },
+                    { index: 2, category: '学习资源/教程' },
+                ],
+            }),
+        ]);
+        seedAISettings(appCtx.db);
+        const template = activateAiTestTemplate(appCtx.db, '可编辑活动模板');
+        const { getCategoryByPath } = await import('../../src/category-service');
+        const { updateTemplate } = await import('../../src/template-service');
+
+        const oldFrontend = getCategoryByPath(appCtx.db, '技术开发/前端');
+        const oldDocs = getCategoryByPath(appCtx.db, '学习资源/文档');
+        expect(oldFrontend).toBeTruthy();
+        expect(oldDocs).toBeTruthy();
+
+        const bookmarkIds = seedBookmarks(appCtx.db, [
+            { title: 'Legacy Frontend Bookmark', url: 'https://legacy-frontend.example.test', categoryId: oldFrontend!.id },
+            { title: 'Legacy Docs Bookmark', url: 'https://legacy-docs.example.test', categoryId: oldDocs!.id },
+        ]);
+
+        const updatedTree = [
+            { name: '技术开发', children: [{ name: 'Web前端' }, { name: '后端' }] },
+            { name: '学习资源', children: [{ name: '教程' }] },
+        ];
+        updateTemplate(appCtx.db, template.id, { tree: updatedTree });
+
+        const classifyResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify',
+            headers: authHeaders,
+            payload: {
+                title: 'Template Edit Tutorial',
+                url: 'https://template-edit.example.test/tutorial',
+            },
+        });
+        expect(classifyResponse.statusCode).toBe(200);
+        expect(classifyResponse.json()).toEqual({ category: '学习资源/教程' });
+
+        const singlePrompt = harness.calls[0].messages[1].content as string;
+        expect(singlePrompt).toContain('- 技术开发/Web前端');
+        expect(singlePrompt).toContain('- 学习资源/教程');
+        expect(singlePrompt.includes('\n- 技术开发/前端\n')).toBe(false);
+        expect(singlePrompt.includes('\n- 学习资源/文档\n')).toBe(false);
+
+        const batchResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify-batch',
+            headers: authHeaders,
+            payload: {
+                bookmark_ids: bookmarkIds,
+                batch_size: 10,
+            },
+        });
+        expect(batchResponse.statusCode).toBe(200);
+        await jobQueue.onIdle();
+
+        const batchPrompt = harness.calls[1].messages[0].content as string;
+        expect(batchPrompt).toContain('\n技术开发/Web前端\n');
+        expect(batchPrompt).toContain('\n学习资源/教程\n');
+        expect(batchPrompt.includes('\n技术开发/前端\n')).toBe(false);
+        expect(batchPrompt.includes('\n学习资源/文档\n')).toBe(false);
+
+        const { planId } = batchResponse.json() as { planId: string };
+        const plan = getPlan(appCtx.db, planId);
+        expect(plan).not.toBeNull();
+        expect(plan?.target_tree ? JSON.parse(plan.target_tree) : null).toEqual(updatedTree);
+        expect(plan?.assignments ? JSON.parse(plan.assignments) : null).toEqual([
+            { bookmark_id: bookmarkIds[0], category_path: '', status: 'needs_review' },
+            { bookmark_id: bookmarkIds[1], category_path: '学习资源/教程', status: 'assigned' },
+        ]);
+    });
+
 });
