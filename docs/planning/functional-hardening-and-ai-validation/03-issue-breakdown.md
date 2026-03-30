@@ -479,6 +479,22 @@
   - 普通 provider 错误仍保持 `500`，不发生错误吞没。
   - `npx tsc --noEmit`、定向 classify 回归、focused H1 replay、`npm test`、`npm run build` 通过。
 
+## R5-AI-06 验证 `/api/ai/test` 重试与当前 provider 残余
+
+- 目标：在 `R5-AI-05` 已收口单条 classify timeout fallback 之后，把 `/api/ai/test` 的 transient retry 合同和当前 provider 的真实残余状态写实，不再把 provider 可用性问题误判成代码未处理。
+- 范围：
+  - 验证 `/api/ai/test` 在“首个 timeout、第二次成功”场景下会重试并返回 `200`。
+  - 用 focused H1 replay 验证当前本地 provider 是否能被这层 retry 拉回绿色。
+  - 将结果补入 release handoff、风险台账和基线矩阵，明确 `/api/ai/test` 仍不是当前 provider 的稳定绿色 gate。
+- 非目标：
+  - 不继续修改 `/api/ai/test` 路由实现。
+  - 不把 `classify-batch` / `organize` 再拉回本 issue 复验。
+- 依赖：`R5-AI-05`。
+- 验收：
+  - `/api/ai/test` 的 transient retry 合同已有自动化证明。
+  - focused H1 replay 已补跑，且结果和残余原因被写入独立验收记录。
+  - 未遗留临时目录、临时 DB 或后台验证进程。
+
 ## R5-AI-06 收口 `/api/ai/test` 瞬时重试与残余留痕
 
 - 目标：为 `/api/ai/test` 增加最小但明确的瞬时抗抖动能力，避免一次 timeout 就把 AI 配置判成死路，同时验证这条改动是否足以把当前真实 provider 拉回绿色。
@@ -532,6 +548,27 @@
   - `scripts/settings-ai-diagnostic-validate.ts` 能在真实浏览器中验证成功态与诊断失败态的 UI。
   - `npx tsc --noEmit`、定向页面回归、设置页 AI 诊断浏览器 harness、`npm test`、`npm run build` 通过。
 
+## R5-AI-09 默认使用 Grok provider 验证并兼容 SSE completion
+
+- 目标：把真实 provider 验证从“依赖当前应用设置碰巧指向某个 provider”收口成明确的 `grok` 默认源，并兼容 CherryStudio 风格的 OpenAI 兼容 `text/event-stream` completion 响应，避免 `/api/ai/test` 绿了但 `classify` / `organize` 因流式文本未被解析而继续误报空结果。
+- 范围：
+  - 新增共享 validation config helper，`scripts/ai-provider-diagnose.ts`、`scripts/ai-h1-classify-semantic-validate.ts`、`scripts/ai-h1-validate.ts` 默认使用 `--provider grok`，且保留 `--provider current` 作为显式回退。
+  - provider validation 默认从本地 `validation_grok_*` 设置项读取，并回退到当前 `ai_*` 仅在其本身已指向 Grok 时。
+  - 将 Grok 预设与 validation 默认 endpoint 修正到实际可用的 `https://grok2api.1018666.xyz/v1`，避免先前 `grop2api` / 缺少 `/v1` 的 `404` 漂移。
+  - 为 AI client 增加统一 completion text 提取层，兼容标准 `choices[0].message.content` 与 `data: ... delta.content` 分块流式响应，并清理 `<think>...</think>` 噪音。
+  - 补自动化回归，并对 Grok 默认源重跑 direct diagnose、focused classify H1 与 full H1。
+- 非目标：
+  - 不在本 issue 中引入多 provider UI 配置中心。
+  - 不为所有第三方 provider 单独适配私有协议；本次只覆盖当前已验证可用的 Grok OpenAI 兼容入口。
+  - 不在本 issue 中扩大 AI organize 的业务规则或 taxonomy 语义合同。
+- 依赖：`R5-AI-08`。
+- 验收：
+  - provider validation 脚本默认无需额外参数即可使用 Grok；若要强制回到当前应用配置，必须显式传 `--provider current`。
+  - `scripts/ai-provider-diagnose.ts` 在默认 Grok 源下返回 `/models = 200`、`modelFound = true`、`/chat/completions = 200`，且 `content-type = text/event-stream`。
+  - `scripts/ai-h1-classify-semantic-validate.ts --ids react-reference-docs` 在默认 Grok 源下恢复到 `1/1 accepted`。
+  - `scripts/ai-h1-validate.ts` 在默认 Grok 源下通过 `test`、`classify`、`classify-batch`、`organize`、`apply/rollback`，并达到 `singleAccepted = 1/1`、`batchAccepted = 3/3`、`organizeAccepted = 3/3`。
+  - `npm test`、`npx tsc --noEmit`、`npm run build` 通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -562,3 +599,4 @@
 26. `R5-AI-06`
 27. `R5-AI-07`
 28. `R5-AI-08`
+29. `R5-AI-09`
