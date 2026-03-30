@@ -1,6 +1,6 @@
 # bookmarks-manager 最终回归与交接说明
 
-更新时间：2026-03-30
+更新时间：2026-03-31
 
 关联文档：
 
@@ -21,6 +21,7 @@
 - [内置扩展 popup UI 验收记录](./33-extension-popup-ui-validation.md)
 - [内置扩展 SingleFile 稳健性验收记录](./34-extension-singlefile-robustness-validation.md)
 - [预置模板库扩容与切换验收记录](./35-preset-template-library-validation.md)
+- [AI organize assigning 单活锁与取消时序验收记录](./36-ai-organize-assigning-lock-validation.md)
 
 ## 1. 执行信息
 
@@ -37,8 +38,8 @@
 
 | 项目 | 证据 | 结果 |
 |---|---|---|
-| 自动化测试 | `npm test` 于 2026-03-30 通过，`22` 个测试文件、`171` 条测试全部通过。 | 通过 |
-| 构建 | `npm run build` 于 2026-03-30 通过。 | 通过 |
+| 自动化测试 | `npm test` 于 2026-03-31 通过，`22` 个测试文件、`177` 条测试全部通过。 | 通过 |
+| 构建 | `npm run build` 于 2026-03-31 通过。 | 通过 |
 | `R1-DOC-04` 浏览器补验收 | 本地临时环境 `http://127.0.0.1:45577` 通过内置 Playwright MCP 访问 `/login` 与 `/jobs`；标题分别为“登录 - 书签管理器”和“任务列表 - 书签管理器”，`warning/error` 计数为 `0`。 | 通过 |
 | MCP 关键业务旅程 | [11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md) 已覆盖登录、首页、设置、模板、快照、备份、任务 / SSE 与 mock AI UI 联动。 | 通过 |
 | 浏览器扩展 round-trip | [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) 已 clean run，覆盖 token、保存书签、保存快照、同时保存与失败提示。 | 通过 |
@@ -49,6 +50,7 @@
 | provider 直连诊断 | [27-ai-provider-diagnostic-validation.md](./27-ai-provider-diagnostic-validation.md) 曾把问题收口到 chat completion 链路；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 又证明修正后的默认 Grok 源在 `/models` 与 `/chat/completions` 上都返回 `200`，且 chat completion 为 `text/event-stream`。 | 通过 |
 | 设置页 AI 诊断 UI | [28-settings-ai-diagnostic-ui-validation.md](./28-settings-ai-diagnostic-ui-validation.md) 已证明设置页在真实浏览器中能同时展示成功态和 `models_ok=true` 的 timeout 诊断态，操作员不必再只靠 toast 或 network 面板。 | 通过 |
 | 多待应用 organize plan 合同 | [30-organize-apply-contract-validation.md](./30-organize-apply-contract-validation.md) 已证明同模板不重叠可直接 apply、同模板重叠进入显式冲突解决、跨模板继续按模板快照隔离 apply。 | 通过 |
+| AI organize assigning 单活锁与取消时序 | [36-ai-organize-assigning-lock-validation.md](./36-ai-organize-assigning-lock-validation.md) 已证明 start / retry 现在共用 `assigning` 单活锁，canceled in-flight plan 不会在 provider 返回后继续写 stale preview，新 plan 也能在 cancel 后正常 preview。 | 通过 |
 | 模板编辑弹窗长树可达性 | [31-template-editor-modal-validation.md](./31-template-editor-modal-validation.md) 已证明模板选择 / 编辑弹窗在小视口和长树场景下都保持显式视口边界，且滚到底部后保存 / 取消仍可直接点击。 | 通过 |
 | 模板编辑后 AI 默认源 | [32-ai-template-source-validation.md](./32-ai-template-source-validation.md) 已证明默认单条 `classify`、`classify-batch` 与 `organize` 都跟随最新活动模板，显式 `template_id` 继续隔离，assigning 中途改模板会让旧 preview 明确 stale。 | 通过 |
 | 预置模板库扩容与切换 | [35-preset-template-library-validation.md](./35-preset-template-library-validation.md) 已证明模板库里可以直接基于预置模板创建自定义副本或创建后立即应用，且首页导航、分类管理和 AI 默认候选分类会同步切换到最新活动模板。 | 通过 |
@@ -62,6 +64,7 @@
 - `R1-DOC-04` 的历史阻塞已解除，文档 / 页面漂移不再是发布阻塞项。
 - 当前风险台账中已无 `open + blocked` 的遗留项，`RISK-001` 也已在默认 Grok provider 验证源下关闭。
 - 多待应用 organize plan 现在不再依赖“只有最新 plan 能应用”的隐式规则；同模板不重叠、同模板重叠、跨模板三类 apply 路径都已有明确合同和自动化证明。
+- AI organize 的 `assigning` 阶段现在也不再存在“start 被拦住、retry 却能绕过单活锁”或“cancel 后旧 provider 响应把 preview 写回来”的时序裂缝；start / retry 共用单活锁，cancel 后旧 plan 只会停在 `canceled`。
 - 模板选择 / 编辑弹窗现在不再依赖静态 Tailwind 产物里不稳定的任意值高度类名；长树和小视口下的保存 / 取消按钮都已有浏览器级可达性证明。
 - 模板编辑后的默认 AI 入口也已和活动模板树统一：默认单条 `classify`、`classify-batch`、`organize` 不再读 live categories 漂移值；显式 `template_id` 保持隔离，assigning 中途改模板时旧 preview 会被明确判 stale。
 - 预置模板库现在不再只有少数通用模板；内置模板已扩到 8 套，模板库里也可以直接创建自定义副本或创建并应用，首页导航、分类管理和 AI 默认候选分类会随活动模板一起切换。
@@ -84,6 +87,7 @@
 | `RISK-020` | resolved | 内置扩展 popup 已补齐主操作层级、设置区摘要、成功 / 失败 / loading 状态卡和按钮 busy / 恢复反馈；真实扩展 runtime 与 shell test 都已覆盖，不再停留在“能用但不好用”的工程态。 |
 | `RISK-021` | resolved | 内置扩展快照链路现在会先检查目标页与 capture bridge，并显式处理不支持页面、目标页失效、timeout 恢复和重复点击；真实 runtime 已证明不会再轻易出现按钮卡死、重复提交或 save-all 半成功。 |
 | `RISK-022` | resolved | 预置模板库已扩到 8 套，并补齐了模板库里的“创建副本 / 创建并应用”路径；真实浏览器已证明首页导航、分类管理和 AI 默认候选分类会跟随最新活动模板一起切换。 |
+| `RISK-023` | resolved | AI organize 的 start / retry 现在共用 `assigning` 单活锁，cancel 后的 in-flight provider 响应也不会再把 stale preview 写回数据库；对应定向与全量回归已在 2026-03-31 clean run 通过。 |
 
 ## 5. 交接说明
 

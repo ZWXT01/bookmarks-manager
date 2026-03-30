@@ -1,6 +1,6 @@
 # bookmarks-manager Issue 级任务拆分
 
-更新时间：2026-03-30
+更新时间：2026-03-31
 
 配套文档：
 
@@ -18,7 +18,7 @@
 ## 2. issue 命名规则
 
 - 命名格式：`<阶段>-<域>-<序号>`。
-- 阶段枚举：`G1`、`R1`、`R15`、`R2`、`R3`、`R4`、`R5`。
+- 阶段枚举：`G1`、`R1`、`R15`、`R2`、`R3`、`R4`、`R5`、`R6`、`R7`。
 - 域枚举建议：`QA`、`API`、`BE`、`DOC`、`AI`、`E2E`、`EXT`、`REL`、`H1`、`UI`、`CLEAN`。
 - 示例：`R15-AI-03`、`R1-BE-03`。
 
@@ -669,6 +669,25 @@
   - 应用不同预置模板后，首页分类导航、分类管理页和 AI 默认分类入口都切到对应最新活动模板。
   - 至少有 1 份自动化或可复跑验收记录覆盖预置模板创建 / 应用 / 切换主链路。
 
+## R7-AI-01 收口 AI organize assigning 单活锁与取消时序合同
+
+- 目标：把 AI organize 在 `assigning` 阶段的真实并发 / 时序合同彻底说清并落到实现里，避免 `retry` 绕过单活锁、取消中的 in-flight provider 返回继续把旧 preview 写回数据库，或者接口把这些合同错误折叠成 `500`。
+- 范围：
+  - 把 `createPlan()` 和 `transitionStatus(..., 'assigning')` 收口到同一套 `assigning` 单活锁检查与超时回收逻辑。
+  - 覆盖“已有 assigning plan 时再次 start / retry”返回 `409 + activePlanId` 的合同。
+  - 收口 `cancel` 与 in-flight provider 返回交错时的行为，确保已取消 plan 不再继续写 `assignments`、`batches_done`、`source_snapshot` 或 `preview` 终态。
+  - 为 `plan not found`、非法状态迁移等 organize 状态机错误补稳定错误码，而不是路由层统一吞成 `500`。
+  - 新增定向自动化回归，覆盖 start / retry 单活锁、cancel 后 next plan、missing-plan cancel 等场景。
+- 非目标：
+  - 不在本 issue 中重写 `JobQueue` 为真并发执行器。
+  - 不在本 issue 中扩大 organize 的 apply / rollback 合同范围。
+- 依赖：`R6-AI-01`、`R6-AI-03`。
+- 验收：
+  - 已有 `assigning` plan 时，`/api/ai/organize` 与 `/api/ai/organize/:planId/retry` 都稳定返回 `409`，且响应中带 `activePlanId`。
+  - 已取消的 in-flight plan 在 provider 返回后仍保持 `canceled`，不会再写回陈旧 preview 数据。
+  - 取消旧 plan 后，新的 plan 可以成功创建并继续完成 preview，不再受旧 provider 回调污染。
+  - `cancel` / `retry` 对 missing plan 或状态机冲突会返回明确 `404/409`，而不是统一 `500`。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -706,3 +725,4 @@
 33. `R6-EXT-04`
 34. `R6-EXT-05`
 35. `R6-TPL-06`
+36. `R7-AI-01`
