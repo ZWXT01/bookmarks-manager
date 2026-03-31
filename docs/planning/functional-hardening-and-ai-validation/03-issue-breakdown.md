@@ -722,6 +722,23 @@
   - retry 后的 `assigning` plan 不再携带旧 `assignments` / `failed_batch_ids` / `diff`。
   - 定向 unit + integration 回归覆盖 retry preflight 和旧失败产物清理。
 
+## R7-AI-04 收口 AI organize 冻结 scope 缺对象 stale 合同
+
+- 目标：把 `organize` 在真正进入 worker 执行时的冻结 scope 合同补完整，避免 scope 里的书签已经缺失却仍静默缩小处理集合继续 preview；同时收口 assigning 阶段的致命异常，避免 job 已 failed 但 plan 仍卡在 `assigning`。
+- 范围：
+  - `assignBookmarks()` 在读取冻结后的 `scope_bookmark_ids` 时，若 live bookmarks 数量与冻结集合不一致，直接把 plan 标记为 stale `error`，而不是静默跳过缺失书签。
+  - 该 stale 合同同时覆盖初次 `start` 与 failed plan `retry` 两条路径。
+  - organize worker 的致命异常统一落到“plan -> error，job -> failed + 明确 message”，避免残留 `assigning` 假活跃状态。
+  - 新增定向回归，覆盖“ids scope 缺对象 start”和“retry 前删除冻结 scope 书签”两类场景。
+- 非目标：
+  - 不在本 issue 中改变 apply / rollback 阶段对书签删除后的冲突策略。
+  - 不在本 issue 中引入更细粒度的 per-bookmark retry 或自动修补缺失 scope。
+- 依赖：`R7-AI-03`。
+- 验收：
+  - `start` / `retry` 在 worker 发现冻结 scope 缺对象时，会把 plan 明确落到 `error`，job 明确落到 `failed`。
+  - stale-scope 场景下不会再发起 AI 请求，也不会静默生成只覆盖剩余对象的 preview。
+  - organize worker 遇到致命异常后，不再留下 `assigning` plan 假活跃状态。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -762,3 +779,4 @@
 36. `R7-AI-01`
 37. `R7-AI-02`
 38. `R7-AI-03`
+39. `R7-AI-04`
