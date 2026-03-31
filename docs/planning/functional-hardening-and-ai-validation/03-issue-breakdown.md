@@ -706,6 +706,22 @@
   - `assignBookmarks()` 的 prompt 和 job total 只反映冻结时的书签集合，而不是 retry 时的 live scope。
   - 至少有 1 份 unit + integration 验收覆盖作用域冻结合同。
 
+## R7-AI-03 收口 AI organize retry 预检与旧失败产物清理
+
+- 目标：把 failed plan `retry` 的入口收口成稳定合同，避免“AI 配置缺失却把 plan 推进到 `assigning` 但不入队”，以及 retry 期间旧失败产物短暂残留在 plan 上、UI 继续展示陈旧 assignments / diff 的问题。
+- 范围：
+  - `retry` 前置校验 AI 配置，缺配置时直接返回 `400`，不进入 `assigning`。
+  - `transitionStatus(..., 'assigning')` 在 failed plan retry 时清理旧 `assignments`、`failed_batch_ids`、`needs_review_count`、批次计数和旧 `bookmark_states / live_target_categories`，但保留冻结后的 scope / template 快照。
+  - 新增定向回归，覆盖“retry 缺配置不推进状态”和“retry assigning 期间不暴露旧 preview 数据”。
+- 非目标：
+  - 不在本 issue 中改变 `retry` 对模板树版本的语义。
+  - 不在本 issue 中扩大 organize apply / rollback 的合同范围。
+- 依赖：`R7-AI-01`、`R7-AI-02`。
+- 验收：
+  - failed plan 在缺少 AI 配置时 `retry` 直接返回 `400`，plan 保持 `failed` 且不创建新 job。
+  - retry 后的 `assigning` plan 不再携带旧 `assignments` / `failed_batch_ids` / `diff`。
+  - 定向 unit + integration 回归覆盖 retry preflight 和旧失败产物清理。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -745,3 +761,4 @@
 35. `R6-TPL-06`
 36. `R7-AI-01`
 37. `R7-AI-02`
+38. `R7-AI-03`
