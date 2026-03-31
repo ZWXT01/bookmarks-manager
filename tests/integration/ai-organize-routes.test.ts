@@ -981,6 +981,38 @@ describe('integration: ai organize route contracts', () => {
         expect(getPlan(ctx.db, failedPlan.id)?.job_id).toBeNull();
     });
 
+    it('marks assigning plans as stale when ids scope contains bookmarks that no longer exist', async () => {
+        const { ctx: appCtx, harness, authHeaders } = await createHarnessApp();
+        seedAISettings(appCtx.db, { batchSize: 10 });
+        activateAiTestTemplate(appCtx.db);
+        const [bookmarkId] = seedBookmarks(appCtx.db, [
+            { title: 'Live Scope Bookmark', url: 'https://live-scope.example.test' },
+        ]);
+
+        const startResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: authHeaders,
+            payload: { scope: `ids:${bookmarkId},999999`, batch_size: 10 },
+        });
+
+        expect(startResponse.statusCode).toBe(200);
+
+        const { planId, jobId } = startResponse.json() as { planId: string; jobId: string };
+        await waitForCondition(() => getPlan(appCtx.db, planId)?.status === 'error');
+        await waitForCondition(() => getJob(appCtx.db, jobId)?.status === 'failed');
+
+        expect(getPlan(appCtx.db, planId)).toMatchObject({
+            status: 'error',
+            phase: null,
+        });
+        expect(getJob(appCtx.db, jobId)).toMatchObject({
+            status: 'failed',
+            message: 'plan is stale: scope bookmarks changed',
+        });
+        expect(harness.calls).toHaveLength(0);
+    });
+
     it('retries against the frozen original bookmark scope instead of refreshed live all scope', async () => {
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
             jsonCompletion({ assignments: buildAssignments(2, '技术开发/前端') }),
@@ -1097,6 +1129,47 @@ describe('integration: ai organize route contracts', () => {
             deferred.resolve(jsonCompletion({ assignments: buildAssignments(2, '技术开发/前端') }));
             await waitForCondition(() => getPlan(appCtx.db, failedPlan.id)?.status === 'preview');
         }
+    });
+
+    it('marks retrying plans as stale when frozen scope bookmarks were deleted before reassignment', async () => {
+        const { ctx: appCtx, harness, authHeaders } = await createHarnessApp();
+        seedAISettings(appCtx.db, { batchSize: 10 });
+        const template = activateAiTestTemplate(appCtx.db);
+        const bookmarkIds = seedBookmarks(appCtx.db, [
+            { title: 'Retry Missing 1', url: 'https://retry-missing-1.example.test' },
+            { title: 'Retry Missing 2', url: 'https://retry-missing-2.example.test' },
+        ]);
+
+        const failedPlan = createPlan(appCtx.db, `ids:${bookmarkIds.join(',')}`, template.id);
+        transitionStatus(appCtx.db, failedPlan.id, 'canceled');
+        updatePlan(appCtx.db, failedPlan.id, {
+            status: 'failed',
+            phase: null,
+        });
+        appCtx.db.prepare('DELETE FROM bookmarks WHERE id = ?').run(bookmarkIds[1]);
+
+        const retryResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${failedPlan.id}/retry`,
+            headers: authHeaders,
+        });
+
+        expect(retryResponse.statusCode).toBe(200);
+        expect(retryResponse.json()).toEqual({ success: true, status: 'assigning' });
+        await waitForCondition(() => getPlan(appCtx.db, failedPlan.id)?.status === 'error');
+
+        const retriedPlan = getPlan(appCtx.db, failedPlan.id);
+        expect(retriedPlan).toMatchObject({
+            status: 'error',
+            phase: null,
+        });
+        expect(retriedPlan?.job_id).toBeTruthy();
+        await waitForCondition(() => getJob(appCtx.db, retriedPlan!.job_id!)?.status === 'failed');
+        expect(getJob(appCtx.db, retriedPlan!.job_id!)).toMatchObject({
+            status: 'failed',
+            message: 'plan is stale: scope bookmarks changed',
+        });
+        expect(harness.calls).toHaveLength(0);
     });
 
     it('rejects starting a second organize plan while another plan is assigning and returns activePlanId', async () => {

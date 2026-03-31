@@ -310,7 +310,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             }
 
             const { createPlan, updatePlan } = await import('../ai-organize-plan');
-            const { assignBookmarks } = await import('../ai-organize');
+            const { assignBookmarks, failPlanExecution } = await import('../ai-organize');
             const { createJob, jobQueue, updateJob } = await import('../jobs');
 
             const plan = createPlan(db, 'ids:' + ids.join(','), targetTemplateId);
@@ -321,7 +321,11 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                 try {
                     await assignBookmarks(db, plan.id, config, {}, batchSize, aiClientFactory);
                 } catch (e: any) {
-                    updateJob(db, job.id, { status: 'failed', message: e.message });
+                    failPlanExecution(db, plan.id, e);
+                    updateJob(db, job.id, {
+                        status: 'failed',
+                        message: e instanceof Error && e.message ? e.message : String(e),
+                    });
                 }
             });
 
@@ -375,7 +379,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             }
 
             const { createPlan, updatePlan } = await import('../ai-organize-plan');
-            const { assignBookmarks } = await import('../ai-organize');
+            const { assignBookmarks, failPlanExecution } = await import('../ai-organize');
             const { createJob, jobQueue, updateJob } = await import('../jobs');
 
             const plan = createPlan(db, scope, targetTemplateId);
@@ -386,7 +390,11 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                 try {
                     await assignBookmarks(db, plan.id, config, {}, batchSize, aiClientFactory);
                 } catch (e: any) {
-                    updateJob(db, job.id, { status: 'failed', message: e.message });
+                    failPlanExecution(db, plan.id, e);
+                    updateJob(db, job.id, {
+                        status: 'failed',
+                        message: e instanceof Error && e.message ? e.message : String(e),
+                    });
                 }
             });
 
@@ -589,14 +597,18 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
             // restart assignment job
             if (plan.status === 'assigning' && plan.job_id) {
-                const { assignBookmarks } = await import('../ai-organize');
+                const { assignBookmarks, failPlanExecution } = await import('../ai-organize');
                 const { jobQueue, updateJob } = await import('../jobs');
                 const batchSize = getDefaultBatchSize();
                 jobQueue.enqueue(plan.job_id, async () => {
                     try {
                         await assignBookmarks(db, planId, config, {}, batchSize, aiClientFactory);
                     } catch (e: any) {
-                        updateJob(db, plan.job_id!, { status: 'failed', message: e.message });
+                        failPlanExecution(db, planId, e);
+                        updateJob(db, plan.job_id!, {
+                            status: 'failed',
+                            message: e instanceof Error && e.message ? e.message : String(e),
+                        });
                     }
                 });
             }

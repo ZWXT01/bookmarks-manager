@@ -39,6 +39,21 @@ function parseTargetTree(rawTree: string | null): CategoryNode[] {
   }
 }
 
+function getErrorMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  return typeof error === 'string' && error.trim() ? error : 'assignment failed';
+}
+
+export function failPlanExecution(db: Db, planId: string, error: unknown, reason = 'assignment_failed'): void {
+  const plan = getPlan(db, planId);
+  if (!plan || plan.status !== 'assigning') return;
+
+  const nextPlan = transitionStatus(db, planId, 'error', reason);
+  if (nextPlan.job_id) {
+    updateJob(db, nextPlan.job_id, { status: 'failed', message: getErrorMessage(error) });
+  }
+}
+
 function buildLiveCategoryTreeSnapshot(db: Db): CategoryNode[] {
   return getCategoryTree(db).map(node => ({
     name: node.name,
@@ -150,6 +165,12 @@ export async function assignBookmarks(
       ORDER BY b.id
     `).all(...scopeBookmarkIds) as BookmarkBatch[]
     : [];
+
+  const fetchedBookmarkIds = new Set(bookmarks.map(bookmark => bookmark.id));
+  if (fetchedBookmarkIds.size !== scopeBookmarkIds.length) {
+    failPlanExecution(db, planId, 'plan is stale: scope bookmarks changed', 'scope_stale');
+    return;
+  }
 
   const batches: BookmarkBatch[][] = [];
   for (let i = 0; i < bookmarks.length; i += batchSize) batches.push(bookmarks.slice(i, i + batchSize));
