@@ -214,6 +214,47 @@ describe('ai-organize-plan', () => {
         expect(e.message).toBe('plan not found');
       }
     });
+
+    it('should clear stale retry artifacts while preserving the frozen scope snapshot', () => {
+      const bookmarkIds = seedBookmarks(db, [
+        { title: 'Retry Artifact 1', url: 'https://retry-artifact-1.example.test' },
+        { title: 'Retry Artifact 2', url: 'https://retry-artifact-2.example.test' },
+      ]);
+      const failedPlan = createPlan(db, 'all');
+      transitionStatus(db, failedPlan.id, 'canceled');
+      updatePlan(db, failedPlan.id, {
+        status: 'failed',
+        phase: null,
+        assignments: [
+          { bookmark_id: bookmarkIds[0], category_path: '技术开发/前端', status: 'assigned' },
+        ],
+        failed_batch_ids: [0],
+        needs_review_count: 1,
+        batches_done: 1,
+        batches_total: 1,
+      });
+
+      const retried = transitionStatus(db, failedPlan.id, 'assigning');
+      const snapshot = JSON.parse(retried.source_snapshot!) as {
+        bookmark_states: unknown[];
+        live_target_categories: unknown[];
+        scope_bookmark_ids: number[];
+        scope_frozen: boolean;
+      };
+
+      expect(retried).toMatchObject({
+        status: 'assigning',
+        assignments: null,
+        failed_batch_ids: null,
+        needs_review_count: 0,
+        batches_done: 0,
+        batches_total: 0,
+      });
+      expect(snapshot.scope_frozen).toBe(true);
+      expect(snapshot.scope_bookmark_ids).toEqual(bookmarkIds);
+      expect(snapshot.bookmark_states).toEqual([]);
+      expect(snapshot.live_target_categories).toEqual([]);
+    });
   });
 
   describe('getActivePlan', () => {

@@ -492,6 +492,19 @@ export function ensurePlanScopeSnapshot(db: Db, planId: string): PlanRow {
   return updatePlan(db, planId, { source_snapshot: JSON.stringify(sourceSnapshot) });
 }
 
+function buildFreshAssigningSourceSnapshot(db: Db, plan: Pick<PlanRow, 'scope' | 'template_id' | 'source_snapshot'>): PlanSourceSnapshot {
+  const existingSnapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
+  return {
+    bookmark_states: [],
+    live_target_categories: [],
+    template: existingSnapshot?.template ?? buildTemplateSnapshot(db, plan.template_id),
+    scope_bookmark_ids: existingSnapshot?.scope_frozen
+      ? existingSnapshot.scope_bookmark_ids
+      : resolveScopeBookmarkIds(db, plan.scope),
+    scope_frozen: true,
+  };
+}
+
 function requireSourceSnapshot(plan: PlanRow): PlanSourceSnapshot {
   const snapshot = parseSourceSnapshot(plan.source_snapshot);
   if (!snapshot) throw new PlanError(409, 'plan safety snapshot missing; rerun organize');
@@ -742,11 +755,20 @@ export function transitionStatus(db: Db, planId: string, target: PlanStatus, rea
 
     const patch: Partial<PlanRow> = { status: target };
     if (target === 'assigning') {
+      const planWithScope = ensurePlanScopeSnapshot(db, planId);
       ensureAssigningSlotAvailable(db, planId);
-      ensurePlanScopeSnapshot(db, planId);
       const job = createJob(db, 'ai_organize', `AI organize plan ${planId}`, 0);
       patch.job_id = job.id;
       patch.phase = 'assigning';
+      patch.assignments = null;
+      patch.diff_summary = null;
+      patch.backup_snapshot = null;
+      patch.source_snapshot = JSON.stringify(buildFreshAssigningSourceSnapshot(db, planWithScope));
+      patch.batches_done = 0;
+      patch.batches_total = 0;
+      patch.failed_batch_ids = null;
+      patch.needs_review_count = 0;
+      patch.applied_at = null;
     } else if (target === 'preview') {
       patch.phase = 'preview';
     } else if (target === 'applied') {

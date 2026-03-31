@@ -958,6 +958,29 @@ describe('integration: ai organize route contracts', () => {
         expect(harness.calls).toHaveLength(1);
     });
 
+    it('requires AI config before moving a failed plan back into assigning on retry', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        const template = activateAiTestTemplate(ctx.db);
+        const failedPlan = seedPlan(ctx.db, {
+            status: 'failed',
+            template_id: template.id,
+            scope: 'all',
+        });
+
+        const retryResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${failedPlan.id}/retry`,
+            headers: authHeaders,
+        });
+
+        expect(retryResponse.statusCode).toBe(400);
+        expect(retryResponse.json()).toEqual({ error: '请先在设置页配置 AI' });
+        expect(getPlan(ctx.db, failedPlan.id)?.status).toBe('failed');
+        expect(getPlan(ctx.db, failedPlan.id)?.job_id).toBeNull();
+    });
+
     it('retries against the frozen original bookmark scope instead of refreshed live all scope', async () => {
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
             jsonCompletion({ assignments: buildAssignments(2, '技术开发/前端') }),
@@ -1013,6 +1036,67 @@ describe('integration: ai organize route contracts', () => {
         expect(prompt).toContain('https://frozen-retry-1.example.test');
         expect(prompt).toContain('https://frozen-retry-2.example.test');
         expect(prompt.includes('https://late-added.example.test')).toBe(false);
+    });
+
+    it('clears stale failed assignments before retrying so assigning plans do not expose old preview data', async () => {
+        const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
+        const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([() => deferred.promise]);
+        seedAISettings(appCtx.db, { batchSize: 10 });
+        const template = activateAiTestTemplate(appCtx.db);
+        const bookmarkIds = seedBookmarks(appCtx.db, [
+            { title: 'Retry Clear 1', url: 'https://retry-clear-1.example.test' },
+            { title: 'Retry Clear 2', url: 'https://retry-clear-2.example.test' },
+        ]);
+
+        const failedPlan = createPlan(appCtx.db, 'all', template.id);
+        transitionStatus(appCtx.db, failedPlan.id, 'canceled');
+        updatePlan(appCtx.db, failedPlan.id, {
+            status: 'failed',
+            phase: null,
+            assignments: [
+                { bookmark_id: bookmarkIds[0], category_path: '技术开发/前端', status: 'assigned' },
+            ],
+            failed_batch_ids: [0],
+            needs_review_count: 1,
+            batches_done: 1,
+            batches_total: 1,
+        });
+
+        const retryResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${failedPlan.id}/retry`,
+            headers: authHeaders,
+        });
+
+        expect(retryResponse.statusCode).toBe(200);
+        expect(retryResponse.json()).toEqual({ success: true, status: 'assigning' });
+        await waitForCondition(() => harness.calls.length === 1);
+        try {
+            const assigningPlan = getPlan(appCtx.db, failedPlan.id);
+            expect(assigningPlan).toMatchObject({
+                status: 'assigning',
+                assignments: null,
+                failed_batch_ids: null,
+                needs_review_count: 0,
+            });
+
+            const detailResponse = await appCtx.app.inject({
+                method: 'GET',
+                url: `/api/ai/organize/${failedPlan.id}`,
+                headers: authHeaders,
+            });
+
+            expect(detailResponse.statusCode).toBe(200);
+            expect(detailResponse.json()).toMatchObject({
+                id: failedPlan.id,
+                status: 'assigning',
+                assignments: null,
+            });
+            expect('diff' in detailResponse.json()).toBe(false);
+        } finally {
+            deferred.resolve(jsonCompletion({ assignments: buildAssignments(2, '技术开发/前端') }));
+            await waitForCondition(() => getPlan(appCtx.db, failedPlan.id)?.status === 'preview');
+        }
     });
 
     it('rejects starting a second organize plan while another plan is assigning and returns activePlanId', async () => {

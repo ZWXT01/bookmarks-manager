@@ -581,24 +581,24 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
     app.post('/api/ai/organize/:planId/retry', async (req: FastifyRequest, reply: FastifyReply) => {
         const { planId } = req.params as { planId: string };
         try {
+            const config = getAIConfig(getSetting);
+            if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
+
             const { transitionStatus } = await import('../ai-organize-plan');
             const plan = transitionStatus(db, planId, 'assigning');
 
             // restart assignment job
             if (plan.status === 'assigning' && plan.job_id) {
-                const config = getAIConfig(getSetting);
-                if (config) {
-                    const { assignBookmarks } = await import('../ai-organize');
-                    const { jobQueue, updateJob } = await import('../jobs');
-                    const batchSize = getDefaultBatchSize();
-                    jobQueue.enqueue(plan.job_id, async () => {
-                        try {
-                            await assignBookmarks(db, planId, config, {}, batchSize, aiClientFactory);
-                        } catch (e: any) {
-                            updateJob(db, plan.job_id!, { status: 'failed', message: e.message });
-                        }
-                    });
-                }
+                const { assignBookmarks } = await import('../ai-organize');
+                const { jobQueue, updateJob } = await import('../jobs');
+                const batchSize = getDefaultBatchSize();
+                jobQueue.enqueue(plan.job_id, async () => {
+                    try {
+                        await assignBookmarks(db, planId, config, {}, batchSize, aiClientFactory);
+                    } catch (e: any) {
+                        updateJob(db, plan.job_id!, { status: 'failed', message: e.message });
+                    }
+                });
             }
 
             return reply.send({ success: true, status: plan.status });
