@@ -1,6 +1,6 @@
 # bookmarks-manager 最终回归与交接说明
 
-更新时间：2026-03-31
+更新时间：2026-04-01
 
 关联文档：
 
@@ -27,6 +27,7 @@
 - [AI organize 冻结 scope 缺对象 stale 验收记录](./39-ai-organize-frozen-scope-stale-validation.md)
 - [AI organize error phase 与 retry 语义验收记录](./40-ai-organize-error-phase-validation.md)
 - [AI organize error plan 放弃合同验收记录](./41-ai-organize-error-cancel-validation.md)
+- [历史 issue Playwright 浏览器复验记录](./42-playwright-historical-issue-regression-validation.md)
 
 ## 1. 执行信息
 
@@ -36,6 +37,7 @@
   - `npm test`
   - `npm run build`
   - 内置 Playwright MCP UI gate
+  - 历史 issue Playwright 浏览器复验矩阵
   - 扩展 popup round-trip harness
   - `H1` 真实 provider AI 验收与单条 classify focused replay
 
@@ -43,10 +45,11 @@
 
 | 项目 | 证据 | 结果 |
 |---|---|---|
-| 自动化测试 | `npm test` 于 2026-04-01 通过，`22` 个测试文件、`187` 条测试全部通过。 | 通过 |
+| 自动化测试 | `npm test` 于 2026-04-01 通过，`22` 个测试文件、`188` 条测试全部通过。 | 通过 |
 | 构建 | `npm run build` 于 2026-04-01 通过。 | 通过 |
 | `R1-DOC-04` 浏览器补验收 | 本地临时环境 `http://127.0.0.1:45577` 通过内置 Playwright MCP 访问 `/login` 与 `/jobs`；标题分别为“登录 - 书签管理器”和“任务列表 - 书签管理器”，`warning/error` 计数为 `0`。 | 通过 |
 | MCP 关键业务旅程 | [11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md) 已覆盖登录、首页、设置、模板、快照、备份、任务 / SSE 与 mock AI UI 联动。 | 通过 |
+| 历史 issue Playwright 浏览器复验 | [42-playwright-historical-issue-regression-validation.md](./42-playwright-historical-issue-regression-validation.md) 已 clean run `10` 条浏览器脚本，补齐 `R1/R2/R3/R4/R5/R6/R7` 历史 issue 的统一浏览器回放入口。 | 通过 |
 | 浏览器扩展 round-trip | [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) 已 clean run，覆盖 token、保存书签、保存快照、同时保存与失败提示。 | 通过 |
 | 内置扩展 popup UI | [33-extension-popup-ui-validation.md](./33-extension-popup-ui-validation.md) 已证明 popup 的主操作层级、设置区摘要、状态卡和真实运行时成功 / 失败反馈都已经收口，且不回退既有书签 / 快照主链路。 | 通过 |
 | 内置扩展 SingleFile 稳健性 | [34-extension-singlefile-robustness-validation.md](./34-extension-singlefile-robustness-validation.md) 已证明不支持页面、目标页失效、timeout 恢复和重复 `save-all` 点击都能给出可恢复反馈，并避免重复数据或半成功状态。 | 通过 |
@@ -80,6 +83,7 @@
 - AI organize 的冻结 scope 现在也不会在执行时静默缩水了：如果 scope 里的书签在 worker 真正运行前已经缺失，plan 会明确落到 stale `error`，而不是只处理剩余对象继续给出 preview。
 - AI organize 的 `error` phase 现在也有明确产品语义：missing plan / invalid status 的 retry 不会再被配置错误盖住，recoverable `error` plan 可以直接重试，首页 modal 和任务详情页也都能看见中断原因，不会再卡在 `assigning`。
 - AI organize 的 `error` plan 现在也能真正“放弃”了：状态机允许 `error -> canceled`，首页 modal 的取消动作只会在后端确认成功时关闭，不再出现服务端拒绝但前端误报成功的假交互。
+- 历史 issue 里有浏览器表面的主合同现在也不再散落在多份旧验收记录中；`scripts/playwright-issue-regression-validate.ts` 已把 release journeys、分类导航 / 交互、设置页 AI 诊断、模板长树、预置模板、AI organize UI、扩展 round-trip / runtime / action popup 串成统一 clean rerun 入口。
 - 模板选择 / 编辑弹窗现在不再依赖静态 Tailwind 产物里不稳定的任意值高度类名；长树和小视口下的保存 / 取消按钮都已有浏览器级可达性证明。
 - 模板编辑后的默认 AI 入口也已和活动模板树统一：默认单条 `classify`、`classify-batch`、`organize` 不再读 live categories 漂移值；显式 `template_id` 保持隔离，assigning 中途改模板时旧 preview 会被明确判 stale。
 - 预置模板库现在不再只有少数通用模板；内置模板已扩到 8 套，模板库里也可以直接创建自定义副本或创建并应用，首页导航、分类管理和 AI 默认候选分类会随活动模板一起切换。
@@ -111,7 +115,7 @@
 
 ## 5. 交接说明
 
-- UI gate 继续只认内置 Playwright MCP；仓库内 `e2e/` 和 `playwright.config.ts` 保留为历史资产，不恢复为当前主 gate。
+- UI gate 仍以内置 Playwright MCP 为主；`R7-QA-07` 新增的 `scripts/playwright-issue-regression-validate.ts` 是历史 issue 的补充 browser replay，不等于恢复仓库内 `e2e/` 和 `playwright.config.ts` 为主 gate。
 - AI 凭证继续只通过设置页写入本地环境；真实 `base_url`、`api_key`、`model` 不进入仓库、日志或文档样例。
 - 备份还原继续维持 partial-restore 合同，只恢复 `categories` 与 `bookmarks`，并保留 `pre_restore_*.db` 回滚点。
 - 扩展当前使用 `category_id` 提交分类，并以下拉完整路径展示分类；后续不要回退到按分类名提交。
@@ -130,6 +134,7 @@
 | 真实 AI `H1` 全量 | `npx tsx scripts/ai-h1-validate.ts`；默认走 Grok，若要验证当前应用设置可加 `--provider current` |
 | 设置页 AI 诊断 UI | `npx tsx scripts/settings-ai-diagnostic-validate.ts` |
 | MCP UI gate | `npx tsx scripts/playwright-mcp-smoke-env.ts` 启动临时服务，再按 [08](./08-playwright-mcp-smoke-baseline.md) 与 [11](./11-playwright-mcp-release-journeys.md) 用内置 Playwright MCP 复跑 |
+| 历史 issue 浏览器复验 | `npx playwright install chromium` 后执行 `npx tsx scripts/playwright-issue-regression-validate.ts` |
 | 扩展 round-trip | `npx tsx scripts/extension-roundtrip-validate.ts` |
 | 真实 AI `H1` | 按 [10](./10-ai-provider-h1-validation.md) 的步骤，用人工提供的临时凭证复跑，结束后清理临时环境 |
 
@@ -142,4 +147,5 @@
 - 本次 `R5-AI-07` direct diagnose 只写出脱敏 JSON 报告，不创建临时 DB；focused H1 replay 同样确认 `tempDirCleaned = true`。
 - 本次 `R5-AI-08` 设置页浏览器 harness 使用 `createTestApp()` 临时环境和 headless Chrome，退出后已清理临时目录与会话环境。
 - 本次 `R5-AI-09` 的默认 Grok direct diagnose、focused H1 和 full H1 都在报告中确认 `tempDirCleaned = true` 或无临时 DB；未遗留后台验证进程。
+- 本次 `R7-QA-07` 历史 issue 浏览器复验使用的 `createTestApp()` 临时环境、扩展 popup-harness / runtime 临时目录和 action popup fixture 环境都已在各脚本输出中确认清理；唯一新增前置是 Playwright Chromium 二进制缓存 `/home/human/.cache/ms-playwright/chromium-1208`，它属于后续复跑所需依赖，不是脏测试产物。
 - `R2-REL-03` 本轮未遗留额外测试服务、端口、临时二进制或测试数据。

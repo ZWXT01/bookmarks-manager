@@ -772,6 +772,23 @@
   - 首页点击“放弃”时，只有真正成功取消才会关闭 modal；失败时会显示后端错误。
   - 取消 `error` plan 不会篡改原 failed job 的 message / status 留痕。
 
+## R7-QA-07 补齐历史 issue 的 Playwright 浏览器复验矩阵
+
+- 目标：把此前已经收口的历史 issue 中“有页面 / 浏览器宿主表面”的部分重新做一次 clean browser replay，不再只依赖零散验收记录、单条脚本或路由测试。
+- 范围：
+  - 新增独立的 release journey 浏览器脚本，复放 `R1-QA-01`、`R2-E2E-01`、`R2-REL-03` 的首页 / 设置 / 任务 / 快照 / 模板 / AI organize 入口主链路。
+  - 新增 `AI organize` 浏览器 harness，补齐 `assigning cancel`、`failed retry`、`error cancel`、`preview apply` 的页面级验证，把 `R6-AI-01`、`R7-AI-01`、`R7-AI-05`、`R7-AI-06` 从“主要靠路由测试”推进到“真实浏览器可回放”。
+  - 新增统一入口，串联历史分类导航、跨页面交互、设置页 AI 诊断、模板长树、预置模板、扩展 round-trip、真实 runtime 与 action popup 脚本。
+  - 对齐扩展 popup 迭代后的文案漂移，修正旧 round-trip harness 中已过时的 `待配置 / 已完成收藏和存档` 断言。
+- 非目标：
+  - 不恢复仓库内 `e2e/` 和 `playwright.config.ts` 为主验证路径。
+  - 不把当前没有 MCP server 可调用的会话包装成“真实 MCP 会话”；本 issue 记录的是独立 Playwright 浏览器 harness 的等价复验。
+- 依赖：`R7-AI-06`、`R6-TPL-06`、`R6-EXT-05`。
+- 验收：
+  - `npx tsx scripts/playwright-issue-regression-validate.ts` 可以 clean run，并顺序覆盖 `R1/R2/R3/R4/R5/R6/R7` 的主要历史浏览器 issue。
+  - `AI organize`、模板、设置页、分类交互和扩展宿主链路都具备可复跑浏览器证据，不再只停留在零散脚本或旧文档。
+  - `npx tsc --noEmit`、`npm test`、`npm run build` 在本轮历史浏览器复验后继续通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -815,3 +832,4 @@
 39. `R7-AI-04`
 40. `R7-AI-05`
 41. `R7-AI-06`
+42. `R7-QA-07`
