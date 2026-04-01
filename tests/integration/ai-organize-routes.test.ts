@@ -1355,6 +1355,39 @@ describe('integration: ai organize route contracts', () => {
         });
     });
 
+    it('allows canceling error plans so users can discard interrupted organize runs', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        const job = seedJob(ctx.db, {
+            id: 'organize-error-job',
+            type: 'ai_organize',
+            status: 'failed',
+            message: 'plan is stale: scope bookmarks changed',
+        });
+        const plan = seedPlan(ctx.db, {
+            id: 'organize-error-plan',
+            job_id: job.id,
+            status: 'error',
+            phase: null,
+        });
+
+        const cancelResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${plan.id}/cancel`,
+            headers: authHeaders,
+        });
+
+        expect(cancelResponse.statusCode).toBe(200);
+        expect(cancelResponse.json()).toEqual({ success: true, status: 'canceled' });
+        expect(getPlan(ctx.db, plan.id)?.status).toBe('canceled');
+        expect(getPlan(ctx.db, plan.id)?.phase).toBeNull();
+        expect(getJob(ctx.db, job.id)).toMatchObject({
+            status: 'failed',
+            message: 'plan is stale: scope bookmarks changed',
+        });
+    });
+
     it('keeps a canceled in-flight plan from writing stale preview data and allows the next plan to proceed', async () => {
         const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([

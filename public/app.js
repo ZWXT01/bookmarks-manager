@@ -2603,12 +2603,13 @@ function bookmarkApp() {
         const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/cancel', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }
         });
+        const data = await res.json().catch(() => null);
         if (res.ok) {
           this.organizePlan = null;
           this.organizePhase = 'idle';
           await this.startOrganize();
         } else {
-          this.showToast('取消计划失败', 'error');
+          this.showToast((data && data.error) ? data.error : '取消计划失败', 'error');
         }
       } catch {
         this.showToast('取消计划失败', 'error');
@@ -2735,11 +2736,16 @@ function bookmarkApp() {
     async cancelOrganize() {
       if (!this.organizePlan?.id) return;
       try {
-        await fetch('/api/ai/organize/' + this.organizePlan.id + '/cancel', {
+        const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/cancel', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }
         });
-        this.showToast('已取消', 'info');
-        this.closeOrganizeModal();
+        const data = await res.json().catch(() => null);
+        if (res.ok) {
+          this.showToast('已取消', 'info');
+          this.closeOrganizeModal();
+        } else {
+          this.showToast((data && data.error) ? data.error : '取消失败', 'error');
+        }
       } catch {
         this.showToast('取消失败', 'error');
       }

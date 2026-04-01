@@ -369,7 +369,7 @@ function buildInitialTargetTree(db: Db, templateId: number | null | undefined): 
 
 function canTransition(from: PlanStatus, to: PlanStatus): boolean {
   if (from === to) return true;
-  if (to === 'canceled' && !IMMUTABLE_TERMINAL_STATUSES.has(from) && from !== 'error') return true;
+  if (to === 'canceled' && !IMMUTABLE_TERMINAL_STATUSES.has(from)) return true;
   const allowed: Record<string, PlanStatus[]> = {
     assigning: ['preview', 'failed', 'error'],
     preview: ['applied'],
