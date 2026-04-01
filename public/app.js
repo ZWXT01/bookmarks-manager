@@ -88,7 +88,7 @@ function bookmarkApp() {
     organizeScope: 'all',
     organizeScopeCategoryId: '',
     organizePlan: null,
-    organizePhase: 'idle', // idle, assigning, preview, applied, failed
+    organizePhase: 'idle', // idle, assigning, preview, applied, failed, error
     organizeProgress: { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 },
     organizePollTimer: null,
     organizeDiff: null,
@@ -2590,6 +2590,7 @@ function bookmarkApp() {
         else if (data.status === 'preview') { this.organizePhase = 'preview'; }
         else if (data.status === 'applied') { this.organizePhase = 'applied'; }
         else if (data.status === 'failed') this.organizePhase = 'failed';
+        else if (data.status === 'error') this.organizePhase = 'error';
       } catch {
         this.showToast('恢复计划失败', 'error');
         this.organizePhase = 'idle';
@@ -2639,6 +2640,8 @@ function bookmarkApp() {
             this.organizePhase = 'assigning';
           } else if (data.status === 'failed') {
             this.organizePhase = 'failed';
+          } else if (data.status === 'error') {
+            this.organizePhase = 'error';
           }
         }
       } catch { }
@@ -2750,8 +2753,12 @@ function bookmarkApp() {
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data?.success) {
+          this.organizePlan = { ...(this.organizePlan || {}), status: 'assigning', message: null };
+          this.organizeProgress = { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 };
           this.organizePhase = 'assigning';
           this.pollOrganizeProgress();
+        } else {
+          this.showToast((data && data.error) ? data.error : '重试失败', 'error');
         }
       } catch {
         this.showToast('重试失败', 'error');

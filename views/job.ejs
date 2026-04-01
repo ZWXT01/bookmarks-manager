@@ -256,8 +256,8 @@
             分类建议（共 <span><%= organizeAssignmentTotal %></span> 条）
           </div>
           <% if (organizePlanStatus) { %>
-            <span class="text-xs px-2 py-0.5 rounded <%= organizePlanStatus === 'applied' ? 'bg-green-100 text-green-700' : organizePlanStatus === 'preview' ? 'bg-blue-100 text-blue-700' : organizePlanStatus === 'assigning' ? 'bg-purple-100 text-purple-700' : 'bg-slate-100 text-slate-600' %>">
-              Plan: <%= organizePlanStatus === 'applied' ? '已应用' : organizePlanStatus === 'preview' ? '待审核' : organizePlanStatus === 'assigning' ? '分配中' : organizePlanStatus === 'failed' ? '失败' : organizePlanStatus %>
+            <span class="text-xs px-2 py-0.5 rounded <%= organizePlanStatus === 'applied' ? 'bg-green-100 text-green-700' : organizePlanStatus === 'preview' ? 'bg-blue-100 text-blue-700' : organizePlanStatus === 'assigning' ? 'bg-purple-100 text-purple-700' : organizePlanStatus === 'failed' || organizePlanStatus === 'error' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600' %>">
+              Plan: <%= organizePlanStatus === 'applied' ? '已应用' : organizePlanStatus === 'preview' ? '待审核' : organizePlanStatus === 'assigning' ? '分配中' : organizePlanStatus === 'failed' ? '失败' : organizePlanStatus === 'error' ? '错误' : organizePlanStatus %>
             </span>
           <% } %>
         </div>

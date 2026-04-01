@@ -84,7 +84,7 @@ export class PlanError extends Error {
 // ==================== Constants ====================
 
 const ACTIVE_STATUSES: PlanStatus[] = ['assigning'];
-const TERMINAL_STATUSES = new Set<PlanStatus>(['applied', 'canceled', 'rolled_back', 'error']);
+const IMMUTABLE_TERMINAL_STATUSES = new Set<PlanStatus>(['applied', 'canceled', 'rolled_back']);
 const SNAPSHOT_TTL_MS = 24 * 60 * 60 * 1000;
 const PLAN_TIMEOUT_MS = 7_200_000;
 const DEFAULT_REASONS: Record<string, string> = {
@@ -369,11 +369,12 @@ function buildInitialTargetTree(db: Db, templateId: number | null | undefined): 
 
 function canTransition(from: PlanStatus, to: PlanStatus): boolean {
   if (from === to) return true;
-  if (to === 'canceled' && !TERMINAL_STATUSES.has(from)) return true;
+  if (to === 'canceled' && !IMMUTABLE_TERMINAL_STATUSES.has(from) && from !== 'error') return true;
   const allowed: Record<string, PlanStatus[]> = {
     assigning: ['preview', 'failed', 'error'],
     preview: ['applied'],
     failed: ['assigning'],
+    error: ['assigning'],
     applied: ['rolled_back'],
   };
   return (allowed[from] ?? []).includes(to);
@@ -749,7 +750,7 @@ export function transitionStatus(db: Db, planId: string, target: PlanStatus, rea
     if (!plan) throw new PlanError(404, 'plan not found');
 
     // terminal no-op (except applied→rolled_back)
-    if (TERMINAL_STATUSES.has(plan.status) && !(plan.status === 'applied' && target === 'rolled_back')) return plan;
+    if (IMMUTABLE_TERMINAL_STATUSES.has(plan.status) && !(plan.status === 'applied' && target === 'rolled_back')) return plan;
     if (plan.status === target) return plan;
     if (!canTransition(plan.status, target)) throw new PlanError(409, `invalid transition: ${plan.status} → ${target}`);
 

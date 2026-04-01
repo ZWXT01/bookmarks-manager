@@ -981,6 +981,63 @@ describe('integration: ai organize route contracts', () => {
         expect(getPlan(ctx.db, failedPlan.id)?.job_id).toBeNull();
     });
 
+    it('returns 404 for retrying a missing plan before checking AI config', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+
+        const retryResponse = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize/missing-plan/retry',
+            headers: session.headers,
+        });
+
+        expect(retryResponse.statusCode).toBe(404);
+        expect(retryResponse.json()).toEqual({ error: 'plan not found' });
+    });
+
+    it('retries error plans once the worker issue is cleared', async () => {
+        const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
+            jsonCompletion({ assignments: buildAssignments(2, '技术开发/前端') }),
+        ]);
+        seedAISettings(appCtx.db, { batchSize: 10 });
+        const template = activateAiTestTemplate(appCtx.db);
+        seedBookmarks(appCtx.db, [
+            { title: 'Retry Error 1', url: 'https://retry-error-1.example.test' },
+            { title: 'Retry Error 2', url: 'https://retry-error-2.example.test' },
+        ]);
+
+        const errorPlan = createPlan(appCtx.db, 'all', template.id);
+        transitionStatus(appCtx.db, errorPlan.id, 'canceled');
+        updatePlan(appCtx.db, errorPlan.id, { status: 'error', phase: null });
+
+        const retryResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${errorPlan.id}/retry`,
+            headers: authHeaders,
+        });
+
+        expect(retryResponse.statusCode).toBe(200);
+        expect(retryResponse.json()).toEqual({ success: true, status: 'assigning' });
+        await waitForCondition(() => getPlan(appCtx.db, errorPlan.id)?.status === 'preview');
+
+        const retriedPlan = getPlan(appCtx.db, errorPlan.id);
+        expect(retriedPlan).toMatchObject({
+            status: 'preview',
+            batches_done: 1,
+            batches_total: 1,
+            needs_review_count: 0,
+        });
+        expect(retriedPlan?.job_id).toBeTruthy();
+        expect(getJob(appCtx.db, retriedPlan!.job_id!)).toMatchObject({
+            status: 'done',
+            total: 2,
+            processed: 2,
+            inserted: 2,
+            skipped: 0,
+        });
+        expect(harness.calls).toHaveLength(1);
+    });
+
     it('marks assigning plans as stale when ids scope contains bookmarks that no longer exist', async () => {
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp();
         seedAISettings(appCtx.db, { batchSize: 10 });
@@ -1011,6 +1068,19 @@ describe('integration: ai organize route contracts', () => {
             message: 'plan is stale: scope bookmarks changed',
         });
         expect(harness.calls).toHaveLength(0);
+
+        const detailResponse = await appCtx.app.inject({
+            method: 'GET',
+            url: `/api/ai/organize/${planId}`,
+            headers: authHeaders,
+        });
+
+        expect(detailResponse.statusCode).toBe(200);
+        expect(detailResponse.json()).toMatchObject({
+            id: planId,
+            status: 'error',
+            message: 'plan is stale: scope bookmarks changed',
+        });
     });
 
     it('retries against the frozen original bookmark scope instead of refreshed live all scope', async () => {

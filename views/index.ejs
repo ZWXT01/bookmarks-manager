@@ -1353,15 +1353,18 @@
                     </div>
                 </template>
 
-                <!-- Phase: failed -->
-                <template x-if="organizePhase === 'failed'">
+                <!-- Phase: failed / error -->
+                <template x-if="organizePhase === 'failed' || organizePhase === 'error'">
                     <div class="space-y-3">
                         <div class="flex flex-col items-center gap-2 py-4">
-                            <div class="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-2xl">✕</div>
-                            <div class="text-sm font-medium text-rose-700">归类失败</div>
-                            <div class="text-xs text-slate-500 text-center" x-text="organizePlan?.message || '连续多个批次失败，请检查 AI 配置后重试'"></div>
+                            <div class="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-2xl"
+                                x-text="organizePhase === 'error' ? '!' : '✕'"></div>
+                            <div class="text-sm font-medium text-rose-700"
+                                x-text="organizePhase === 'error' ? '归类中断' : '归类失败'"></div>
+                            <div class="text-xs text-slate-500 text-center"
+                                x-text="organizePlan?.message || (organizePhase === 'error' ? '整理任务已中断，请查看任务详情或在修复问题后重试' : '连续多个批次失败，请检查 AI 配置后重试')"></div>
                         </div>
-                        <template x-if="organizeProgress.failed_batch_ids && organizeProgress.failed_batch_ids.length > 0">
+                        <template x-if="organizePhase === 'failed' && organizeProgress.failed_batch_ids && organizeProgress.failed_batch_ids.length > 0">
                             <div class="text-xs text-slate-400 text-center">
                                 失败批次: <span x-text="organizeProgress.failed_batch_ids.join(', ')"></span>
                             </div>

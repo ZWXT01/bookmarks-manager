@@ -86,6 +86,22 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         return parseAiBatchSize(rawValue);
     }
 
+    function getPlanJobMessage(jobId: string | null) {
+        if (!jobId) return null;
+        const row = db.prepare('SELECT message FROM jobs WHERE id = ?').get(jobId) as { message: string | null } | undefined;
+        return row?.message ?? null;
+    }
+
+    function serializePlan(plan: Record<string, any>, options: { includeTargetTree?: boolean } = {}) {
+        const result: any = { ...plan, message: getPlanJobMessage(plan.job_id ?? null) };
+        if (plan.assignments) result.assignments = JSON.parse(plan.assignments);
+        if (plan.failed_batch_ids) result.failed_batch_ids = JSON.parse(plan.failed_batch_ids);
+        if (options.includeTargetTree && plan.target_tree) result.target_tree = JSON.parse(plan.target_tree);
+        delete result.backup_snapshot;
+        delete result.source_snapshot;
+        return result;
+    }
+
     function isRetryableProviderError(error: unknown) {
         if (!error || typeof error !== 'object') return false;
         const message = typeof (error as { message?: unknown }).message === 'string'
@@ -414,13 +430,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             const plan = getActivePlan(db);
             if (!plan) return reply.send({ active: null });
 
-            const result: any = { ...plan };
-            if (plan.assignments) result.assignments = JSON.parse(plan.assignments);
-            if (plan.failed_batch_ids) result.failed_batch_ids = JSON.parse(plan.failed_batch_ids);
-            delete result.backup_snapshot;
-            delete result.source_snapshot;
-
-            return reply.send(result);
+            return reply.send(serializePlan(plan));
         } catch (e: any) {
             return reply.code(500).send({ error: e.message });
         }
@@ -430,14 +440,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
     app.get('/api/ai/organize/pending', async (_req: FastifyRequest, reply: FastifyReply) => {
         try {
             const rows = db.prepare(`SELECT * FROM ai_organize_plans WHERE status = 'preview' ORDER BY created_at DESC`).all() as any[];
-            const plans = rows.map(p => {
-                const r: any = { ...p };
-                if (p.assignments) r.assignments = JSON.parse(p.assignments);
-                if (p.failed_batch_ids) r.failed_batch_ids = JSON.parse(p.failed_batch_ids);
-                delete r.backup_snapshot;
-                delete r.source_snapshot;
-                return r;
-            });
+            const plans = rows.map((p) => serializePlan(p));
             return reply.send({ plans });
         } catch (e: any) {
             return reply.code(500).send({ error: e.message });
@@ -452,12 +455,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             const plan = getPlan(db, planId);
             if (!plan) return reply.code(404).send({ error: 'Plan 不存在' });
 
-            const result: any = { ...plan };
-            if (plan.target_tree) result.target_tree = JSON.parse(plan.target_tree);
-            if (plan.assignments) result.assignments = JSON.parse(plan.assignments);
-            if (plan.failed_batch_ids) result.failed_batch_ids = JSON.parse(plan.failed_batch_ids);
-            delete result.backup_snapshot; // don't send snapshot to client
-            delete result.source_snapshot;
+            const result: any = serializePlan(plan, { includeTargetTree: true });
 
             if ((plan.status === 'preview' || plan.status === 'assigning') && plan.assignments) {
                 result.diff = computeDiff(db, plan);
@@ -589,10 +587,16 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
     app.post('/api/ai/organize/:planId/retry', async (req: FastifyRequest, reply: FastifyReply) => {
         const { planId } = req.params as { planId: string };
         try {
+            const { getPlan, transitionStatus } = await import('../ai-organize-plan');
+            const currentPlan = getPlan(db, planId);
+            if (!currentPlan) return reply.code(404).send({ error: 'plan not found' });
+            if (currentPlan.status !== 'failed' && currentPlan.status !== 'error') {
+                return reply.code(409).send({ error: `invalid transition: ${currentPlan.status} → assigning` });
+            }
+
             const config = getAIConfig(getSetting);
             if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
 
-            const { transitionStatus } = await import('../ai-organize-plan');
             const plan = transitionStatus(db, planId, 'assigning');
 
             // restart assignment job
