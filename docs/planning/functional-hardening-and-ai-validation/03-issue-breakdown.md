@@ -739,6 +739,23 @@
   - stale-scope 场景下不会再发起 AI 请求，也不会静默生成只覆盖剩余对象的 preview。
   - organize worker 遇到致命异常后，不再留下 `assigning` plan 假活跃状态。
 
+## R7-AI-05 收口 AI organize error phase 可见性与 retry 语义
+
+- 目标：把 `R7-AI-04` 引入的 `error` plan 从“内部状态”收口成明确的产品合同，避免首页 modal 卡在 `assigning`、`/retry` 先报配置错误再报 plan 错误，或 `error` plan 既看不清原因也不知道能否重试。
+- 范围：
+  - 明确 `error -> assigning` 的 retry 语义，并把 `/api/ai/organize/:planId/retry` 的判定顺序收口为“先判 plan 是否存在 / 是否可重试，再判 AI 配置”。
+  - 让 organize `active/detail` 响应带出当前 job message，便于前端直接展示 `error` 原因。
+  - 收口首页 organize modal 和任务详情页的 `error` phase 展示，不再把 `error` 混同成未知状态或残留在 `assigning`。
+  - 新增定向回归，覆盖“missing plan retry 的错误优先级”、“error plan retry 成功恢复”和“error detail message 可见”。
+- 非目标：
+  - 不在本 issue 中引入独立的 organize error 列表页或结构化错误码 taxonomy。
+  - 不在本 issue 中扩大 apply / rollback 合同范围。
+- 依赖：`R7-AI-04`。
+- 验收：
+  - missing plan 的 `retry` 在未配置 AI 时也稳定返回 `404`，而不是先报配置错误。
+  - 可恢复的 `error` plan 能重新进入 `assigning` 并完成 preview。
+  - 首页 organize modal 与任务页都能明确展示 `error` phase，不再卡在 `assigning` 或退回原始状态字符串。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -780,3 +797,4 @@
 37. `R7-AI-02`
 38. `R7-AI-03`
 39. `R7-AI-04`
+40. `R7-AI-05`

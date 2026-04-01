@@ -25,6 +25,7 @@
 - [AI organize 作用域冻结验收记录](./37-ai-organize-scope-freeze-validation.md)
 - [AI organize retry 预检与旧失败产物清理验收记录](./38-ai-organize-retry-preflight-validation.md)
 - [AI organize 冻结 scope 缺对象 stale 验收记录](./39-ai-organize-frozen-scope-stale-validation.md)
+- [AI organize error phase 与 retry 语义验收记录](./40-ai-organize-error-phase-validation.md)
 
 ## 1. 执行信息
 
@@ -41,8 +42,8 @@
 
 | 项目 | 证据 | 结果 |
 |---|---|---|
-| 自动化测试 | `npm test` 于 2026-03-31 通过，`22` 个测试文件、`184` 条测试全部通过。 | 通过 |
-| 构建 | `npm run build` 于 2026-03-31 通过。 | 通过 |
+| 自动化测试 | `npm test` 于 2026-04-01 通过，`22` 个测试文件、`186` 条测试全部通过。 | 通过 |
+| 构建 | `npm run build` 于 2026-04-01 通过。 | 通过 |
 | `R1-DOC-04` 浏览器补验收 | 本地临时环境 `http://127.0.0.1:45577` 通过内置 Playwright MCP 访问 `/login` 与 `/jobs`；标题分别为“登录 - 书签管理器”和“任务列表 - 书签管理器”，`warning/error` 计数为 `0`。 | 通过 |
 | MCP 关键业务旅程 | [11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md) 已覆盖登录、首页、设置、模板、快照、备份、任务 / SSE 与 mock AI UI 联动。 | 通过 |
 | 浏览器扩展 round-trip | [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) 已 clean run，覆盖 token、保存书签、保存快照、同时保存与失败提示。 | 通过 |
@@ -57,6 +58,7 @@
 | AI organize 作用域冻结 | [37-ai-organize-scope-freeze-validation.md](./37-ai-organize-scope-freeze-validation.md) 已证明 organize plan 会冻结 `scope_bookmark_ids`，failed plan retry 前新增的书签不会被吸入原计划，prompt 和 job total 也只反映原始冻结集合。 | 通过 |
 | AI organize retry 预检与旧失败产物清理 | [38-ai-organize-retry-preflight-validation.md](./38-ai-organize-retry-preflight-validation.md) 已证明 failed plan retry 会先校验 AI 配置，且在进入 `assigning` 时清掉旧失败 assignments / diff / 计数，不再暴露陈旧 preview 数据。 | 通过 |
 | AI organize 冻结 scope 缺对象 stale 合同 | [39-ai-organize-frozen-scope-stale-validation.md](./39-ai-organize-frozen-scope-stale-validation.md) 已证明 worker 发现冻结 scope 缺对象时会直接把 plan 打成 stale `error`，不会静默缩水后继续 preview；assigning 阶段的致命异常也不再留下假活跃 plan。 | 通过 |
+| AI organize error phase 与 retry 语义 | [40-ai-organize-error-phase-validation.md](./40-ai-organize-error-phase-validation.md) 已证明 missing plan 的 retry 会优先返回 `404`，recoverable `error` plan 可重新进入 `assigning`，且详情响应与首页 phase machine 都能正确展示 `error` message。 | 通过 |
 | 模板编辑弹窗长树可达性 | [31-template-editor-modal-validation.md](./31-template-editor-modal-validation.md) 已证明模板选择 / 编辑弹窗在小视口和长树场景下都保持显式视口边界，且滚到底部后保存 / 取消仍可直接点击。 | 通过 |
 | 模板编辑后 AI 默认源 | [32-ai-template-source-validation.md](./32-ai-template-source-validation.md) 已证明默认单条 `classify`、`classify-batch` 与 `organize` 都跟随最新活动模板，显式 `template_id` 继续隔离，assigning 中途改模板会让旧 preview 明确 stale。 | 通过 |
 | 预置模板库扩容与切换 | [35-preset-template-library-validation.md](./35-preset-template-library-validation.md) 已证明模板库里可以直接基于预置模板创建自定义副本或创建后立即应用，且首页导航、分类管理和 AI 默认候选分类会同步切换到最新活动模板。 | 通过 |
@@ -74,6 +76,7 @@
 - AI organize 的作用域现在也不再是 live 的：plan 创建时就会冻结 `scope_bookmark_ids`，所以 failed plan retry 不会再把后来新增到 `all / uncategorized / category:N` 的书签吸进原计划。
 - AI organize 的 retry 入口现在也不会再制造“状态已经回到 `assigning`，但其实没配置 AI、什么都没跑”的假成功；retry 期间任务详情页也不会继续展示旧失败 preview。
 - AI organize 的冻结 scope 现在也不会在执行时静默缩水了：如果 scope 里的书签在 worker 真正运行前已经缺失，plan 会明确落到 stale `error`，而不是只处理剩余对象继续给出 preview。
+- AI organize 的 `error` phase 现在也有明确产品语义：missing plan / invalid status 的 retry 不会再被配置错误盖住，recoverable `error` plan 可以直接重试，首页 modal 和任务详情页也都能看见中断原因，不会再卡在 `assigning`。
 - 模板选择 / 编辑弹窗现在不再依赖静态 Tailwind 产物里不稳定的任意值高度类名；长树和小视口下的保存 / 取消按钮都已有浏览器级可达性证明。
 - 模板编辑后的默认 AI 入口也已和活动模板树统一：默认单条 `classify`、`classify-batch`、`organize` 不再读 live categories 漂移值；显式 `template_id` 保持隔离，assigning 中途改模板时旧 preview 会被明确判 stale。
 - 预置模板库现在不再只有少数通用模板；内置模板已扩到 8 套，模板库里也可以直接创建自定义副本或创建并应用，首页导航、分类管理和 AI 默认候选分类会随活动模板一起切换。
@@ -100,6 +103,7 @@
 | `RISK-024` | resolved | AI organize 现在会冻结 plan 的书签作用域，failed plan retry 不会再重新读取 live scope 把后来新增的书签吸进原计划；对应 unit、integration、全量回归和 build 已在 2026-03-31 clean run 通过。 |
 | `RISK-025` | resolved | AI organize retry 现在会先做 AI 配置预检，并在进入 `assigning` 时清掉旧失败产物；不会再出现“缺配置假成功”或 retry 阶段继续暴露旧 preview 数据。 |
 | `RISK-026` | resolved | AI organize worker 现在会在冻结 scope 缺对象时把 plan 显式打成 stale `error`，并同步把 job 标成 `failed`；不会再静默缩小处理集合，也不会在 assigning 致命异常后残留假活跃 plan。 |
+| `RISK-027` | resolved | AI organize 的 `error` plan 现在具备明确的 retry 合同、错误优先级和前端 phase 展示；missing plan retry 不会再先报配置错误，首页 modal 也不会再在 `error` plan 上卡在 `assigning`。 |
 
 ## 5. 交接说明
 
