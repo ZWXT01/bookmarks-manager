@@ -789,6 +789,23 @@
   - `AI organize`、模板、设置页、分类交互和扩展宿主链路都具备可复跑浏览器证据，不再只停留在零散脚本或旧文档。
   - `npx tsc --noEmit`、`npm test`、`npm run build` 在本轮历史浏览器复验后继续通过。
 
+## R8-QA-01 补齐备份还原与任务详情的浏览器级回放
+
+- 目标：把备份创建 / 命名还原、任务详情实时刷新这两条仍偏“页面存在但缺独立浏览器回放证据”的高风险链路补齐，并继续保持 MCP 优先、独立 Playwright 兜底的口径。
+- 范围：
+  - 为首页备份弹窗与任务详情页补稳定 `data-testid`，避免新 harness 继续依赖易漂移的文案或布局结构。
+  - 新增独立 Playwright 浏览器 harness，覆盖“打开备份弹窗 -> 立即备份 -> 备份列表刷新 -> 从命名备份还原 -> 页面刷新后书签数据恢复”整条链路。
+  - 同一条 harness 内补齐任务详情页的实时刷新合同，证明运行中 job 的列表 / 详情会更新进度、消息与最终状态，不只停留在静态页面渲染。
+  - 将新 harness 接入统一历史浏览器回放入口，继续作为“当前会话无 MCP server 时”的等价 browser replay；文档里明确这不是伪装成真实 MCP 会话。
+- 非目标：
+  - 不把 partial-restore 合同扩大到 `snapshots` 或其它业务表。
+  - 不恢复仓库内 `e2e/` 为主 gate，也不在本 issue 中要求当前会话必须真的拿到 Playwright MCP server。
+- 依赖：`R7-QA-07`、`R1-BE-03`、`R2-REL-03`。
+- 验收：
+  - 新 browser harness 可以 clean run，证明备份创建、命名还原、任务详情进度刷新三条页面合同成立。
+  - `scripts/playwright-issue-regression-validate.ts` 已串入该 harness，历史浏览器回放入口继续可复跑。
+  - `npx tsc --noEmit`、`npm test`、`npm run build` 在本轮通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -833,3 +850,4 @@
 40. `R7-AI-05`
 41. `R7-AI-06`
 42. `R7-QA-07`
+43. `R8-QA-01`
