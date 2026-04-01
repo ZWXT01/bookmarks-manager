@@ -109,4 +109,29 @@ describe('integration: page assets', () => {
         expect(response.body).not.toContain('max-h-[80vh]');
         expect(response.body).not.toContain('max-h-[85vh]');
     });
+
+    it('renders the ai organize modal shell with stable selectors for browser regression', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: '/',
+            headers,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('data-testid="open-ai-organize"');
+        expect(response.body).toContain('data-testid="ai-organize-modal"');
+        expect(response.body).toContain('data-testid="ai-organize-panel"');
+        expect(response.body).toContain('data-testid="organize-phase-idle"');
+        expect(response.body).toContain('data-testid="organize-start"');
+        expect(response.body).toContain('data-testid="organize-assigning-cancel"');
+        expect(response.body).toContain("organizePhase === 'error' ? 'organize-phase-error' : 'organize-phase-failed'");
+        expect(response.body).toContain("organizePhase === 'error' ? 'organize-error-cancel' : 'organize-failed-cancel'");
+        expect(response.body).toContain("organizePhase === 'error' ? 'organize-error-retry' : 'organize-failed-retry'");
+        expect(response.body).toContain("organizePhase === 'applied' ? 'organize-phase-applied' : 'organize-phase-preview'");
+        expect(response.body).toContain('data-testid="organize-progress-summary"');
+        expect(response.body).toContain('data-testid="organize-open-job"');
+    });
 });

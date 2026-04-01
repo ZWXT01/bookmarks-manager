@@ -340,7 +340,7 @@ async function main() {
         });
 
         try {
-            await waitForText(bookmarkSession.page, '#connection-text', '请配置 Token');
+            await waitForText(bookmarkSession.page, '#connection-text', '待配置');
             const settingsExpanded = await bookmarkSession.page.evaluate(() => {
                 const settings = document.getElementById('settings-content');
                 return !!settings && !settings.classList.contains('hidden');
@@ -399,7 +399,7 @@ async function main() {
 
             await saveAllSession.page.selectOption('#category', { label: '扩展验收/同时保存' });
             await saveAllSession.page.click('#save-all-btn');
-            await waitForText(saveAllSession.page, '#status', '快照已保存', 10000);
+            await waitForText(saveAllSession.page, '#status', '已完成收藏和存档', 10000);
 
             const bookmark = ctx.db.prepare(`
                 SELECT b.id, b.url, b.title, b.category_id
