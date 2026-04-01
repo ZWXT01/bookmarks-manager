@@ -756,6 +756,22 @@
   - 可恢复的 `error` plan 能重新进入 `assigning` 并完成 preview。
   - 首页 organize modal 与任务页都能明确展示 `error` phase，不再卡在 `assigning` 或退回原始状态字符串。
 
+## R7-AI-06 收口 AI organize error plan 放弃合同
+
+- 目标：把 `error` plan 的“放弃/取消”路径也补成可用合同，避免首页 modal 显示了 `error` 与“放弃”按钮，但后端状态机不允许 `error -> canceled`，前端还把非 `2xx` 误报成取消成功。
+- 范围：
+  - 允许 `error -> canceled` 的显式状态迁移，使用户可主动丢弃已中断的 organize plan。
+  - 修正首页 `cancelOrganize()` / `cancelAndRestart()` 对非 `2xx` 返回的处理，不再静默关闭 modal 或误报成功。
+  - 新增定向回归，覆盖“error plan 可取消，且保留原 failed job message”的合同。
+- 非目标：
+  - 不在本 issue 中引入批量清理历史 error plans 的后台任务。
+  - 不在本 issue 中改变 failed / error plan 的 retry 语义。
+- 依赖：`R7-AI-05`。
+- 验收：
+  - `error` plan 可以稳定进入 `canceled`，不再返回 `409 invalid transition`。
+  - 首页点击“放弃”时，只有真正成功取消才会关闭 modal；失败时会显示后端错误。
+  - 取消 `error` plan 不会篡改原 failed job 的 message / status 留痕。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -798,3 +814,4 @@
 38. `R7-AI-03`
 39. `R7-AI-04`
 40. `R7-AI-05`
+41. `R7-AI-06`
