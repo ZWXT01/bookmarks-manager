@@ -20,7 +20,7 @@
   </script>
 </head>
 
-<body class="bg-slate-50 text-slate-900" data-job-id="<%= job.id %>" data-processed="<%= job.processed %>"
+<body class="bg-slate-50 text-slate-900" data-testid="job-detail-page" data-job-id="<%= job.id %>" data-processed="<%= job.processed %>"
   data-total="<%= job.total %>" data-plan-id="<%= typeof organizePlanId !== 'undefined' && organizePlanId ? organizePlanId : '' %>">
   <%
     const isLegacyAiTask = job.type === 'ai_classify' || job.type === 'ai_simplify';
@@ -67,20 +67,20 @@
           <div class="flex items-center gap-2">
             <span class="text-lg"><%= jobIcon %></span>
             <span class="text-sm font-semibold text-slate-700"><%= jobLabel %></span>
-            <span id="job-status"
+            <span id="job-status" data-testid="job-status"
               class="text-xs px-2 py-0.5 rounded <%= job.status === 'running' ? 'bg-blue-100 text-blue-700' : job.status === 'done' ? 'bg-green-100 text-green-700' : job.status === 'failed' ? 'bg-rose-100 text-rose-700' : job.status === 'canceled' ? 'bg-slate-100 text-slate-600' : 'bg-slate-100 text-slate-600' %>">
               <%= job.status==='running' ? '运行中' : job.status==='done' ? '已完成' : job.status==='failed' ? '失败' :
                 job.status==='canceled' ? '已取消' : job.status %>
             </span>
           </div>
-          <div class="mt-1 text-xs text-slate-500 whitespace-pre-wrap break-words max-w-2xl" id="job-message">
+          <div class="mt-1 text-xs text-slate-500 whitespace-pre-wrap break-words max-w-2xl" id="job-message" data-testid="job-message">
             <%= job.message || '' %>
           </div>
         </div>
         <div class="text-right text-xs text-slate-500">
           <div>创建：<%= new Date(job.created_at).toLocaleString('zh-CN') %>
           </div>
-          <div>更新：<span id="job-updated">
+          <div>更新：<span id="job-updated" data-testid="job-updated">
               <%= new Date(job.updated_at).toLocaleString('zh-CN') %>
             </span></div>
           <% if ((isLegacyAiTask || job.type === 'ai_organize') && job.extra) { try { const
@@ -94,26 +94,26 @@
 
       <div class="mt-4">
         <div class="h-3 w-full overflow-hidden rounded-full bg-slate-100">
-          <div id="job-bar" class="h-3 <%= jobBarClass %> transition-all duration-300" style="width: 0%"></div>
+          <div id="job-bar" data-testid="job-bar" class="h-3 <%= jobBarClass %> transition-all duration-300" style="width: 0%"></div>
         </div>
-        <div id="current-item" class="mt-2 text-xs text-slate-600 italic opacity-0 transition-opacity"></div>
+        <div id="current-item" data-testid="job-current-item" class="mt-2 text-xs text-slate-600 italic opacity-0 transition-opacity"></div>
         <div class="mt-2 flex items-center justify-between">
-          <div class="text-xs text-slate-600">
-            <span id="job-progress">
+          <div class="text-xs text-slate-600" data-testid="job-progress-summary">
+            <span id="job-progress" data-testid="job-progress">
               <%= job.processed %>
-            </span>/<span id="job-total">
+            </span>/<span id="job-total" data-testid="job-total">
               <%= job.total %>
             </span>
-            <span class="ml-3"><%= jobSuccessLabel %>：<span id="job-inserted"><%= job.inserted %></span></span>
-            <span class="ml-3">跳过：<span id="job-skipped">
+            <span class="ml-3"><%= jobSuccessLabel %>：<span id="job-inserted" data-testid="job-inserted"><%= job.inserted %></span></span>
+            <span class="ml-3">跳过：<span id="job-skipped" data-testid="job-skipped">
                 <%= job.skipped %>
               </span></span>
-            <span class="ml-3">失败：<span id="job-failed">
+            <span class="ml-3">失败：<span id="job-failed" data-testid="job-failed">
                 <%= job.failed %>
               </span></span>
           </div>
           <% if (job.status==='running' || job.status==='pending' ) { %>
-            <button id="cancel-job-btn"
+            <button id="cancel-job-btn" data-testid="cancel-job-btn"
               class="rounded border border-rose-300 px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50">取消任务</button>
             <% } %>
         </div>

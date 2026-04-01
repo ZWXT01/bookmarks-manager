@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import { createSessionHeaders } from '../helpers/auth';
+import { seedJob } from '../helpers/factories';
 
 const staticCssHref = '/public/tailwind.generated.css';
 const runtimeTailwindHref = '/public/lib/tailwind.js';
@@ -133,5 +134,57 @@ describe('integration: page assets', () => {
         expect(response.body).toContain("organizePhase === 'applied' ? 'organize-phase-applied' : 'organize-phase-preview'");
         expect(response.body).toContain('data-testid="organize-progress-summary"');
         expect(response.body).toContain('data-testid="organize-open-job"');
+    });
+
+    it('renders backup modal shells and job detail selectors for browser regression', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+        const job = seedJob(ctx.db, {
+            type: 'check',
+            status: 'running',
+            total: 4,
+            processed: 1,
+            inserted: 0,
+            skipped: 0,
+            failed: 0,
+            message: '检查中：示例任务',
+        });
+
+        const indexResponse = await ctx.app.inject({
+            method: 'GET',
+            url: '/',
+            headers,
+        });
+
+        expect(indexResponse.statusCode).toBe(200);
+        expect(indexResponse.body).toContain('data-testid="open-backup-modal"');
+        expect(indexResponse.body).toContain('data-testid="backup-modal"');
+        expect(indexResponse.body).toContain('data-testid="backup-panel"');
+        expect(indexResponse.body).toContain('data-testid="backup-run-now"');
+        expect(indexResponse.body).toContain('data-testid="manual-backup-row"');
+        expect(indexResponse.body).toContain('data-testid="backup-restore-button"');
+        expect(indexResponse.body).toContain('data-testid="backup-delete-button"');
+        expect(indexResponse.body).toContain('data-testid="backup-upload-form"');
+
+        const jobResponse = await ctx.app.inject({
+            method: 'GET',
+            url: `/jobs/${job.id}`,
+            headers,
+        });
+
+        expect(jobResponse.statusCode).toBe(200);
+        expect(jobResponse.body).toContain('data-testid="job-detail-page"');
+        expect(jobResponse.body).toContain('data-testid="job-status"');
+        expect(jobResponse.body).toContain('data-testid="job-message"');
+        expect(jobResponse.body).toContain('data-testid="job-updated"');
+        expect(jobResponse.body).toContain('data-testid="job-bar"');
+        expect(jobResponse.body).toContain('data-testid="job-current-item"');
+        expect(jobResponse.body).toContain('data-testid="job-progress-summary"');
+        expect(jobResponse.body).toContain('data-testid="job-progress"');
+        expect(jobResponse.body).toContain('data-testid="job-total"');
+        expect(jobResponse.body).toContain('data-testid="job-inserted"');
+        expect(jobResponse.body).toContain('data-testid="job-skipped"');
+        expect(jobResponse.body).toContain('data-testid="job-failed"');
+        expect(jobResponse.body).toContain('data-testid="cancel-job-btn"');
     });
 });

@@ -27,6 +27,11 @@ const SUITE: ScriptSpec[] = [
         description: 'release journeys and core page navigation',
     },
     {
+        issueIds: ['R8-QA-01'],
+        script: 'scripts/backup-job-browser-validate.ts',
+        description: 'backup create/restore and job detail live progress',
+    },
+    {
         issueIds: ['R3-UI-01'],
         script: 'scripts/category-nav-validate.ts',
         description: 'category nav layout and scroll recovery',
