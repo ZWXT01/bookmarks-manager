@@ -187,4 +187,64 @@ describe('integration: page assets', () => {
         expect(jobResponse.body).toContain('data-testid="job-failed"');
         expect(jobResponse.body).toContain('data-testid="cancel-job-btn"');
     });
+
+    it('renders jobs list and snapshots destructive-action selectors for browser regression', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+        const emptyJobsResponse = await ctx.app.inject({
+            method: 'GET',
+            url: '/jobs',
+            headers,
+        });
+
+        expect(emptyJobsResponse.statusCode).toBe(200);
+        expect(emptyJobsResponse.body).toContain('data-testid="jobs-page"');
+        expect(emptyJobsResponse.body).toContain('data-testid="jobs-clear-completed"');
+        expect(emptyJobsResponse.body).toContain('data-testid="jobs-clear-all"');
+        expect(emptyJobsResponse.body).toContain('data-testid="jobs-table"');
+        expect(emptyJobsResponse.body).toContain('data-testid="jobs-table-body"');
+        expect(emptyJobsResponse.body).toContain('data-testid="jobs-empty-state"');
+
+        seedJob(ctx.db, {
+            type: 'check',
+            status: 'done',
+            total: 1,
+            processed: 1,
+            inserted: 1,
+            skipped: 0,
+            failed: 0,
+            message: 'jobs page selector seed',
+        });
+
+        const jobsResponse = await ctx.app.inject({
+            method: 'GET',
+            url: '/jobs',
+            headers,
+        });
+
+        expect(jobsResponse.statusCode).toBe(200);
+        expect(jobsResponse.body).toContain('data-testid="jobs-row"');
+        expect(jobsResponse.body).toContain('data-testid="jobs-row-link"');
+
+        const snapshotsResponse = await ctx.app.inject({
+            method: 'GET',
+            url: '/snapshots',
+            headers,
+        });
+
+        expect(snapshotsResponse.statusCode).toBe(200);
+        expect(snapshotsResponse.body).toContain('data-testid="snapshots-page"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshots-select-all"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshots-batch-delete"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-list"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshots-empty-state"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-row"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-checkbox"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-title"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-delete-button"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-delete-modal"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-delete-confirm"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-batch-delete-modal"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-batch-delete-confirm"');
+    });
 });

@@ -20,7 +20,7 @@
   </script>
 </head>
 
-<body class="bg-slate-50 text-slate-900">
+<body class="bg-slate-50 text-slate-900" data-testid="jobs-page">
   <!-- Header - 统一风格 -->
   <div class="glass-header border-b sticky top-0 z-40">
     <div class="mx-auto max-w-screen-2xl px-4 py-3">
@@ -32,8 +32,8 @@
         </div>
         <div class="flex items-center gap-2">
           <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
-          <button id="clear-completed-btn" class="btn-secondary btn-sm">清理已完成</button>
-          <button id="clear-all-btn" class="btn-danger btn-sm">清空全部</button>
+          <button id="clear-completed-btn" data-testid="jobs-clear-completed" class="btn-secondary btn-sm">清理已完成</button>
+          <button id="clear-all-btn" data-testid="jobs-clear-all" class="btn-danger btn-sm">清空全部</button>
           <a class="btn-secondary btn-sm" href="/">← 返回</a>
         </div>
       </div>
@@ -42,7 +42,7 @@
 
   <div class="mx-auto max-w-screen-2xl px-4 py-4">
     <div class="card overflow-hidden">
-      <table class="w-full table-fixed">
+      <table class="w-full table-fixed" data-testid="jobs-table">
         <thead class="bg-slate-50">
           <tr>
             <th class="w-[22%] px-3 py-2 text-left text-xs font-semibold text-slate-600">任务ID</th>
@@ -53,17 +53,17 @@
             <th class="w-[10%] px-3 py-2 text-left text-xs font-semibold text-slate-600">更新时间</th>
           </tr>
         </thead>
-        <tbody class="divide-y">
+        <tbody class="divide-y" data-testid="jobs-table-body">
           <% if (!jobs.length) { %>
             <tr>
-              <td colspan="6" class="px-3 py-8 text-center text-sm text-slate-500">暂无任务</td>
+              <td colspan="6" class="px-3 py-8 text-center text-sm text-slate-500" data-testid="jobs-empty-state">暂无任务</td>
             </tr>
             <% } %>
 
               <% jobs.forEach(function(j) { %>
-                <tr class="hover:bg-slate-50" data-job-id="<%= j.id %>">
+                <tr class="hover:bg-slate-50" data-testid="jobs-row" data-job-id="<%= j.id %>">
                   <td class="px-3 py-3 align-top text-sm">
-                    <a class="font-medium text-slate-900 hover:underline" href="/jobs/<%= j.id %>">
+                    <a class="font-medium text-slate-900 hover:underline" href="/jobs/<%= j.id %>" data-testid="jobs-row-link">
                       <%= j.id %>
                     </a>
                   </td>

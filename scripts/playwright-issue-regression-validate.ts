@@ -32,6 +32,11 @@ const SUITE: ScriptSpec[] = [
         description: 'backup create/restore and job detail live progress',
     },
     {
+        issueIds: ['R8-QA-02'],
+        script: 'scripts/jobs-snapshots-browser-validate.ts',
+        description: 'jobs destructive actions and snapshots batch delete',
+    },
+    {
         issueIds: ['R3-UI-01'],
         script: 'scripts/category-nav-validate.ts',
         description: 'category nav layout and scroll recovery',

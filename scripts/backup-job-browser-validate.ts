@@ -122,7 +122,7 @@ async function main() {
         const runningJob = seedJob(ctx.db, {
             type: 'check',
             status: 'running',
-            total: 4,
+            total: 5,
             processed: 1,
             inserted: 0,
             skipped: 0,
@@ -200,29 +200,31 @@ async function main() {
         await page.goto(`${baseUrl}/jobs/${runningJob.id}`, { waitUntil: 'domcontentloaded' });
         await page.getByTestId('job-detail-page').waitFor({ state: 'visible' });
 
+        await sleep(1200);
         const updater = (async () => {
-            await sleep(800);
+            await sleep(1800);
             updateJob(ctx.db, runningJob.id, {
                 processed: 2,
                 inserted: 1,
                 message: '检查中：第二条书签',
             });
 
-            await sleep(800);
+            await sleep(2200);
             updateJob(ctx.db, runningJob.id, {
                 status: 'done',
-                processed: 4,
+                total: 5,
+                processed: 5,
                 inserted: 3,
-                skipped: 1,
+                skipped: 2,
                 failed: 0,
-                message: '检查完成：4/4',
+                message: '检查完成：5/5',
             });
         })();
 
         const intermediateSnapshot = await pollUntil(
             () => readJobSnapshot(page),
-            (snapshot) => snapshot.progress === '2/4' && snapshot.message === '检查中：第二条书签',
-            5000,
+            (snapshot) => snapshot.progress === '2/5' && snapshot.message === '检查中：第二条书签',
+            10000,
             'job detail intermediate progress',
         );
 
@@ -231,8 +233,8 @@ async function main() {
 
         const finalSnapshot = await pollUntil(
             () => readJobSnapshot(page),
-            (snapshot) => snapshot.status === '已完成' && snapshot.progress === '4/4' && snapshot.message === '检查完成：4/4',
-            7000,
+            (snapshot) => snapshot.status === '已完成' && snapshot.progress === '5/5' && snapshot.message === '检查完成：5/5',
+            12000,
             'job detail final progress',
         );
 

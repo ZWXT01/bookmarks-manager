@@ -20,7 +20,7 @@
     </script>
 </head>
 
-<body class="bg-slate-50 text-slate-900">
+<body class="bg-slate-50 text-slate-900" data-testid="snapshots-page">
     <!-- Header - 统一风格 -->
     <div class="glass-header border-b sticky top-0 z-40">
         <div class="mx-auto max-w-screen-2xl px-4 py-3">
@@ -67,9 +67,9 @@
         <!-- Batch Actions -->
         <div class="flex items-center justify-between mb-4">
             <div class="flex items-center gap-2">
-                <input type="checkbox" id="select-all" class="rounded" />
+                <input type="checkbox" id="select-all" data-testid="snapshots-select-all" class="rounded" />
                 <label for="select-all" class="text-sm text-slate-600">全选</label>
-                <button id="batch-delete-btn" disabled
+                <button id="batch-delete-btn" data-testid="snapshots-batch-delete" disabled
                     class="ml-4 rounded border border-rose-300 px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed">
                     批量删除 (<span id="selected-count">0</span>)
                 </button>
@@ -80,38 +80,38 @@
         </div>
 
         <!-- Snapshot List - 按日期分组 -->
-        <div id="snapshot-list" class="space-y-4">
+        <div id="snapshot-list" data-testid="snapshot-list" class="space-y-4">
             <!-- 动态加载 -->
         </div>
 
         <!-- Empty State -->
-        <div id="empty-state" class="hidden rounded-lg border bg-white p-8 text-center text-slate-500 shadow-sm">
+        <div id="empty-state" data-testid="snapshots-empty-state" class="hidden rounded-lg border bg-white p-8 text-center text-slate-500 shadow-sm">
             <p class="text-lg">暂无快照</p>
             <p class="text-sm mt-2">使用浏览器扩展保存网页快照</p>
         </div>
     </div>
 
     <!-- Delete Confirmation Modal -->
-    <div id="deleteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
-        <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+    <div id="deleteModal" data-testid="snapshot-delete-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+        <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl" data-testid="snapshot-delete-panel">
             <h3 class="text-lg font-semibold">确认删除</h3>
             <p class="mt-2 text-sm text-slate-600">确定要删除快照 "<span id="deleteTitle"></span>" 吗？此操作不可撤销。</p>
             <div class="mt-4 flex justify-end gap-2">
-                <button id="cancelDeleteBtn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
-                <button id="confirmDeleteBtn"
+                <button id="cancelDeleteBtn" data-testid="snapshot-delete-cancel" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                <button id="confirmDeleteBtn" data-testid="snapshot-delete-confirm"
                     class="rounded bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">删除</button>
             </div>
         </div>
     </div>
 
     <!-- Batch Delete Confirmation Modal -->
-    <div id="batchDeleteModal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
-        <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+    <div id="batchDeleteModal" data-testid="snapshot-batch-delete-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
+        <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl" data-testid="snapshot-batch-delete-panel">
             <h3 class="text-lg font-semibold">批量删除</h3>
             <p class="mt-2 text-sm text-slate-600">确定要删除选中的 <span id="batchDeleteCount"></span> 个快照吗？此操作不可撤销。</p>
             <div class="mt-4 flex justify-end gap-2">
-                <button id="cancelBatchDeleteBtn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
-                <button id="confirmBatchDeleteBtn"
+                <button id="cancelBatchDeleteBtn" data-testid="snapshot-batch-delete-cancel" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                <button id="confirmBatchDeleteBtn" data-testid="snapshot-batch-delete-confirm"
                     class="rounded bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">删除</button>
             </div>
         </div>
@@ -211,10 +211,10 @@
                 snapshots.forEach(s => {
                     const time = new Date(s.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
                     html += `
-                    <div class="flex items-center p-3 hover:bg-slate-50 snapshot-item" data-id="${s.id}">
-                        <input type="checkbox" class="snapshot-checkbox mr-3" value="${s.id}" />
+                    <div class="flex items-center p-3 hover:bg-slate-50 snapshot-item" data-testid="snapshot-row" data-id="${s.id}">
+                        <input type="checkbox" data-testid="snapshot-checkbox" class="snapshot-checkbox mr-3" value="${s.id}" />
                         <div class="flex-1 min-w-0">
-                            <div class="font-medium text-sm truncate" title="${escapeHtml(s.title)}">${escapeHtml(s.title)}</div>
+                            <div class="font-medium text-sm truncate" data-testid="snapshot-title" title="${escapeHtml(s.title)}">${escapeHtml(s.title)}</div>
                             <div class="text-xs text-slate-500 truncate mt-0.5" title="${escapeHtml(s.url)}">${escapeHtml(s.url)}</div>
                             <div class="flex items-center gap-3 mt-1 text-xs text-slate-400">
                                 <span>⏰ ${time}</span>
@@ -222,11 +222,12 @@
                             </div>
                         </div>
                         <div class="flex items-center gap-2 ml-4">
-                            <a href="/snapshots/${s.filename}" target="_blank" 
+                            <a href="/snapshots/${s.filename}" target="_blank" data-testid="snapshot-view-link"
                                 class="rounded border px-3 py-1.5 text-xs hover:bg-slate-50">查看</a>
-                            <a href="/snapshots/${s.filename}" download="${escapeHtml(s.title)}.html"
+                            <a href="/snapshots/${s.filename}" download="${escapeHtml(s.title)}.html" data-testid="snapshot-download-link"
                                 class="rounded border px-3 py-1.5 text-xs hover:bg-slate-50">下载</a>
                             <button class="delete-btn rounded border border-rose-300 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50"
+                                data-testid="snapshot-delete-button"
                                 data-id="${s.id}" data-title="${escapeHtml(s.title)}">删除</button>
                         </div>
                     </div>
