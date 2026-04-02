@@ -202,7 +202,7 @@
                             快捷操作
                         </h2>
                         <div class="grid grid-cols-2 gap-2">
-                            <button @click="openAddBookmarkModal()" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-green-50 hover:border-green-200 transition-all group">
+                            <button @click="openAddBookmarkModal()" data-testid="open-add-bookmark" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-green-50 hover:border-green-200 transition-all group">
                                 <span class="text-xl mb-1 group-hover:scale-110 transition-transform">➕</span>
                                 <span class="text-[10px] text-slate-500 font-medium">添加书签</span>
                             </button>
@@ -273,6 +273,7 @@
                                     @focus="closeCategoryDropdown()"
                                     type="button"
                                     role="tab"
+                                    data-testid="category-nav-uncategorized-tab"
                                     :aria-selected="currentCategory === 'uncategorized'"
                                     aria-label="未分类书签"
                                     class="category-tab"
@@ -377,23 +378,28 @@
                         <div class="flex flex-wrap items-center gap-2">
                             <input type="text" x-model="searchKeyword" @input="debouncedSearch()"
                                 @keyup.enter="searchBookmarks()" placeholder="搜索书签..."
+                                data-testid="bookmark-search-input"
                                 class="flex-1 min-w-[200px] rounded border px-3 py-2 text-sm">
                             <button @click="searchBookmarks()"
+                                data-testid="bookmark-search-submit"
                                 class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800 flex-shrink-0">搜索</button>
                             <button @click="showAdvancedSearch = !showAdvancedSearch"
+                                data-testid="advanced-search-toggle"
                                 class="rounded border px-3 py-2 text-sm hover:bg-slate-50 flex-shrink-0">
                                 <span x-text="showAdvancedSearch ? '收起 ▲' : '筛选 ▼'"></span>
                             </button>
-                            <button @click="toggleViewMode()" class="rounded border px-3 py-2 text-sm hover:bg-slate-50 flex-shrink-0"
+                            <button @click="toggleViewMode()" data-testid="bookmark-view-toggle" class="rounded border px-3 py-2 text-sm hover:bg-slate-50 flex-shrink-0"
                                 x-text="viewMode === 'table' ? '🗂️ 卡片' : '📋 表格'"></button>
                         </div>
 
                         <!-- Advanced Search -->
                         <div x-show="showAdvancedSearch"
+                            data-testid="advanced-search-panel"
                             class="mt-3 pt-3 border-t grid grid-cols-2 md:grid-cols-4 gap-3">
                             <div>
                                 <label class="text-xs text-slate-600">状态</label>
                                 <select x-model="advancedSearch.status"
+                                    data-testid="advanced-search-status"
                                     class="w-full rounded border px-2 py-1.5 text-sm mt-1">
                                     <option value="all">全部</option>
                                     <option value="not_checked">未检查</option>
@@ -404,6 +410,7 @@
                             <div>
                                 <label class="text-xs text-slate-600">排序</label>
                                 <select x-model="advancedSearch.sort"
+                                    data-testid="advanced-search-sort"
                                     class="w-full rounded border px-2 py-1.5 text-sm mt-1">
                                     <option value="id">ID</option>
                                     <option value="title">标题</option>
@@ -414,6 +421,7 @@
                             <div>
                                 <label class="text-xs text-slate-600">排序方向</label>
                                 <select x-model="advancedSearch.order"
+                                    data-testid="advanced-search-order"
                                     class="w-full rounded border px-2 py-1.5 text-sm mt-1">
                                     <option value="desc">降序</option>
                                     <option value="asc">升序</option>
@@ -421,8 +429,10 @@
                             </div>
                             <div class="flex items-end gap-2">
                                 <button @click="applyAdvancedSearch()"
+                                    data-testid="advanced-search-apply"
                                     class="rounded bg-slate-900 text-white px-4 py-1.5 text-sm hover:bg-slate-800">应用</button>
                                 <button @click="resetAdvancedSearch()"
+                                    data-testid="advanced-search-reset"
                                     class="rounded border px-4 py-1.5 text-sm hover:bg-slate-50">重置</button>
                             </div>
                         </div>
@@ -551,6 +561,7 @@
                                                     }"
                                                     class="absolute right-0 z-50 w-32 rounded-lg border bg-white dark:bg-slate-800 dark:border-slate-600 shadow-lg py-1 text-left max-h-80 overflow-y-auto">
                                                     <button @click="openEditBookmark(bookmark); closeAllDropdowns()"
+                                                        data-testid="bookmark-row-edit-button"
                                                         class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">✏️
                                                         编辑</button>
                                                     <button @click="openMoveBookmark(bookmark); closeAllDropdowns()"
@@ -577,6 +588,7 @@
                                                         x-text="bookmark.skip_check ? '🔄 取消忽略' : '🚫 忽略检查'"></button>
                                                     <hr class="my-1">
                                                     <button @click="deleteBookmark(bookmark.id); closeAllDropdowns()"
+                                                        data-testid="bookmark-row-delete-button"
                                                         class="block w-full px-3 py-1.5 text-xs hover:bg-rose-50 text-rose-600 text-left">🗑️
                                                         删除</button>
                                                 </div>
@@ -663,7 +675,8 @@
         </div>
 
         <!-- Edit Bookmark Modal -->
-        <div x-cloak x-show="showEditModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        <div x-cloak x-show="showEditModal" data-testid="edit-bookmark-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @keydown.escape.window="if(showEditModal) closeEditModal()"
             @click.self="closeEditModal()">
             <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
                 <div class="flex items-center justify-between mb-3">
@@ -673,14 +686,18 @@
                 </div>
                 <div class="space-y-3">
                     <input type="text" x-model="editBookmark.url" placeholder="URL"
+                        data-testid="edit-bookmark-url-input"
+                        @keyup.enter="saveEditBookmark()"
                         class="w-full rounded border px-3 py-2 text-sm">
                     <input type="text" x-model="editBookmark.title" placeholder="标题"
+                        data-testid="edit-bookmark-title-input"
+                        @keyup.enter="saveEditBookmark()"
                         class="w-full rounded border px-3 py-2 text-sm">
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
-                    <button @click="closeEditModal()"
+                    <button @click="closeEditModal()" data-testid="edit-bookmark-cancel"
                         class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
-                    <button @click="saveEditBookmark()"
+                    <button @click="saveEditBookmark()" data-testid="edit-bookmark-save"
                         class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">保存</button>
                 </div>
             </div>
@@ -783,7 +800,7 @@
         </div>
 
         <!-- Create Category Modal -->
-        <div x-cloak x-show="showCreateCategoryModal"
+        <div x-cloak x-show="showCreateCategoryModal" data-testid="create-category-modal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
             @click.self="closeCreateCategoryModal()">
             <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
@@ -792,6 +809,7 @@
                     <div>
                         <label class="text-xs text-slate-600">名称</label>
                         <input type="text" x-model="createCategoryName" placeholder="分类名称"
+                            data-testid="create-category-name-input"
                             class="w-full rounded border px-3 py-2 text-sm mt-1" @keyup.enter="confirmCreateCategory()">
                     </div>
                     <div>
@@ -820,10 +838,11 @@
                     </div>
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
-                    <button @click="closeCreateCategoryModal()"
+                    <button @click="closeCreateCategoryModal()" data-testid="create-category-cancel"
                         class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
                     <button @click="confirmCreateCategory()"
                         :disabled="!createCategoryName.trim()"
+                        data-testid="create-category-confirm"
                         class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">确认</button>
                 </div>
             </div>
@@ -1140,7 +1159,7 @@
         </div>
 
         <!-- Add Bookmark Modal -->
-        <div x-cloak x-show="showAddBookmarkModal"
+        <div x-cloak x-show="showAddBookmarkModal" data-testid="add-bookmark-modal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
             @click.self="closeAddBookmarkModal()"
             @keydown.escape.window="if(showAddBookmarkModal) closeAddBookmarkModal()">
@@ -1154,12 +1173,14 @@
                     <div>
                         <label class="text-xs text-slate-600 block mb-1">URL *</label>
                         <input type="text" x-model="newBookmark.url" placeholder="https://example.com"
+                            data-testid="add-bookmark-url-input"
                             class="w-full rounded border px-3 py-2 text-sm"
                             @keydown.enter="addBookmark()">
                     </div>
                     <div>
                         <label class="text-xs text-slate-600 block mb-1">标题（可选）</label>
                         <input type="text" x-model="newBookmark.title" placeholder="书签标题"
+                            data-testid="add-bookmark-title-input"
                             class="w-full rounded border px-3 py-2 text-sm"
                             @keydown.enter="addBookmark()">
                     </div>
@@ -1177,7 +1198,7 @@
                     <div class="flex justify-end gap-2 pt-2">
                         <button @click="closeAddBookmarkModal()"
                             class="btn-secondary btn-sm">取消</button>
-                        <button @click="addBookmark()"
+                        <button @click="addBookmark()" data-testid="add-bookmark-submit"
                             class="btn-primary btn-sm">添加</button>
                     </div>
                 </div>
@@ -1594,6 +1615,7 @@
                                id="category-manager-search"
                                x-model="categoryManagerSearch"
                                @input="$nextTick(() => syncCategoryManagerSortState())"
+                               data-testid="category-manager-search"
                                placeholder="搜索分类名称..."
                                aria-label="搜索分类"
                                class="w-full pl-10 pr-4 py-2 rounded-full border border-slate-200 focus:ring-2 focus:ring-blue-500/20 text-sm">
@@ -1602,7 +1624,7 @@
                 </div>
                 
                 <div class="flex items-center gap-3">
-                    <button @click="openCreateCategoryModal(null)" class="btn-primary btn-sm flex items-center gap-1">
+                    <button @click="openCreateCategoryModal(null)" data-testid="category-manager-add-root" class="btn-primary btn-sm flex items-center gap-1">
                         <span>➕</span> 添加一级分类
                     </button>
                     <button @click="closeCategoryManager()"

@@ -173,6 +173,50 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="export-download"');
     });
 
+    it('renders repo playwright smoke selectors for search, bookmark editing, and category management', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: '/',
+            headers,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('data-testid="open-add-bookmark"');
+        expect(response.body).toContain('data-testid="add-bookmark-modal"');
+        expect(response.body).toContain('data-testid="add-bookmark-url-input"');
+        expect(response.body).toContain('data-testid="add-bookmark-title-input"');
+        expect(response.body).toContain('data-testid="add-bookmark-submit"');
+        expect(response.body).toContain('data-testid="bookmark-search-input"');
+        expect(response.body).toContain('data-testid="bookmark-search-submit"');
+        expect(response.body).toContain('data-testid="advanced-search-toggle"');
+        expect(response.body).toContain('data-testid="advanced-search-panel"');
+        expect(response.body).toContain('data-testid="advanced-search-status"');
+        expect(response.body).toContain('data-testid="advanced-search-sort"');
+        expect(response.body).toContain('data-testid="advanced-search-order"');
+        expect(response.body).toContain('data-testid="advanced-search-apply"');
+        expect(response.body).toContain('data-testid="advanced-search-reset"');
+        expect(response.body).toContain('data-testid="bookmark-view-toggle"');
+        expect(response.body).toContain('data-testid="edit-bookmark-modal"');
+        expect(response.body).toContain('data-testid="edit-bookmark-url-input"');
+        expect(response.body).toContain('data-testid="edit-bookmark-title-input"');
+        expect(response.body).toContain('data-testid="edit-bookmark-cancel"');
+        expect(response.body).toContain('data-testid="edit-bookmark-save"');
+        expect(response.body).toContain('@keydown.escape.window="if(showEditModal) closeEditModal()"');
+        expect(response.body).toContain('@keyup.enter="saveEditBookmark()"');
+        expect(response.body).toContain('data-testid="bookmark-row-edit-button"');
+        expect(response.body).toContain('data-testid="bookmark-row-delete-button"');
+        expect(response.body).toContain('data-testid="category-nav-uncategorized-tab"');
+        expect(response.body).toContain('data-testid="category-manager-search"');
+        expect(response.body).toContain('data-testid="category-manager-add-root"');
+        expect(response.body).toContain('data-testid="create-category-modal"');
+        expect(response.body).toContain('data-testid="create-category-name-input"');
+        expect(response.body).toContain('data-testid="create-category-cancel"');
+        expect(response.body).toContain('data-testid="create-category-confirm"');
+    });
+
     it('renders backup modal shells and job detail selectors for browser regression', async () => {
         const session = await ctx.login();
         const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);

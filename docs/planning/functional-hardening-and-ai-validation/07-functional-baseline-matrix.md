@@ -13,10 +13,10 @@
 
 | 项目 | 当前结论 | 证据 |
 |---|---|---|
-| 构建基线 | `npm run build` 于 2026-04-02 通过。 | 当前工作区在 `R9-QA-03` 导入取消 / 通用任务取消 / 失败分页浏览器回放补齐后重新 clean run 通过。 |
-| 自动化测试基线 | `npm test` 于 2026-04-02 通过，`22` 个测试文件、`191` 条测试全部通过。 | 当前工作区在 `R9-QA-03` 导入取消 / 通用任务取消 / 失败分页浏览器回放补齐后重新 clean run 通过。 |
-| 仓库内 Playwright 资产 | `e2e/` 与 `playwright.config.ts` 仍在仓库中，但已经明确是历史资产，不作为 release gate。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)。 |
-| UI 验证主路径 | 当前主路径是内置 Playwright MCP，已覆盖最小 smoke、关键业务旅程，以及 `R1-DOC-04` 的本地 `/login + /jobs` 补验收。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)、[最终回归与交接说明](./13-release-handoff.md)。 |
+| 构建基线 | `npm run build` 于 2026-04-02 通过。 | 当前工作区在 `R10-QA-01` 仓库内 Playwright 补充 smoke 稳定化后重新 clean run 通过。 |
+| 自动化测试基线 | `npm test` 于 2026-04-02 通过，`22` 个测试文件、`192` 条测试全部通过。 | 当前工作区在 `R10-QA-01` 仓库内 Playwright 补充 smoke 稳定化后重新 clean run 通过。 |
+| 仓库内 Playwright 资产 | `e2e/` 与 `playwright.config.ts` 已在 2026-04-02 收口为可复跑的补充 smoke，`npm run test:e2e` 恢复到 `11` 条浏览器用例全部通过；但它仍不作为 release gate。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)、[R10-QA-01 仓库内 Playwright 补充冒烟稳定化验收记录](./49-repo-playwright-supplemental-smoke-validation.md)。 |
+| UI 验证主路径 | 当前主路径仍是内置 Playwright MCP，已覆盖最小 smoke、关键业务旅程，以及 `R1-DOC-04` 的本地 `/login + /jobs` 补验收；仓库内 Playwright 只保留为补充 smoke。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)、[R10-QA-01 仓库内 Playwright 补充冒烟稳定化验收记录](./49-repo-playwright-supplemental-smoke-validation.md)、[最终回归与交接说明](./13-release-handoff.md)。 |
 | 历史 issue 浏览器复验 | 独立 Playwright 浏览器矩阵已于 2026-04-02 再次 clean run 通过，顺序回放 `R1/R2/R3/R4/R5/R6/R7/R8/R9` 的 `16` 条浏览器脚本；这条矩阵补足历史 issue 复验，但不恢复仓库内 `e2e/` 为主 gate。 | [历史 issue Playwright 浏览器复验记录](./42-playwright-historical-issue-regression-validation.md)、[备份还原与任务详情浏览器回放验收记录](./43-backup-job-browser-validation.md)、[任务列表清理与快照批量删除浏览器回放验收记录](./44-jobs-snapshots-browser-validation.md)、[导入启动与导出下载浏览器回放验收记录](./45-import-export-browser-validation.md)、[R9-QA-01 备份上传还原与备份删除浏览器回放验收记录](./46-backup-upload-delete-browser-validation.md)、[R9-QA-02 快照查看/下载/单条删除与筛选浏览器回放验收记录](./47-snapshot-browse-download-browser-validation.md)、[R9-QA-03 导入取消、通用任务取消与失败明细分页浏览器回放验收记录](./48-job-cancel-failures-browser-validation.md)。 |
 | 前端静态样式 gate | 页面已不再依赖运行时 `tailwind.js`，静态样式生成、页面资产合同和分类交互浏览器 harness 于 2026-03-29 全部通过。 | [静态 Tailwind 迁移验收](./21-static-tailwind-validation.md)。 |
 | 模板编辑弹窗可达性 gate | 模板选择 / 编辑弹窗已经显式收口为视口高度边界 + 固定头尾布局，并在 2026-03-30 通过页面壳体回归和小视口浏览器长树验收。 | [模板编辑弹窗长树可达性验收记录](./31-template-editor-modal-validation.md)。 |
@@ -52,7 +52,7 @@
 | `ai_simplify` | 视为历史遗留 / backlog，不纳入本轮 release gate。 | 当前活跃路由面没有 `/api/ai/simplify` 或 `/api/ai/apply-simplify`；`R4-CLEAN-01` 后仅保留历史任务兼容类型和旧表迁移清理。 | `R1-DOC-04`、`R4-CLEAN-01` |
 | 备份 / 还原合同 | 本轮冻结为“显式部分恢复”路线。 | 当前恢复实现只处理 `categories` 与 `bookmarks`，不恢复其他表和文件资产。 | `R1-BE-03` |
 | 浏览器扩展 | `extension-new/` 纳入最终 `R2` release gate。 | 扩展仍承担 token 配置、保存书签、保存快照和同时保存功能。 | `R2-EXT-02`、`R2-REL-03` |
-| UI 验证主路径 | 内置 Playwright MCP 为主；仓库内 Playwright 为历史资产。 | 规划包和执行手册已明确切换。 | `R1-QA-01` |
+| UI 验证主路径 | 内置 Playwright MCP 为主；仓库内 Playwright 为补充 smoke，不纳入 release gate。 | 规划包、执行手册与 `R10-QA-01` 验收记录已明确边界。 | `R1-QA-01`、`R10-QA-01` |
 
 ## 3. 功能覆盖矩阵
 
@@ -79,6 +79,7 @@
 - `R1` 的 release gate 以 `npm run build`、`npm test` 和内置 Playwright MCP 最小 smoke 为准。
 - 最小 smoke 已验证 `登录 -> 首页 -> 设置 -> 任务 -> 快照 -> 退出`，并在 2026-03-29 用本地临时环境补验了 `R1-DOC-04` 所需的 `/login` 与 `/jobs` 浏览器渲染闭环。
 - `R7-QA-07`、`R8-QA-01`、`R8-QA-02`、`R8-QA-03`、`R9-QA-01`、`R9-QA-02` 与 `R9-QA-03` 共同把独立 Playwright 浏览器矩阵扩到 `R1..R9` 的 `16` 条脚本，用于 clean rerun 历史 issue 的用户可见合同；它是对历史 issue 复验的补充，不等于恢复 `e2e/` 为主 gate。
+- `R10-QA-01` 已把仓库内 `e2e/` 与 `playwright.config.ts` 收口为可 clean rerun 的补充 smoke，入口是 `npm run test:e2e`；它用于补充性回放首页书签 / 分类 / 搜索等仓库原生场景，但仍不计入主 release gate。
 - `R1.5` 的 AI gate 必须同时具备离线 mock / fixture 自动化和 `H1` 真实 provider 人工验收。
 - `R1.5` 的 AI gate 若在发版前沿用默认 Grok provider 验证源，还必须额外复跑 [29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 中的 direct diagnose、focused H1 和 full H1；若改用其它 provider / model，则改为显式传 `--provider current` 并同时复跑 [24-single-classify-h1-replay-validation.md](./24-single-classify-h1-replay-validation.md)、[25-single-classify-timeout-fallback-validation.md](./25-single-classify-timeout-fallback-validation.md)、[26-ai-test-retry-validation.md](./26-ai-test-retry-validation.md)、[27-ai-provider-diagnostic-validation.md](./27-ai-provider-diagnostic-validation.md)、[28-settings-ai-diagnostic-ui-validation.md](./28-settings-ai-diagnostic-ui-validation.md) 和 [29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 对应脚本 / 结论。
 - `R2` 的最终 gate 以 `npm test`、`npm run build`、[11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md)、[12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md)、[19-extension-runtime-validation.md](./19-extension-runtime-validation.md)、[20-extension-action-popup-validation.md](./20-extension-action-popup-validation.md)、[10-ai-provider-h1-validation.md](./10-ai-provider-h1-validation.md)、[24-single-classify-h1-replay-validation.md](./24-single-classify-h1-replay-validation.md)、[25-single-classify-timeout-fallback-validation.md](./25-single-classify-timeout-fallback-validation.md)、[26-ai-test-retry-validation.md](./26-ai-test-retry-validation.md)、[27-ai-provider-diagnostic-validation.md](./27-ai-provider-diagnostic-validation.md)、[28-settings-ai-diagnostic-ui-validation.md](./28-settings-ai-diagnostic-ui-validation.md) 和 [13-release-handoff.md](./13-release-handoff.md) 为准。
@@ -100,4 +101,4 @@
 | 预置模板库 / 切换 | `tests/integration/ops-routes.test.ts` + `tests/integration/page-assets.test.ts` + `scripts/preset-template-validate.ts` + [35-preset-template-library-validation.md](./35-preset-template-library-validation.md) | 已纳入回归 | 当前已扩到 8 套预置模板，并已验证“模板库创建副本 / 创建并应用 -> 首页导航 / 分类管理 -> AI 默认候选分类”同步切换；当前无主要预置模板覆盖盲区。 |
 | 文档 / 页面漂移 | README、设置说明、任务详情页 simplify 遗留已清理；`R4-CLEAN-01` 又移除了 `ai_simplify` 专属任务页分支 | `R1-DOC-04`、`R4-CLEAN-01` 可关闭 | `ai_simplify` 只保留 backlog / 历史任务兼容类型与旧表迁移清理，不再视为活跃功能。 |
 | 跨页面交互 UI gate | `scripts/category-interaction-validate.ts` + [16-category-interaction-validation.md](./16-category-interaction-validation.md) + [17-cross-view-interaction-validation.md](./17-cross-view-interaction-validation.md) | 已扩展到排序、删除分类、移动子分类、单条 / 批量书签移动、模板切换与刷新保持 | 后续若继续改分类导航、模板切换或书签移动链路，应只在同一 harness 上继续加场景。 |
-| UI gate 归属 | 内置 Playwright MCP 是唯一 UI gate；仓库内 `e2e/` 只做历史资产保留 | 基线稳定 | 后续若继续扩展 UI 验收，只追加 MCP 旅程，不恢复仓库内 Playwright 为主 gate。 |
+| UI gate 归属 | 内置 Playwright MCP 是唯一主 UI gate；仓库内 `e2e/` 已收口为补充 smoke | 基线稳定 | 后续若继续扩展 UI 验收，主线仍追加 MCP 旅程；若改仓库内首页原生交互，可同步复跑 `npm run test:e2e`，但不恢复其为主 gate。 |
