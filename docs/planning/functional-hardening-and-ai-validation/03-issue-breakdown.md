@@ -806,6 +806,26 @@
   - `scripts/playwright-issue-regression-validate.ts` 已串入该 harness，历史浏览器回放入口继续可复跑。
   - `npx tsc --noEmit`、`npm test`、`npm run build` 在本轮通过。
 
+## R8-QA-02 补齐任务列表清理与快照批量删除的浏览器级回放
+
+- 目标：把任务列表和快照页里两类高风险 destructive action 补成独立浏览器回放，避免继续只靠路由合同和页面脚本“默认没坏”。
+- 范围：
+  - 为任务列表的 `清理已完成`、`清空全部` 和快照页的 `全选 / 批量删除 / 单条删除` 补稳定 `data-testid`。
+  - 新增独立 Playwright 浏览器 harness，覆盖：
+    - 任务列表 `clear-completed`
+    - 任务列表 `clear-all`
+    - 快照页 `select-all + batch-delete`
+  - 验证 UI 侧的确认弹窗、结果刷新、统计数字与数据库 / 文件系统实际结果一致。
+  - 将新 harness 接入统一历史浏览器回放入口，继续作为当前会话无 MCP server 时的等价 browser replay。
+- 非目标：
+  - 不在本 issue 中扩大快照功能范围，不补预览内容比对或下载文件校验。
+  - 不恢复仓库内 `e2e/` 为主 gate，也不把当前会话包装成真实 MCP 会话。
+- 依赖：`R8-QA-01`、`R7-QA-07`、`R1-BE-03`。
+- 验收：
+  - 新 browser harness 可以 clean run，证明任务列表清理按钮与快照批量删除在真实浏览器里可操作、可确认、结果正确。
+  - `scripts/playwright-issue-regression-validate.ts` 已串入该 harness，历史浏览器回放入口继续可复跑。
+  - `npx tsc --noEmit`、`npm test`、`npm run build` 在本轮通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -851,3 +871,4 @@
 41. `R7-AI-06`
 42. `R7-QA-07`
 43. `R8-QA-01`
+44. `R8-QA-02`
