@@ -826,6 +826,26 @@
   - `scripts/playwright-issue-regression-validate.ts` 已串入该 harness，历史浏览器回放入口继续可复跑。
   - `npx tsc --noEmit`、`npm test`、`npm run build` 在本轮通过。
 
+## R8-QA-03 补齐导入启动/进度与导出下载的浏览器级回放
+
+- 目标：把首页导入和导出两条仍缺页面级主线的高风险路径补成独立浏览器回放，避免继续只靠路由合同和页面脚本默认正确。
+- 范围：
+  - 为首页导入表单、导入进度弹层、导出弹层补稳定 `data-testid`。
+  - 新增独立 Playwright 浏览器 harness，覆盖：
+    - 上传导入文件并启动导入任务
+    - 导入进度弹层可见、进度收口、首页书签与分类刷新
+    - 导出弹层切换范围 / 格式并触发真实下载
+    - 校验导出下载文件名、文件内容与当前数据范围一致
+  - 将新 harness 接入统一历史浏览器回放入口，继续作为当前会话有无 MCP 都可复跑的独立 browser replay。
+- 非目标：
+  - 不在本 issue 中扩展到导出后再次导入的闭环数据比对。
+  - 不在本 issue 中恢复仓库内 `e2e/` 为主 gate，也不把本轮回放伪装成真实 MCP gate。
+- 依赖：`R8-QA-02`、`R1-BE-03`、`R2-E2E-01`。
+- 验收：
+  - 新 browser harness 可以 clean run，证明导入启动 / 进度收口与导出下载在真实浏览器里可操作、可确认、结果正确。
+  - `scripts/playwright-issue-regression-validate.ts` 已串入该 harness，历史浏览器回放入口继续可复跑。
+  - `npx tsc --noEmit`、`npm test`、`npm run build` 在本轮通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -872,3 +892,4 @@
 42. `R7-QA-07`
 43. `R8-QA-01`
 44. `R8-QA-02`
+45. `R8-QA-03`
