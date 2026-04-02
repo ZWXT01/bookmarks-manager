@@ -198,6 +198,8 @@ describe('integration: page assets', () => {
         expect(indexResponse.body).toContain('data-testid="backup-restore-button"');
         expect(indexResponse.body).toContain('data-testid="backup-delete-button"');
         expect(indexResponse.body).toContain('data-testid="backup-upload-form"');
+        expect(indexResponse.body).toContain('data-testid="backup-upload-input"');
+        expect(indexResponse.body).toContain('data-testid="backup-upload-submit"');
 
         const jobResponse = await ctx.app.inject({
             method: 'GET',

@@ -32,6 +32,11 @@ const SUITE: ScriptSpec[] = [
         description: 'backup create/restore and job detail live progress',
     },
     {
+        issueIds: ['R9-QA-01'],
+        script: 'scripts/backup-upload-delete-browser-validate.ts',
+        description: 'backup upload restore and manual backup delete replay',
+    },
+    {
         issueIds: ['R8-QA-02'],
         script: 'scripts/jobs-snapshots-browser-validate.ts',
         description: 'jobs destructive actions and snapshots batch delete',
