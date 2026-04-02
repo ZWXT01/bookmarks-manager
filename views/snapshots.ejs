@@ -56,10 +56,10 @@
         <!-- Search and Filter - AJAX无刷新 -->
         <div class="card p-3 mb-4">
             <div class="flex flex-wrap items-center gap-3">
-                <input type="text" id="search-input" placeholder="搜索标题或URL..."
+                <input type="text" id="search-input" data-testid="snapshot-search-input" placeholder="搜索标题或URL..."
                     class="flex-1 min-w-[200px] rounded-lg border px-3 py-2 text-sm" />
-                <input type="date" id="date-filter" class="rounded-lg border px-3 py-2 text-sm" title="筛选日期" />
-                <button type="button" id="clear-filter-btn" class="btn-secondary btn-sm">清除</button>
+                <input type="date" id="date-filter" data-testid="snapshot-date-filter" class="rounded-lg border px-3 py-2 text-sm" title="筛选日期" />
+                <button type="button" id="clear-filter-btn" data-testid="snapshot-clear-filter" class="btn-secondary btn-sm">清除</button>
                 <button type="button" onclick="location.reload()" class="btn-primary btn-sm">🔄 刷新</button>
             </div>
         </div>

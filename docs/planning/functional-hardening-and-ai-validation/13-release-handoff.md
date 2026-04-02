@@ -85,7 +85,7 @@
 - 代码侧与离线 gate 仍然闭环，可交接给后续维护者继续在现有 taxonomy / semantic contract 上维护。
 - `R1-DOC-04` 的历史阻塞已解除，文档 / 页面漂移不再是发布阻塞项。
 - 当前风险台账中已无 `open + blocked` 的遗留项，`RISK-001` 也已在默认 Grok provider 验证源下关闭。
-- 2026-04-02 复盘后新增了 3 条 `open + todo` 的浏览器合同残余：`R9-QA-01` 备份上传还原 / 删除、`R9-QA-02` 快照查看 / 下载 / 单删 / 筛选、`R9-QA-03` 导入取消 / 通用任务取消 / 失败明细分页；这些链路已有 API 或页面壳体覆盖，但仍缺独立 clean rerun 浏览器证据，已回写到 [Issue 拆分](./03-issue-breakdown.md) 和 [风险台账](./06-risk-log.md)。
+- 2026-04-02 复盘后曾新增 3 条浏览器合同残余；其中 `R9-QA-01` 和 `R9-QA-02` 已收口，当前只剩 `R9-QA-03` 导入取消 / 通用任务取消 / 失败明细分页仍缺独立 clean rerun 浏览器证据。
 - 多待应用 organize plan 现在不再依赖“只有最新 plan 能应用”的隐式规则；同模板不重叠、同模板重叠、跨模板三类 apply 路径都已有明确合同和自动化证明。
 - AI organize 的 `assigning` 阶段现在也不再存在“start 被拦住、retry 却能绕过单活锁”或“cancel 后旧 provider 响应把 preview 写回来”的时序裂缝；start / retry 共用单活锁，cancel 后旧 plan 只会停在 `canceled`。
 - AI organize 的作用域现在也不再是 live 的：plan 创建时就会冻结 `scope_bookmark_ids`，所以 failed plan retry 不会再把后来新增到 `all / uncategorized / category:N` 的书签吸进原计划。
@@ -130,11 +130,12 @@
 | `RISK-031` | resolved | 任务列表 `清理已完成 / 清空全部` 与快照页 `全选 / 批量删除` 现在都已有独立浏览器回放，能直接证明确认弹窗、页面刷新、数据库结果与文件删除保持一致。 |
 | `RISK-032` | resolved | 首页导入与导出现在都已有独立浏览器回放，能直接证明上传导入、进度收口、首页刷新，以及 `all/html`、`uncategorized/json` 下载合同成立；同轮还补了 Playwright MCP 页面级复验。 |
 | `RISK-033` | resolved | 首页备份弹窗现在已补齐上传 `.db` 还原与手动备份删除的独立浏览器回放，能直接证明 multipart 上传、成功提示、页面刷新恢复书签 / 分类，以及删除后的列表刷新与磁盘文件清理保持一致；同轮还补了 Playwright MCP 页面级复验。 |
+| `RISK-034` | resolved | 快照页现在已补齐搜索 / 日期筛选、单条查看、真实下载和单条删除的独立浏览器回放，能直接证明筛选收敛、目标文件内容、下载链接合同，以及删除后的列表 / 数据库 / 文件系统结果保持一致；同轮还补了 Playwright MCP 页面级复验。 |
 
 ## 5. 交接说明
 
-- UI gate 仍以内置 Playwright MCP 为主；`R7-QA-07`、`R8-QA-01`、`R8-QA-02`、`R8-QA-03`、`R9-QA-01` 继续扩展的 `scripts/playwright-issue-regression-validate.ts`、`scripts/backup-job-browser-validate.ts`、`scripts/backup-upload-delete-browser-validate.ts`、`scripts/jobs-snapshots-browser-validate.ts`、`scripts/import-export-browser-validate.ts` 是历史 issue 与高风险页面合同的补充 browser replay，不等于恢复仓库内 `e2e/` 和 `playwright.config.ts` 为主 gate。
-- 截至 2026-04-02，下一轮优先补齐项已收口为 `R9-QA-02`、`R9-QA-03`；它们不是发布阻塞，但也不应再被视为“已有独立浏览器回放证据”的已闭环链路。
+- UI gate 仍以内置 Playwright MCP 为主；`R7-QA-07`、`R8-QA-01`、`R8-QA-02`、`R8-QA-03`、`R9-QA-01`、`R9-QA-02` 继续扩展的 `scripts/playwright-issue-regression-validate.ts`、`scripts/backup-job-browser-validate.ts`、`scripts/backup-upload-delete-browser-validate.ts`、`scripts/jobs-snapshots-browser-validate.ts`、`scripts/snapshot-browse-download-browser-validate.ts`、`scripts/import-export-browser-validate.ts` 是历史 issue 与高风险页面合同的补充 browser replay，不等于恢复仓库内 `e2e/` 和 `playwright.config.ts` 为主 gate。
+- 截至 2026-04-02，下一轮优先补齐项已收口为 `R9-QA-03`；它不是发布阻塞，但也不应再被视为“已有独立浏览器回放证据”的已闭环链路。
 - AI 凭证继续只通过设置页写入本地环境；真实 `base_url`、`api_key`、`model` 不进入仓库、日志或文档样例。
 - 备份还原继续维持 partial-restore 合同，只恢复 `categories` 与 `bookmarks`，并保留 `pre_restore_*.db` 回滚点。
 - 扩展当前使用 `category_id` 提交分类，并以下拉完整路径展示分类；后续不要回退到按分类名提交。
@@ -157,6 +158,7 @@
 | 备份还原 / 任务详情浏览器回放 | `npx tsx scripts/backup-job-browser-validate.ts` |
 | 备份上传还原 / 备份删除浏览器回放 | `npx tsx scripts/backup-upload-delete-browser-validate.ts` |
 | 任务列表清理 / 快照批量删除浏览器回放 | `npx tsx scripts/jobs-snapshots-browser-validate.ts` |
+| 快照查看 / 下载 / 单条删除浏览器回放 | `npx tsx scripts/snapshot-browse-download-browser-validate.ts` |
 | 导入启动 / 导出下载浏览器回放 | `npx tsx scripts/import-export-browser-validate.ts` |
 | 扩展 round-trip | `npx tsx scripts/extension-roundtrip-validate.ts` |
 | 真实 AI `H1` | 按 [10](./10-ai-provider-h1-validation.md) 的步骤，用人工提供的临时凭证复跑，结束后清理临时环境 |

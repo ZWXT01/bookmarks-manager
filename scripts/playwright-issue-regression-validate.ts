@@ -42,6 +42,11 @@ const SUITE: ScriptSpec[] = [
         description: 'jobs destructive actions and snapshots batch delete',
     },
     {
+        issueIds: ['R9-QA-02'],
+        script: 'scripts/snapshot-browse-download-browser-validate.ts',
+        description: 'snapshot filter, view, download, and single delete replay',
+    },
+    {
         issueIds: ['R8-QA-03'],
         script: 'scripts/import-export-browser-validate.ts',
         description: 'import progress and export download replay',

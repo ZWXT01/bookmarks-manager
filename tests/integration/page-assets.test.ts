@@ -269,6 +269,9 @@ describe('integration: page assets', () => {
 
         expect(snapshotsResponse.statusCode).toBe(200);
         expect(snapshotsResponse.body).toContain('data-testid="snapshots-page"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-search-input"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-date-filter"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-clear-filter"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshots-select-all"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshots-batch-delete"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-list"');
@@ -276,8 +279,11 @@ describe('integration: page assets', () => {
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-row"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-checkbox"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-title"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-view-link"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-download-link"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-delete-button"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-delete-modal"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-delete-cancel"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-delete-confirm"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-batch-delete-modal"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-batch-delete-confirm"');
