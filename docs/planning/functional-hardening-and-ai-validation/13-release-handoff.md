@@ -31,6 +31,7 @@
 - [备份还原与任务详情浏览器回放验收记录](./43-backup-job-browser-validation.md)
 - [任务列表清理与快照批量删除浏览器回放验收记录](./44-jobs-snapshots-browser-validation.md)
 - [导入启动与导出下载浏览器回放验收记录](./45-import-export-browser-validation.md)
+- [导入取消、通用任务取消与失败明细分页浏览器回放验收记录](./48-job-cancel-failures-browser-validation.md)
 
 ## 1. 执行信息
 
@@ -44,6 +45,7 @@
   - 备份还原与任务详情浏览器回放
   - 任务列表清理与快照批量删除浏览器回放
   - 导入启动与导出下载浏览器回放
+  - 导入取消、通用任务取消与失败明细分页浏览器回放
   - 扩展 popup round-trip harness
   - `H1` 真实 provider AI 验收与单条 classify focused replay
 
@@ -55,10 +57,11 @@
 | 构建 | `npm run build` 于 2026-04-02 通过。 | 通过 |
 | `R1-DOC-04` 浏览器补验收 | 本地临时环境 `http://127.0.0.1:45577` 通过内置 Playwright MCP 访问 `/login` 与 `/jobs`；标题分别为“登录 - 书签管理器”和“任务列表 - 书签管理器”，`warning/error` 计数为 `0`。 | 通过 |
 | MCP 关键业务旅程 | [11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md) 已覆盖登录、首页、设置、模板、快照、备份、任务 / SSE 与 mock AI UI 联动。 | 通过 |
-| 历史 issue Playwright 浏览器复验 | [42-playwright-historical-issue-regression-validation.md](./42-playwright-historical-issue-regression-validation.md) + [43-backup-job-browser-validation.md](./43-backup-job-browser-validation.md) + [44-jobs-snapshots-browser-validation.md](./44-jobs-snapshots-browser-validation.md) + [45-import-export-browser-validation.md](./45-import-export-browser-validation.md) 已把统一回放入口扩到 `13` 条浏览器脚本，补齐 `R1/R2/R3/R4/R5/R6/R7/R8` 历史 issue 的统一浏览器回放入口。 | 通过 |
+| 历史 issue Playwright 浏览器复验 | [42-playwright-historical-issue-regression-validation.md](./42-playwright-historical-issue-regression-validation.md) + [43-backup-job-browser-validation.md](./43-backup-job-browser-validation.md) + [44-jobs-snapshots-browser-validation.md](./44-jobs-snapshots-browser-validation.md) + [45-import-export-browser-validation.md](./45-import-export-browser-validation.md) + [48-job-cancel-failures-browser-validation.md](./48-job-cancel-failures-browser-validation.md) 已把统一回放入口扩到 `16` 条浏览器脚本，补齐 `R1/R2/R3/R4/R5/R6/R7/R8/R9` 历史 issue 的统一浏览器回放入口。 | 通过 |
 | 备份还原 / 任务详情浏览器回放 | [43-backup-job-browser-validation.md](./43-backup-job-browser-validation.md) 已证明“立即备份 -> 命名还原 -> 页面刷新恢复数据”和“任务详情运行中刷新 -> 终态完成”都能在真实浏览器里 clean rerun。 | 通过 |
 | 任务列表清理 / 快照批量删除浏览器回放 | [44-jobs-snapshots-browser-validation.md](./44-jobs-snapshots-browser-validation.md) 已证明任务列表的 `清理已完成 / 清空全部` 与快照页 `全选 / 批量删除` 在真实浏览器里都可确认、可刷新、且数据库与文件系统结果一致。 | 通过 |
 | 导入启动 / 导出下载浏览器回放 | [45-import-export-browser-validation.md](./45-import-export-browser-validation.md) 已证明首页上传导入、进度收口、首页刷新，以及 `all/html`、`uncategorized/json` 下载都能在真实浏览器里 clean rerun；同时还补了一轮 Playwright MCP 页面级复验。 | 通过 |
+| 导入取消 / 通用任务取消 / 失败明细分页浏览器回放 | [48-job-cancel-failures-browser-validation.md](./48-job-cancel-failures-browser-validation.md) 已证明首页顶部当前任务取消、导入进度取消、任务详情取消，以及失败明细翻页 / 页大小切换都能在真实浏览器里 clean rerun；同轮还补了一轮 Playwright MCP 页面级复验。 | 通过 |
 | 浏览器扩展 round-trip | [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) 已 clean run，覆盖 token、保存书签、保存快照、同时保存与失败提示。 | 通过 |
 | 内置扩展 popup UI | [33-extension-popup-ui-validation.md](./33-extension-popup-ui-validation.md) 已证明 popup 的主操作层级、设置区摘要、状态卡和真实运行时成功 / 失败反馈都已经收口，且不回退既有书签 / 快照主链路。 | 通过 |
 | 内置扩展 SingleFile 稳健性 | [34-extension-singlefile-robustness-validation.md](./34-extension-singlefile-robustness-validation.md) 已证明不支持页面、目标页失效、timeout 恢复和重复 `save-all` 点击都能给出可恢复反馈，并避免重复数据或半成功状态。 | 通过 |
@@ -85,7 +88,7 @@
 - 代码侧与离线 gate 仍然闭环，可交接给后续维护者继续在现有 taxonomy / semantic contract 上维护。
 - `R1-DOC-04` 的历史阻塞已解除，文档 / 页面漂移不再是发布阻塞项。
 - 当前风险台账中已无 `open + blocked` 的遗留项，`RISK-001` 也已在默认 Grok provider 验证源下关闭。
-- 2026-04-02 复盘后曾新增 3 条浏览器合同残余；其中 `R9-QA-01` 和 `R9-QA-02` 已收口，当前只剩 `R9-QA-03` 导入取消 / 通用任务取消 / 失败明细分页仍缺独立 clean rerun 浏览器证据。
+- 2026-04-02 复盘后新增的 3 条浏览器合同残余 `R9-QA-01`、`R9-QA-02` 与 `R9-QA-03` 现已全部收口；当前风险台账中不再保留这批页面合同的未闭环项。
 - 多待应用 organize plan 现在不再依赖“只有最新 plan 能应用”的隐式规则；同模板不重叠、同模板重叠、跨模板三类 apply 路径都已有明确合同和自动化证明。
 - AI organize 的 `assigning` 阶段现在也不再存在“start 被拦住、retry 却能绕过单活锁”或“cancel 后旧 provider 响应把 preview 写回来”的时序裂缝；start / retry 共用单活锁，cancel 后旧 plan 只会停在 `canceled`。
 - AI organize 的作用域现在也不再是 live 的：plan 创建时就会冻结 `scope_bookmark_ids`，所以 failed plan retry 不会再把后来新增到 `all / uncategorized / category:N` 的书签吸进原计划。
@@ -97,6 +100,7 @@
 - 首页备份弹窗与任务详情页现在也不再只是“有页面、有路由测试”；`scripts/backup-job-browser-validate.ts` 已把备份创建 / 命名还原和任务详情运行中刷新收口成独立浏览器回放，并接回统一历史回放入口。
 - 任务列表的 `清理已完成 / 清空全部` 与快照页的 `全选 / 批量删除` 现在也不再只是“后端接口有合同”；`scripts/jobs-snapshots-browser-validate.ts` 已把确认弹窗、页面刷新、数据库结果和快照文件清理收口成独立浏览器回放，并接回统一历史回放入口。
 - 首页导入与导出现在也不再只是“表单和接口都在”；`scripts/import-export-browser-validate.ts` 已把上传导入、进度收口、首页刷新和导出下载收口成独立浏览器回放，并接回统一历史回放入口；同轮还用 Playwright MCP 补验了首页导入控件和导出弹层的页面可达性。
+- 首页顶部当前任务、导入进度弹层和任务详情页的取消动作现在也不再只是“路由和壳体都在”；`scripts/job-cancel-failures-browser-validate.ts` 已把顶部当前任务取消、导入取消、任务详情取消和失败明细分页收口成独立浏览器回放，并接回统一历史回放入口；同轮还用 Playwright MCP 补验了取消请求与失败分页的真实页面收口。
 - 模板选择 / 编辑弹窗现在不再依赖静态 Tailwind 产物里不稳定的任意值高度类名；长树和小视口下的保存 / 取消按钮都已有浏览器级可达性证明。
 - 模板编辑后的默认 AI 入口也已和活动模板树统一：默认单条 `classify`、`classify-batch`、`organize` 不再读 live categories 漂移值；显式 `template_id` 保持隔离，assigning 中途改模板时旧 preview 会被明确判 stale。
 - 预置模板库现在不再只有少数通用模板；内置模板已扩到 8 套，模板库里也可以直接创建自定义副本或创建并应用，首页导航、分类管理和 AI 默认候选分类会随活动模板一起切换。
@@ -131,11 +135,12 @@
 | `RISK-032` | resolved | 首页导入与导出现在都已有独立浏览器回放，能直接证明上传导入、进度收口、首页刷新，以及 `all/html`、`uncategorized/json` 下载合同成立；同轮还补了 Playwright MCP 页面级复验。 |
 | `RISK-033` | resolved | 首页备份弹窗现在已补齐上传 `.db` 还原与手动备份删除的独立浏览器回放，能直接证明 multipart 上传、成功提示、页面刷新恢复书签 / 分类，以及删除后的列表刷新与磁盘文件清理保持一致；同轮还补了 Playwright MCP 页面级复验。 |
 | `RISK-034` | resolved | 快照页现在已补齐搜索 / 日期筛选、单条查看、真实下载和单条删除的独立浏览器回放，能直接证明筛选收敛、目标文件内容、下载链接合同，以及删除后的列表 / 数据库 / 文件系统结果保持一致；同轮还补了 Playwright MCP 页面级复验。 |
+| `RISK-035` | resolved | 首页顶部当前任务取消、导入进度取消、任务详情取消和失败明细分页现在已补齐独立浏览器回放，能直接证明取消请求、状态收口、翻页与页大小切换在真实页面里保持一致；同轮还补了 Playwright MCP 页面级复验。 |
 
 ## 5. 交接说明
 
-- UI gate 仍以内置 Playwright MCP 为主；`R7-QA-07`、`R8-QA-01`、`R8-QA-02`、`R8-QA-03`、`R9-QA-01`、`R9-QA-02` 继续扩展的 `scripts/playwright-issue-regression-validate.ts`、`scripts/backup-job-browser-validate.ts`、`scripts/backup-upload-delete-browser-validate.ts`、`scripts/jobs-snapshots-browser-validate.ts`、`scripts/snapshot-browse-download-browser-validate.ts`、`scripts/import-export-browser-validate.ts` 是历史 issue 与高风险页面合同的补充 browser replay，不等于恢复仓库内 `e2e/` 和 `playwright.config.ts` 为主 gate。
-- 截至 2026-04-02，下一轮优先补齐项已收口为 `R9-QA-03`；它不是发布阻塞，但也不应再被视为“已有独立浏览器回放证据”的已闭环链路。
+- UI gate 仍以内置 Playwright MCP 为主；`R7-QA-07`、`R8-QA-01`、`R8-QA-02`、`R8-QA-03`、`R9-QA-01`、`R9-QA-02`、`R9-QA-03` 继续扩展的 `scripts/playwright-issue-regression-validate.ts`、`scripts/backup-job-browser-validate.ts`、`scripts/backup-upload-delete-browser-validate.ts`、`scripts/jobs-snapshots-browser-validate.ts`、`scripts/snapshot-browse-download-browser-validate.ts`、`scripts/import-export-browser-validate.ts`、`scripts/job-cancel-failures-browser-validate.ts` 是历史 issue 与高风险页面合同的补充 browser replay，不等于恢复仓库内 `e2e/` 和 `playwright.config.ts` 为主 gate。
+- 截至 2026-04-02，这一轮补录的浏览器合同残余已全部收口；若后续继续改首页任务 banner、导入进度弹层、任务详情取消或失败分页脚本，应直接在 `scripts/job-cancel-failures-browser-validate.ts` 上继续追加场景，而不是再散落到新的临时脚本。
 - AI 凭证继续只通过设置页写入本地环境；真实 `base_url`、`api_key`、`model` 不进入仓库、日志或文档样例。
 - 备份还原继续维持 partial-restore 合同，只恢复 `categories` 与 `bookmarks`，并保留 `pre_restore_*.db` 回滚点。
 - 扩展当前使用 `category_id` 提交分类，并以下拉完整路径展示分类；后续不要回退到按分类名提交。
@@ -160,6 +165,7 @@
 | 任务列表清理 / 快照批量删除浏览器回放 | `npx tsx scripts/jobs-snapshots-browser-validate.ts` |
 | 快照查看 / 下载 / 单条删除浏览器回放 | `npx tsx scripts/snapshot-browse-download-browser-validate.ts` |
 | 导入启动 / 导出下载浏览器回放 | `npx tsx scripts/import-export-browser-validate.ts` |
+| 导入取消 / 通用任务取消 / 失败明细分页浏览器回放 | `npx tsx scripts/job-cancel-failures-browser-validate.ts` |
 | 扩展 round-trip | `npx tsx scripts/extension-roundtrip-validate.ts` |
 | 真实 AI `H1` | 按 [10](./10-ai-provider-h1-validation.md) 的步骤，用人工提供的临时凭证复跑，结束后清理临时环境 |
 

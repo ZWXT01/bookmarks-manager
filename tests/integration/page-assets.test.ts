@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { addJobFailure } from '../../src/jobs';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import { createSessionHeaders } from '../helpers/auth';
 import { seedJob } from '../helpers/factories';
@@ -160,6 +161,9 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="import-progress-fill"');
         expect(response.body).toContain('data-testid="import-progress-summary"');
         expect(response.body).toContain('data-testid="import-progress-cancel"');
+        expect(response.body).toContain('data-testid="current-job-banner"');
+        expect(response.body).toContain('data-testid="current-job-progress"');
+        expect(response.body).toContain('data-testid="current-job-cancel"');
         expect(response.body).toContain('data-testid="open-export-modal"');
         expect(response.body).toContain('data-testid="export-modal"');
         expect(response.body).toContain('data-testid="export-panel"');
@@ -179,9 +183,10 @@ describe('integration: page assets', () => {
             processed: 1,
             inserted: 0,
             skipped: 0,
-            failed: 0,
+            failed: 1,
             message: '检查中：示例任务',
         });
+        addJobFailure(ctx.db, job.id, 'https://example.com/failure-shell', '示例失败');
 
         const indexResponse = await ctx.app.inject({
             method: 'GET',
@@ -221,6 +226,17 @@ describe('integration: page assets', () => {
         expect(jobResponse.body).toContain('data-testid="job-skipped"');
         expect(jobResponse.body).toContain('data-testid="job-failed"');
         expect(jobResponse.body).toContain('data-testid="cancel-job-btn"');
+        expect(jobResponse.body).toContain('data-testid="failure-page-size"');
+        expect(jobResponse.body).toContain('data-testid="failure-table"');
+        expect(jobResponse.body).toContain('data-testid="failure-list"');
+        expect(jobResponse.body).toContain('data-testid="failure-row"');
+        expect(jobResponse.body).toContain('data-testid="failure-input"');
+        expect(jobResponse.body).toContain('data-testid="failure-reason"');
+        expect(jobResponse.body).toContain('data-testid="failure-pager"');
+        expect(jobResponse.body).toContain('data-testid="failure-current-page"');
+        expect(jobResponse.body).toContain('data-testid="failure-total-pages"');
+        expect(jobResponse.body).toContain('data-testid="failure-prev-btn"');
+        expect(jobResponse.body).toContain('data-testid="failure-next-btn"');
     });
 
     it('renders jobs list and snapshots destructive-action selectors for browser regression', async () => {

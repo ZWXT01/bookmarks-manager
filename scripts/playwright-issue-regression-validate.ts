@@ -52,6 +52,11 @@ const SUITE: ScriptSpec[] = [
         description: 'import progress and export download replay',
     },
     {
+        issueIds: ['R9-QA-03'],
+        script: 'scripts/job-cancel-failures-browser-validate.ts',
+        description: 'import cancel, generic job cancel, and failure pagination replay',
+    },
+    {
         issueIds: ['R3-UI-01'],
         script: 'scripts/category-nav-validate.ts',
         description: 'category nav layout and scroll recovery',

@@ -59,18 +59,21 @@
                         <template
                             x-if="currentJob && (currentJob.status === 'running' || currentJob.status === 'queued')">
                             <div
+                                data-testid="current-job-banner"
+                                :data-job-id="currentJob.id"
+                                :data-job-type="currentJob.type"
                                 class="flex items-center gap-2 text-xs bg-gradient-to-r from-blue-50 to-purple-50 rounded-lg px-2 py-1.5 border border-blue-200 shadow-sm animate-fade-in cursor-pointer"
                                 @click="window.location.href='/jobs'">
                                 <span class="animate-pulse hidden md:inline"
                                     x-text="currentJob.type === 'ai_organize' ? '🤖 AI整理' : currentJob.type === 'check' ? '🔍 检查' : currentJob.type === 'import' ? '📥 导入' : '任务'"></span>
                                 <span class="md:hidden" x-text="currentJob.type === 'ai_organize' ? '🤖' : currentJob.type === 'check' ? '🔍' : currentJob.type === 'import' ? '📥' : '⚙️'"></span>
-                                <span x-text="currentJob.processed + '/' + currentJob.total" class="font-medium"></span>
+                                <span data-testid="current-job-progress" x-text="currentJob.processed + '/' + currentJob.total" class="font-medium"></span>
                                 <div class="w-12 sm:w-20 h-1.5 progress-bar">
                                     <div class="progress-bar-fill"
                                         :style="'width:' + (currentJob.total > 0 ? Math.floor(currentJob.processed / currentJob.total * 100) : 0) + '%'">
                                     </div>
                                 </div>
-                                <button @click.stop="cancelCurrentJob()" aria-label="取消任务"
+                                <button @click.stop="cancelCurrentJob()" aria-label="取消任务" data-testid="current-job-cancel"
                                     class="text-rose-500 hover:text-rose-700">✕</button>
                             </div>
                         </template>

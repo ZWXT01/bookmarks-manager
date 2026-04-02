@@ -1,6 +1,6 @@
 # bookmarks-manager 功能覆盖矩阵
 
-更新时间：2026-04-01
+更新时间：2026-04-02
 
 关联文档：
 
@@ -13,11 +13,11 @@
 
 | 项目 | 当前结论 | 证据 |
 |---|---|---|
-| 构建基线 | `npm run build` 于 2026-04-02 通过。 | 当前工作区在 `R8-QA-03` 导入启动 / 进度与导出下载浏览器回放补齐后重新 clean run 通过。 |
-| 自动化测试基线 | `npm test` 于 2026-04-02 通过，`22` 个测试文件、`191` 条测试全部通过。 | 当前工作区在 `R8-QA-03` 导入启动 / 进度与导出下载浏览器回放补齐后重新 clean run 通过。 |
+| 构建基线 | `npm run build` 于 2026-04-02 通过。 | 当前工作区在 `R9-QA-03` 导入取消 / 通用任务取消 / 失败分页浏览器回放补齐后重新 clean run 通过。 |
+| 自动化测试基线 | `npm test` 于 2026-04-02 通过，`22` 个测试文件、`191` 条测试全部通过。 | 当前工作区在 `R9-QA-03` 导入取消 / 通用任务取消 / 失败分页浏览器回放补齐后重新 clean run 通过。 |
 | 仓库内 Playwright 资产 | `e2e/` 与 `playwright.config.ts` 仍在仓库中，但已经明确是历史资产，不作为 release gate。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)。 |
 | UI 验证主路径 | 当前主路径是内置 Playwright MCP，已覆盖最小 smoke、关键业务旅程，以及 `R1-DOC-04` 的本地 `/login + /jobs` 补验收。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)、[最终回归与交接说明](./13-release-handoff.md)。 |
-| 历史 issue 浏览器复验 | 独立 Playwright 浏览器矩阵已于 2026-04-02 再次 clean run 通过，顺序回放 `R1/R2/R3/R4/R5/R6/R7/R8` 的 `13` 条历史浏览器脚本；这条矩阵补足历史 issue 复验，但不恢复仓库内 `e2e/` 为主 gate。 | [历史 issue Playwright 浏览器复验记录](./42-playwright-historical-issue-regression-validation.md)、[备份还原与任务详情浏览器回放验收记录](./43-backup-job-browser-validation.md)、[任务列表清理与快照批量删除浏览器回放验收记录](./44-jobs-snapshots-browser-validation.md)、[导入启动与导出下载浏览器回放验收记录](./45-import-export-browser-validation.md)。 |
+| 历史 issue 浏览器复验 | 独立 Playwright 浏览器矩阵已于 2026-04-02 再次 clean run 通过，顺序回放 `R1/R2/R3/R4/R5/R6/R7/R8/R9` 的 `16` 条浏览器脚本；这条矩阵补足历史 issue 复验，但不恢复仓库内 `e2e/` 为主 gate。 | [历史 issue Playwright 浏览器复验记录](./42-playwright-historical-issue-regression-validation.md)、[备份还原与任务详情浏览器回放验收记录](./43-backup-job-browser-validation.md)、[任务列表清理与快照批量删除浏览器回放验收记录](./44-jobs-snapshots-browser-validation.md)、[导入启动与导出下载浏览器回放验收记录](./45-import-export-browser-validation.md)、[R9-QA-01 备份上传还原与备份删除浏览器回放验收记录](./46-backup-upload-delete-browser-validation.md)、[R9-QA-02 快照查看/下载/单条删除与筛选浏览器回放验收记录](./47-snapshot-browse-download-browser-validation.md)、[R9-QA-03 导入取消、通用任务取消与失败明细分页浏览器回放验收记录](./48-job-cancel-failures-browser-validation.md)。 |
 | 前端静态样式 gate | 页面已不再依赖运行时 `tailwind.js`，静态样式生成、页面资产合同和分类交互浏览器 harness 于 2026-03-29 全部通过。 | [静态 Tailwind 迁移验收](./21-static-tailwind-validation.md)。 |
 | 模板编辑弹窗可达性 gate | 模板选择 / 编辑弹窗已经显式收口为视口高度边界 + 固定头尾布局，并在 2026-03-30 通过页面壳体回归和小视口浏览器长树验收。 | [模板编辑弹窗长树可达性验收记录](./31-template-editor-modal-validation.md)。 |
 | 模板编辑后 AI 默认源 gate | 默认单条 `classify`、`classify-batch` 与 `organize` 现在统一跟随最新活动模板；显式 `template_id` 继续隔离，assigning 中途改模板时旧 preview 会被明确判 stale。 | [模板编辑后 AI 默认源验收记录](./32-ai-template-source-validation.md)。 |
@@ -39,6 +39,7 @@
 | 备份还原 / 任务详情浏览器 gate | 首页备份弹窗现在已具备稳定浏览器回放，能证明“立即备份 -> 命名还原 -> 页面刷新恢复数据”；任务详情页也已证明运行中进度 / 消息 / 终态能在真实浏览器里刷新收口。 | [备份还原与任务详情浏览器回放验收记录](./43-backup-job-browser-validation.md)。 |
 | 任务列表清理 / 快照批量删除浏览器 gate | 任务列表的 `清理已完成 / 清空全部` 与快照页的 `全选 / 批量删除` 现在都已有独立浏览器回放，能证明确认弹窗、页面刷新、数据库结果与快照文件清理一致。 | [任务列表清理与快照批量删除浏览器回放验收记录](./44-jobs-snapshots-browser-validation.md)。 |
 | 导入启动 / 导出下载浏览器 gate | 首页导入表单、导入进度弹层和导出弹层现在都已有独立浏览器回放，能证明上传导入、进度收口、首页刷新，以及 `all/html`、`uncategorized/json` 下载合同成立。 | [导入启动与导出下载浏览器回放验收记录](./45-import-export-browser-validation.md)。 |
+| 导入取消 / 通用任务取消 / 失败分页浏览器 gate | 首页顶部当前任务取消、导入进度弹层取消、任务详情取消和失败明细分页现在都已有独立浏览器回放，能证明取消请求、状态收口、翻页和页大小切换都与真实页面一致。 | [R9-QA-03 导入取消、通用任务取消与失败明细分页浏览器回放验收记录](./48-job-cancel-failures-browser-validation.md)。 |
 | 单条 classify timeout fallback | 单条 `/api/ai/classify` 现在对 timeout / 连接型 provider 故障具备 deterministic fallback；2026-03-30 对当前本地 provider 做 `--skip-test` focused replay 时，`react-reference-docs` 已恢复到 `1/1`。 | [单条 classify 超时降级验收记录](./25-single-classify-timeout-fallback-validation.md)。 |
 | 单条 classify H1 focused replay | `scripts/ai-h1-classify-semantic-validate.ts` 已加入；在 `R5-AI-09` 后，默认 Grok 源已恢复到 `/api/ai/test = 200` 且 `react-reference-docs = 1/1 accepted`。 | [单条 classify H1 语义复验记录](./24-single-classify-h1-replay-validation.md)、[单条 classify 超时降级验收记录](./25-single-classify-timeout-fallback-validation.md)、[Grok 默认 provider 验证与 SSE 兼容验收记录](./29-grok-provider-default-validation.md)。 |
 | 扩展 round-trip gate | `npx tsx scripts/extension-roundtrip-validate.ts`、`npx tsx scripts/extension-runtime-validate.ts` 与 `npx tsx scripts/extension-action-popup-validate.ts` 已于 2026-04-01 在历史 issue 浏览器矩阵里再次 clean run 通过。 | [浏览器扩展 round-trip 验收](./12-extension-roundtrip-validation.md)、[真实扩展运行时验收](./19-extension-runtime-validation.md)、[真实 action popup 验收](./20-extension-action-popup-validation.md)、[内置扩展 SingleFile 稳健性验收记录](./34-extension-singlefile-robustness-validation.md)、[历史 issue Playwright 浏览器复验记录](./42-playwright-historical-issue-regression-validation.md)。 |
@@ -77,7 +78,7 @@
 - `G1` 只负责冻结范围、合同和验证矩阵，不修业务实现。
 - `R1` 的 release gate 以 `npm run build`、`npm test` 和内置 Playwright MCP 最小 smoke 为准。
 - 最小 smoke 已验证 `登录 -> 首页 -> 设置 -> 任务 -> 快照 -> 退出`，并在 2026-03-29 用本地临时环境补验了 `R1-DOC-04` 所需的 `/login` 与 `/jobs` 浏览器渲染闭环。
-- `R7-QA-07`、`R8-QA-01`、`R8-QA-02` 与 `R8-QA-03` 共同把独立 Playwright 浏览器矩阵扩到 `R1..R8` 的 `13` 条脚本，用于 clean rerun 历史 issue 的用户可见合同；它是对历史 issue 复验的补充，不等于恢复 `e2e/` 为主 gate。
+- `R7-QA-07`、`R8-QA-01`、`R8-QA-02`、`R8-QA-03`、`R9-QA-01`、`R9-QA-02` 与 `R9-QA-03` 共同把独立 Playwright 浏览器矩阵扩到 `R1..R9` 的 `16` 条脚本，用于 clean rerun 历史 issue 的用户可见合同；它是对历史 issue 复验的补充，不等于恢复 `e2e/` 为主 gate。
 - `R1.5` 的 AI gate 必须同时具备离线 mock / fixture 自动化和 `H1` 真实 provider 人工验收。
 - `R1.5` 的 AI gate 若在发版前沿用默认 Grok provider 验证源，还必须额外复跑 [29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 中的 direct diagnose、focused H1 和 full H1；若改用其它 provider / model，则改为显式传 `--provider current` 并同时复跑 [24-single-classify-h1-replay-validation.md](./24-single-classify-h1-replay-validation.md)、[25-single-classify-timeout-fallback-validation.md](./25-single-classify-timeout-fallback-validation.md)、[26-ai-test-retry-validation.md](./26-ai-test-retry-validation.md)、[27-ai-provider-diagnostic-validation.md](./27-ai-provider-diagnostic-validation.md)、[28-settings-ai-diagnostic-ui-validation.md](./28-settings-ai-diagnostic-ui-validation.md) 和 [29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 对应脚本 / 结论。
 - `R2` 的最终 gate 以 `npm test`、`npm run build`、[11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md)、[12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md)、[19-extension-runtime-validation.md](./19-extension-runtime-validation.md)、[20-extension-action-popup-validation.md](./20-extension-action-popup-validation.md)、[10-ai-provider-h1-validation.md](./10-ai-provider-h1-validation.md)、[24-single-classify-h1-replay-validation.md](./24-single-classify-h1-replay-validation.md)、[25-single-classify-timeout-fallback-validation.md](./25-single-classify-timeout-fallback-validation.md)、[26-ai-test-retry-validation.md](./26-ai-test-retry-validation.md)、[27-ai-provider-diagnostic-validation.md](./27-ai-provider-diagnostic-validation.md)、[28-settings-ai-diagnostic-ui-validation.md](./28-settings-ai-diagnostic-ui-validation.md) 和 [13-release-handoff.md](./13-release-handoff.md) 为准。
