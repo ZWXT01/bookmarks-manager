@@ -136,6 +136,39 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="organize-open-job"');
     });
 
+    it('renders import and export shells with stable selectors for browser regression', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: '/',
+            headers,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('data-testid="import-form"');
+        expect(response.body).toContain('data-testid="import-file-input"');
+        expect(response.body).toContain('data-testid="import-override-category"');
+        expect(response.body).toContain('data-testid="import-default-category"');
+        expect(response.body).toContain('data-testid="import-skip-duplicates"');
+        expect(response.body).toContain('data-testid="import-submit"');
+        expect(response.body).toContain('data-testid="import-progress-modal"');
+        expect(response.body).toContain('data-testid="import-progress-panel"');
+        expect(response.body).toContain('data-testid="import-progress-value"');
+        expect(response.body).toContain('data-testid="import-progress-bar"');
+        expect(response.body).toContain('data-testid="import-progress-fill"');
+        expect(response.body).toContain('data-testid="import-progress-summary"');
+        expect(response.body).toContain('data-testid="import-progress-cancel"');
+        expect(response.body).toContain('data-testid="open-export-modal"');
+        expect(response.body).toContain('data-testid="export-modal"');
+        expect(response.body).toContain('data-testid="export-panel"');
+        expect(response.body).toContain('data-testid="export-scope-select"');
+        expect(response.body).toContain('data-testid="export-format-select"');
+        expect(response.body).toContain('data-testid="export-cancel"');
+        expect(response.body).toContain('data-testid="export-download"');
+    });
+
     it('renders backup modal shells and job detail selectors for browser regression', async () => {
         const session = await ctx.login();
         const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);

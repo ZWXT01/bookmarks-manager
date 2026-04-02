@@ -120,16 +120,17 @@
                                 class="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs">📥</span>
                             导入书签
                         </h2>
-                        <form id="import-form" @submit.prevent="startImport($el)">
+                        <form id="import-form" data-testid="import-form" @submit.prevent="startImport($el)">
                             <input type="file" name="file" accept=".html,.htm,.json,.txt" required
+                                data-testid="import-file-input"
                                 class="w-full text-xs mb-3 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
                             <label class="flex items-center gap-2 text-xs text-slate-600 mb-2">
-                                <input type="checkbox" x-model="importOverrideCategory">
+                                <input type="checkbox" x-model="importOverrideCategory" data-testid="import-override-category">
                                 忽略原有分类，统一导入到：
                             </label>
                             <input type="hidden" name="overrideCategory" :value="importOverrideCategory ? '1' : ''">
                             <div class="mb-3" x-show="importOverrideCategory">
-                                <select name="defaultCategoryId" class="w-full rounded-lg border px-3 py-2 text-xs">
+                                <select name="defaultCategoryId" data-testid="import-default-category" class="w-full rounded-lg border px-3 py-2 text-xs">
                                     <option value="">未分类</option>
                                     <template x-for="cat in categories" :key="cat.id">
                                         <option :value="cat.id" x-text="cat.name"></option>
@@ -137,10 +138,10 @@
                                 </select>
                             </div>
                             <label class="flex items-center gap-2 text-xs text-slate-600 mb-3">
-                                <input type="checkbox" name="skipDuplicates" value="1" checked>
+                                <input type="checkbox" name="skipDuplicates" value="1" checked data-testid="import-skip-duplicates">
                                 跳过重复书签
                             </label>
-                            <button type="submit" class="btn-primary w-full">开始导入</button>
+                            <button type="submit" data-testid="import-submit" class="btn-primary w-full">开始导入</button>
                         </form>
                     </div>
 
@@ -214,7 +215,7 @@
                                 <span class="text-xl mb-1 group-hover:scale-110 transition-transform">🔍</span>
                                 <span class="text-[10px] text-slate-500 font-medium">批量检查</span>
                             </button>
-                            <button @click="openExportModal()" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-amber-50 hover:border-amber-200 transition-all group">
+                            <button @click="openExportModal()" data-testid="open-export-modal" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-amber-50 hover:border-amber-200 transition-all group">
                                 <span class="text-xl mb-1 group-hover:scale-110 transition-transform">📤</span>
                                 <span class="text-[10px] text-slate-500 font-medium">导出书签</span>
                             </button>
@@ -1434,23 +1435,23 @@
 
             </div>
         </div>
-        <div x-cloak x-show="showImportProgressModal"
+        <div x-cloak x-show="showImportProgressModal" data-testid="import-progress-modal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl" data-testid="import-progress-panel">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-lg font-semibold">📥 导入进度</h3>
-                    <button @click="closeImportProgressModal()"
+                    <button @click="closeImportProgressModal()" data-testid="import-progress-close"
                         class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                 </div>
                 <div class="space-y-3 text-center">
-                    <div class="text-2xl" x-text="importProgress + '%'"></div>
-                    <div class="w-full h-2 bg-slate-200 rounded overflow-hidden">
-                        <div class="h-full bg-blue-500 transition-all" :style="'width:' + importProgress + '%'"></div>
+                    <div class="text-2xl" data-testid="import-progress-value" x-text="importProgress + '%'"></div>
+                    <div class="w-full h-2 bg-slate-200 rounded overflow-hidden" data-testid="import-progress-bar">
+                        <div class="h-full bg-blue-500 transition-all" data-testid="import-progress-fill" :style="'width:' + importProgress + '%'"></div>
                     </div>
-                    <div class="text-sm text-slate-500"
+                    <div class="text-sm text-slate-500" data-testid="import-progress-summary"
                         x-text="importStats.processed + '/' + importStats.total + ' (成功:' + importStats.inserted + ' 失败:' + importStats.failed + ')'">
                     </div>
-                    <button @click="cancelImportJob()"
+                    <button @click="cancelImportJob()" data-testid="import-progress-cancel"
                         class="rounded border border-rose-300 text-rose-600 px-4 py-2 text-sm hover:bg-rose-50">取消导入</button>
                 </div>
             </div>
@@ -1537,18 +1538,18 @@
         </div>
 
         <!-- Export Modal -->
-        <div x-cloak x-show="showExportModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+        <div x-cloak x-show="showExportModal" data-testid="export-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
             @click.self="closeExportModal()">
-            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl" data-testid="export-panel">
                 <div class="flex items-center justify-between mb-3">
                     <h3 class="text-lg font-semibold">📤 导出书签</h3>
-                    <button @click="closeExportModal()"
+                    <button @click="closeExportModal()" data-testid="export-close"
                         class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                 </div>
                 <div class="space-y-3">
                     <div>
                         <label class="text-xs text-slate-600">导出范围</label>
-                        <select x-model="exportScope" class="w-full rounded border px-3 py-2 text-sm mt-1">
+                        <select x-model="exportScope" data-testid="export-scope-select" class="w-full rounded border px-3 py-2 text-sm mt-1">
                             <option value="all">全部书签</option>
                             <option value="uncategorized">仅未分类</option>
                             <option value="selected" x-show="selectedCategories.length > 0">选中分类</option>
@@ -1556,16 +1557,16 @@
                     </div>
                     <div>
                         <label class="text-xs text-slate-600">导出格式</label>
-                        <select x-model="exportFormat" class="w-full rounded border px-3 py-2 text-sm mt-1">
+                        <select x-model="exportFormat" data-testid="export-format-select" class="w-full rounded border px-3 py-2 text-sm mt-1">
                             <option value="html">浏览器书签 (HTML)</option>
                             <option value="json">JSON</option>
                         </select>
                     </div>
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
-                    <button @click="closeExportModal()"
+                    <button @click="closeExportModal()" data-testid="export-cancel"
                         class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
-                    <a :href="getExportUrl()" @click="closeExportModal()"
+                    <a :href="getExportUrl()" @click="closeExportModal()" data-testid="export-download"
                         class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800 inline-block">下载</a>
                 </div>
             </div>
