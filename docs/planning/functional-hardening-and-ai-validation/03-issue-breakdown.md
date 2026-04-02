@@ -1,6 +1,6 @@
 # bookmarks-manager Issue 级任务拆分
 
-更新时间：2026-03-31
+更新时间：2026-04-02
 
 配套文档：
 
@@ -18,7 +18,7 @@
 ## 2. issue 命名规则
 
 - 命名格式：`<阶段>-<域>-<序号>`。
-- 阶段枚举：`G1`、`R1`、`R15`、`R2`、`R3`、`R4`、`R5`、`R6`、`R7`。
+- 阶段枚举：`G1`、`R1`、`R15`、`R2`、`R3`、`R4`、`R5`、`R6`、`R7`、`R8`、`R9`、`R10`。
 - 域枚举建议：`QA`、`API`、`BE`、`DOC`、`AI`、`E2E`、`EXT`、`REL`、`H1`、`UI`、`CLEAN`。
 - 示例：`R15-AI-03`、`R1-BE-03`。
 
@@ -846,6 +846,80 @@
   - `scripts/playwright-issue-regression-validate.ts` 已串入该 harness，历史浏览器回放入口继续可复跑。
   - `npx tsc --noEmit`、`npm test`、`npm run build` 在本轮通过。
 
+## R9-QA-01 补齐备份上传还原与备份删除的浏览器级回放
+
+- 目标：把首页备份弹窗里仍缺 browser replay 的“上传 `.db` 还原”和“删除备份”两条高风险链路补齐，避免继续只靠 API 合同和页面壳体选择器判断功能稳定。
+- 范围：
+  - 为备份上传表单、文件选择、删除确认和列表刷新补齐稳定 `data-testid` 或等价可复跑定位。
+  - 新增独立 Playwright 浏览器 harness，覆盖：
+    - 上传 `.db` 备份文件并执行 restore
+    - restore 成功后的页面刷新与书签 / 分类恢复
+    - 删除手动备份并验证列表与磁盘文件同步消失
+  - 将新 harness 接入统一历史浏览器回放入口，继续作为当前会话有无 MCP 都可复跑的独立 browser replay。
+- 非目标：
+  - 不把 partial-restore 合同扩大到 `snapshots`、`settings` 或其它业务表。
+  - 不在本 issue 中补坏文件上传、非法文件名等纯 API 错误分支的浏览器化回放。
+- 依赖：`R8-QA-01`、`R1-BE-03`。
+- 验收：
+  - 新 browser harness 可以 clean run，证明上传还原与备份删除在真实浏览器里可操作、可确认、结果正确。
+  - `scripts/playwright-issue-regression-validate.ts` 已串入该 harness，历史浏览器回放入口继续可复跑。
+  - `npx tsc --noEmit`、`npm test`、`npm run build` 在本轮通过。
+
+## R9-QA-02 补齐快照查看/下载/单条删除与筛选的浏览器级回放
+
+- 目标：把快照页仍缺页面级主线的“搜索 / 日期筛选 -> 查看 -> 下载 -> 单条删除”补成独立浏览器回放，避免继续只靠路由合同和批量删除脚本默认正确。
+- 范围：
+  - 为快照搜索框、日期筛选、清除筛选、查看 / 下载链接和单条删除确认补稳定 `data-testid` 或等价可复跑定位。
+  - 新增独立 Playwright 浏览器 harness，覆盖：
+    - 搜索与日期筛选后列表收敛
+    - 打开快照查看页并校验页面内容来自目标快照
+    - 触发真实下载并校验文件名 / 文件内容
+    - 单条删除后的列表刷新、数据库记录与文件系统结果一致
+  - 将新 harness 接入统一历史浏览器回放入口，继续作为当前会话有无 MCP 都可复跑的独立 browser replay。
+- 非目标：
+  - 不在本 issue 中引入像素级视觉比对或新增快照预览 UI。
+  - 不把快照 HTML 内容安全治理、下载鉴权或大文件性能优化并入本轮。
+- 依赖：`R8-QA-02`、`R1-BE-03`。
+- 验收：
+  - 新 browser harness 可以 clean run，证明快照查看、下载、筛选与单条删除在真实浏览器里可操作、可确认、结果正确。
+  - `scripts/playwright-issue-regression-validate.ts` 已串入该 harness，历史浏览器回放入口继续可复跑。
+  - `npx tsc --noEmit`、`npm test`、`npm run build` 在本轮通过。
+
+## R9-QA-03 补齐导入取消、通用任务取消与失败明细分页的浏览器级回放
+
+- 目标：把首页导入进度弹层、顶部当前任务提示和任务详情页里仍偏“接口有合同但缺页面级证据”的取消 / 失败明细链路补成独立浏览器回放，避免出现后端已取消但前端仍假成功、或失败分页只在 API 层正确的漂移。
+- 范围：
+  - 为当前任务提示、任务详情取消按钮、失败项分页控件和必要状态提示补稳定 `data-testid` 或等价可复跑定位。
+  - 新增独立 Playwright 浏览器 harness，覆盖：
+    - 首页导入进度弹层取消
+    - 顶部当前任务或任务详情页的通用任务取消
+    - 失败项分页 / 每页数量切换与内容刷新
+  - 将新 harness 接入统一历史浏览器回放入口，继续作为当前会话有无 MCP 都可复跑的独立 browser replay。
+- 非目标：
+  - 不重复覆盖 AI organize 的 cancel / retry 浏览器合同；那部分已由 `R7-QA-07` 吸收。
+  - 不在本 issue 中扩展任务列表 destructive action；`clear-completed` / `clear-all` 已由 `R8-QA-02` 覆盖。
+- 依赖：`R8-QA-01`、`R8-QA-03`、`R7-QA-07`。
+- 验收：
+  - 新 browser harness 可以 clean run，证明导入取消、任务取消与失败明细分页在真实浏览器里可操作、可确认、结果正确。
+  - `scripts/playwright-issue-regression-validate.ts` 已串入该 harness，历史浏览器回放入口继续可复跑。
+  - `npx tsc --noEmit`、`npm test`、`npm run build` 在本轮通过。
+
+## R10-QA-01 固化仓库内 Playwright 补充冒烟并收口选择器漂移
+
+- 目标：把当前重新引入但仍处于半漂移状态的仓库内 Playwright 套件收口成“可复跑的补充冒烟”，避免它继续以失败噪声或过时选择器的形式干扰风险台账，同时保持 MCP 仍是主浏览器 gate。
+- 范围：
+  - 修正 `e2e/` 中已过时的 API 假设、文本定位和原生 `dialog` 依赖，对齐当前自定义 `AppDialog` 与页面 `data-testid`。
+  - 为仓库内 Playwright 仍需依赖的首页搜索、编辑书签、分类管理等区域补最小稳定选择器。
+  - 验证 `playwright.config.ts`、`e2e/auth.setup.ts` 和仓库内 Playwright 冒烟脚本能在临时环境 clean rerun。
+- 非目标：
+  - 不把仓库内 `e2e/` 恢复为 release gate，也不替代内置 Playwright MCP 历史回放矩阵。
+  - 不在本 issue 中扩展新的端到端业务旅程，只收口现有仓库内 Playwright 资产的漂移。
+- 依赖：`R9-QA-03`。
+- 验收：
+  - `npm run test:e2e` 在临时环境下可 clean run。
+  - 仓库内 Playwright 的定位和行为合同与当前页面实现一致，不再依赖过时响应结构或原生浏览器确认框。
+  - 文档明确该套件是补充冒烟而非主 gate，且本轮完成后 `npx tsc --noEmit`、`npm test`、`npm run build` 继续通过。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -893,3 +967,7 @@
 43. `R8-QA-01`
 44. `R8-QA-02`
 45. `R8-QA-03`
+46. `R9-QA-01`
+47. `R9-QA-02`
+48. `R9-QA-03`
+49. `R10-QA-01`
