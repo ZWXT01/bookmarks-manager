@@ -34,6 +34,7 @@
 - [导入取消、通用任务取消与失败明细分页浏览器回放验收记录](./48-job-cancel-failures-browser-validation.md)
 - [R10-QA-01 仓库内 Playwright 补充冒烟稳定化验收记录](./49-repo-playwright-supplemental-smoke-validation.md)
 - [R11-QA-01 交付前整体功能回归验收记录](./50-delivery-readiness-validation.md)
+- [R11-REL-02 docker compose 真实部署形态 smoke 验收记录](./51-docker-compose-smoke-validation.md)
 
 ## 1. 执行信息
 
@@ -46,6 +47,7 @@
   - 历史 issue Playwright 浏览器复验矩阵
   - 仓库内 Playwright 补充 smoke（非主 gate）
   - 交付前整体功能回归 gate
+  - docker compose 真实部署形态 smoke
   - 备份还原与任务详情浏览器回放
   - 任务列表清理与快照批量删除浏览器回放
   - 导入启动与导出下载浏览器回放
@@ -60,6 +62,7 @@
 | 自动化测试 | `npm test` 于 2026-04-03 再次通过，`22` 个测试文件、`192` 条测试全部通过。 | 通过 |
 | 构建 | `npm run build` 于 2026-04-03 再次通过。 | 通过 |
 | 交付前整体功能回归 gate | [50-delivery-readiness-validation.md](./50-delivery-readiness-validation.md) 已证明 `npm run validate:delivery` clean run 通过，并重新串跑 `tsc`、`npm test`、`build`、仓库内 Playwright `11 passed` 与历史浏览器矩阵 `16` 条脚本。 | 通过 |
+| docker compose 真实部署形态 smoke | [51-docker-compose-smoke-validation.md](./51-docker-compose-smoke-validation.md) 已证明当前 Docker 交付物可 build、可启动、可登录、可写入，并在容器重启后保持最小数据持久化；临时 stack、数据目录和本地镜像也已自动清理。 | 通过 |
 | 仓库内 Playwright 补充 smoke | [49-repo-playwright-supplemental-smoke-validation.md](./49-repo-playwright-supplemental-smoke-validation.md) 已证明 `npm run test:e2e` 恢复到 `11 passed`，覆盖首页书签 CRUD、分类导航 / 分类管理，以及搜索 / 快捷键等仓库原生场景；但这套回放仍不作为主 release gate。 | 通过 |
 | `R1-DOC-04` 浏览器补验收 | 本地临时环境 `http://127.0.0.1:45577` 通过内置 Playwright MCP 访问 `/login` 与 `/jobs`；标题分别为“登录 - 书签管理器”和“任务列表 - 书签管理器”，`warning/error` 计数为 `0`。 | 通过 |
 | MCP 关键业务旅程 | [11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md) 已覆盖登录、首页、设置、模板、快照、备份、任务 / SSE 与 mock AI UI 联动。 | 通过 |
@@ -93,7 +96,9 @@
 
 - 代码侧与离线 gate 仍然闭环，可交接给后续维护者继续在现有 taxonomy / semantic contract 上维护。
 - `R11-QA-01` 已把当前 deterministic gate 串成 `npm run validate:delivery`，所以本轮交付结论不再只依赖“历史上各自跑过”的零散证据，而是有一条可直接复跑的交付前总入口。
+- `R11-REL-02` 又补上了真实容器形态 smoke，所以当前交付结论不再只建立在临时 app harness 和本地 Node 进程之上；当前 Docker 交付物本身也已经被实证。
 - `R1-DOC-04` 的历史阻塞已解除，文档 / 页面漂移不再是发布阻塞项。
+- 截至 `R11-REL-02` 完成，当前 issue 队列与风险台账都已再次清空；在“不新增目标范围”的前提下，项目已达到当前定义下的可交付状态。
 - 当前风险台账中已无 `open + blocked` 的遗留项，`RISK-001` 也已在默认 Grok provider 验证源下关闭。
 - 2026-04-02 复盘后新增的 3 条浏览器合同残余 `R9-QA-01`、`R9-QA-02` 与 `R9-QA-03` 现已全部收口；当前风险台账中不再保留这批页面合同的未闭环项。
 - 多待应用 organize plan 现在不再依赖“只有最新 plan 能应用”的隐式规则；同模板不重叠、同模板重叠、跨模板三类 apply 路径都已有明确合同和自动化证明。
@@ -145,11 +150,14 @@
 | `RISK-034` | resolved | 快照页现在已补齐搜索 / 日期筛选、单条查看、真实下载和单条删除的独立浏览器回放，能直接证明筛选收敛、目标文件内容、下载链接合同，以及删除后的列表 / 数据库 / 文件系统结果保持一致；同轮还补了 Playwright MCP 页面级复验。 |
 | `RISK-035` | resolved | 首页顶部当前任务取消、导入进度取消、任务详情取消和失败明细分页现在已补齐独立浏览器回放，能直接证明取消请求、状态收口、翻页与页大小切换在真实页面里保持一致；同轮还补了 Playwright MCP 页面级复验。 |
 | `RISK-036` | resolved | 仓库内 `e2e/` 与 `playwright.config.ts` 现已收口为可 clean rerun 的补充 smoke；旧 API 响应结构、过时文本定位和原生 `dialog` 假设都已对齐到当前实现，`npm run test:e2e` 恢复为 `11 passed`，但主 UI gate 仍保持为内置 Playwright MCP。 |
+| `RISK-037` | resolved | `npm run validate:delivery` 已把 `tsc`、`npm test`、`build`、仓库内 Playwright `11 passed` 与历史浏览器矩阵 `16` 条脚本串成单条交付前总入口，交付结论不再只靠零散历史记录。 |
+| `RISK-038` | resolved | `npm run validate:compose-smoke` 已证明当前 Docker 交付物可 build、可启动、可登录、可写入并在容器重启后保持最小数据持久化，容器形态不再是未实证空白。 |
 
 ## 5. 交接说明
 
 - UI gate 仍以内置 Playwright MCP 为主；`R7-QA-07`、`R8-QA-01`、`R8-QA-02`、`R8-QA-03`、`R9-QA-01`、`R9-QA-02`、`R9-QA-03` 继续扩展的 `scripts/playwright-issue-regression-validate.ts`、`scripts/backup-job-browser-validate.ts`、`scripts/backup-upload-delete-browser-validate.ts`、`scripts/jobs-snapshots-browser-validate.ts`、`scripts/snapshot-browse-download-browser-validate.ts`、`scripts/import-export-browser-validate.ts`、`scripts/job-cancel-failures-browser-validate.ts` 是历史 issue 与高风险页面合同的补充 browser replay；`R10-QA-01` 又把仓库内 `e2e/` 和 `playwright.config.ts` 收口为补充 smoke，可用于仓库原生交互复跑，但两者都不等于恢复仓库内 Playwright 为主 gate。
 - 当前 deterministic 交付前总入口是 `npm run validate:delivery`；若后续继续改用户可见页面、仓库内 Playwright 冒烟、历史浏览器 harness 或扩展 runtime，应优先复跑这条总入口，再按变更面补定向脚本。
+- 当前 Docker 交付物的最小真实部署 smoke 入口是 `npm run validate:compose-smoke`；若后续继续改 `Dockerfile`、`docker-compose.yml`、静态资源装配、运行时数据目录或生产启动入口，必须先复跑这条容器 smoke。
 - 截至 2026-04-02，这一轮补录的浏览器合同残余已全部收口；若后续继续改首页任务 banner、导入进度弹层、任务详情取消或失败分页脚本，应直接在 `scripts/job-cancel-failures-browser-validate.ts` 上继续追加场景，而不是再散落到新的临时脚本。
 - AI 凭证继续只通过设置页写入本地环境；真实 `base_url`、`api_key`、`model` 不进入仓库、日志或文档样例。
 - 备份还原继续维持 partial-restore 合同，只恢复 `categories` 与 `bookmarks`，并保留 `pre_restore_*.db` 回滚点。
@@ -163,6 +171,7 @@
 | 自动化回归 | `npm test` |
 | 构建验证 | `npm run build` |
 | 交付前整体功能回归 | `npm run validate:delivery` |
+| 真实部署形态 smoke | `npm run validate:compose-smoke` |
 | 单条 classify 语义回归 | `npm test -- tests/ai-classify-guardrail.test.ts tests/integration/ai-routes.test.ts tests/integration/ai-harness.test.ts` |
 | 单条 classify 样本集 gate | `npx tsx scripts/ai-classify-semantic-validate.ts` |
 | 单条 classify H1 focused replay | `npx tsx scripts/ai-h1-classify-semantic-validate.ts --ids react-reference-docs`；默认走 Grok，若要验证当前应用设置可加 `--provider current`；若要隔离 `/api/ai/classify` 本身，可加 `--skip-test` |
@@ -194,4 +203,5 @@
 - 本次 `R8-QA-01` 备份还原 / 任务详情浏览器回放同样基于 `createTestApp()` 临时环境，定向脚本与统一历史浏览器回放都已在退出时清理临时目录与测试数据。
 - 本次 `R8-QA-02` 任务列表清理 / 快照批量删除浏览器回放同样基于 `createTestApp()` 临时环境；定向脚本与统一历史浏览器回放都已在退出时清理临时目录、测试数据和快照文件。
 - 本次 `R8-QA-03` 导入启动 / 导出下载浏览器回放同样基于 `createTestApp()` 临时环境；定向脚本、统一历史浏览器回放与额外的 Playwright MCP smoke 环境都已在退出时清理临时目录、测试数据与后台进程。
+- 本次 `R11-REL-02` 容器 smoke 已自动执行 `docker compose down --remove-orphans --rmi local`，临时 compose 文件 `/tmp/bookmarks-compose-smoke-*`、临时数据目录和本地镜像都已删除，未污染仓库默认 `data/`。
 - `R2-REL-03` 本轮未遗留额外测试服务、端口、临时二进制或测试数据。
