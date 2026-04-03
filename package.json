@@ -11,6 +11,7 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "test:all": "npm run test && npm run test:e2e",
+    "validate:ai-h1-timing": "tsx scripts/ai-h1-timing-validate.ts",
     "validate:delivery": "tsx scripts/delivery-readiness-validate.ts",
     "validate:compose-smoke": "tsx scripts/docker-compose-smoke-validate.ts"
   },

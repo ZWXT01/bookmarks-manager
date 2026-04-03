@@ -18,7 +18,7 @@
 ## 2. issue 命名规则
 
 - 命名格式：`<阶段>-<域>-<序号>`。
-- 阶段枚举：`G1`、`R1`、`R15`、`R2`、`R3`、`R4`、`R5`、`R6`、`R7`、`R8`、`R9`、`R10`、`R11`。
+- 阶段枚举：`G1`、`R1`、`R15`、`R2`、`R3`、`R4`、`R5`、`R6`、`R7`、`R8`、`R9`、`R10`、`R11`、`R12`。
 - 域枚举建议：`QA`、`API`、`BE`、`DOC`、`AI`、`E2E`、`EXT`、`REL`、`H1`、`UI`、`CLEAN`。
 - 示例：`R15-AI-03`、`R1-BE-03`。
 
@@ -963,6 +963,28 @@
   - 本轮容器化 smoke 证明当前 Docker 交付物至少具备“可 build、可启动、可登录、可写入、可重启保持”的最小发布能力。
   - 交接文档明确这条容器 smoke 的边界、清理动作和非目标。
 
+## R12-H1-01 重跑真实 AI provider H1 验证并补齐时序留痕
+
+- 目标：在当前项目已达可交付状态后，再对真实凭证驱动的 AI `H1` provider 验证做一次更细的复跑，补上“只看最终通过 / 失败，不看过程时序”的盲区，确认真实 provider 在 `/models`、`/chat/completions`、`/api/ai/test`、`classify`、`classify-batch`、`organize`、`apply/rollback` 上不仅能通过，而且状态切换与耗时表现可解释。
+- 范围：
+  - 新增 timing 版 H1 harness，至少覆盖：
+    - direct provider diagnose 的耗时与返回形态
+    - 多次 `/api/ai/test`
+    - 多轮单条 `/api/ai/classify`
+    - `/api/ai/classify-batch` 的请求耗时、job / plan 收口时序
+    - `/api/ai/organize` 从创建到 `active/pending/detail` 收口，再到 `apply/rollback` 的状态时间线
+  - 继续复跑现有真实 provider H1 验证脚本，保留与历史记录可比的基线输出。
+  - 若本地同时存在可用的 `current` 与 `grok` 真实配置，则分别执行；若只有一套可用配置，则明确记录实际 provider 来源。
+- 非目标：
+  - 不新增 provider 类型，也不引入新的 AI 产品能力。
+  - 不把真实凭证、真实响应全文或明文 endpoint / key 回写到仓库。
+  - 不在本 issue 中扩展前端 UI、模板树或 organize 合同本身。
+- 依赖：`R11-REL-02`。
+- 验收：
+  - 有一份新的真实 provider H1 详细验收记录，明确写出 provider 来源、脱敏配置、各步骤耗时、关键状态切换和最终质量结果。
+  - timing 版 H1 harness 可以 clean run，并在报告里明确“观察到的时序”与“未观察到但不构成失败的时序”。
+  - 若真实 provider 存在新的波动、超时、语义漂移或收口异常，必须回写风险台账，而不是只停留在一次性结论里。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -1016,3 +1038,4 @@
 49. `R10-QA-01`
 50. `R11-QA-01`
 51. `R11-REL-02`
+52. `R12-H1-01`

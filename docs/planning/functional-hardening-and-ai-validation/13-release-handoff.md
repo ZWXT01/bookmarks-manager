@@ -15,6 +15,7 @@
 - [AI provider 直连诊断验收记录](./27-ai-provider-diagnostic-validation.md)
 - [设置页 AI 诊断 UI 验收记录](./28-settings-ai-diagnostic-ui-validation.md)
 - [Grok 默认 provider 验证与 SSE 兼容验收记录](./29-grok-provider-default-validation.md)
+- [R12-H1-01 真实 AI provider 时序复验记录](./52-ai-provider-h1-timing-validation.md)
 - [Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)
 - [浏览器扩展 round-trip 验收](./12-extension-roundtrip-validation.md)
 - [模板编辑后 AI 默认源验收记录](./32-ai-template-source-validation.md)
@@ -53,7 +54,7 @@
   - 导入启动与导出下载浏览器回放
   - 导入取消、通用任务取消与失败明细分页浏览器回放
   - 扩展 popup round-trip harness
-  - `H1` 真实 provider AI 验收与单条 classify focused replay
+  - `H1` 真实 provider AI 验收、单条 classify focused replay 与时序感知复验
 
 ## 2. 最终回归结果
 
@@ -74,9 +75,10 @@
 | 浏览器扩展 round-trip | [12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md) 已 clean run，覆盖 token、保存书签、保存快照、同时保存与失败提示。 | 通过 |
 | 内置扩展 popup UI | [33-extension-popup-ui-validation.md](./33-extension-popup-ui-validation.md) 已证明 popup 的主操作层级、设置区摘要、状态卡和真实运行时成功 / 失败反馈都已经收口，且不回退既有书签 / 快照主链路。 | 通过 |
 | 内置扩展 SingleFile 稳健性 | [34-extension-singlefile-robustness-validation.md](./34-extension-singlefile-robustness-validation.md) 已证明不支持页面、目标页失效、timeout 恢复和重复 `save-all` 点击都能给出可恢复反馈，并避免重复数据或半成功状态。 | 通过 |
-| `H1` 真实 provider AI 验收 | [10-ai-provider-h1-validation.md](./10-ai-provider-h1-validation.md) 已完成历史 `test`、`classify-batch`、`organize`、`apply/rollback`；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 又证明默认 Grok 源下的 full H1 已恢复全绿。 | 通过 |
-| `/api/ai/test` 瞬时重试与可操作诊断 | [26-ai-test-retry-validation.md](./26-ai-test-retry-validation.md) 已证明本地 timeout-retry 合同成立；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 又证明默认 Grok 源下 `/api/ai/test` 已恢复 `200`。 | 通过 |
-| provider 直连诊断 | [27-ai-provider-diagnostic-validation.md](./27-ai-provider-diagnostic-validation.md) 曾把问题收口到 chat completion 链路；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 又证明修正后的默认 Grok 源在 `/models` 与 `/chat/completions` 上都返回 `200`，且 chat completion 为 `text/event-stream`。 | 通过 |
+| 时序感知 `H1` 真实 provider 复验 | [52-ai-provider-h1-timing-validation.md](./52-ai-provider-h1-timing-validation.md) 已在 2026-04-03 顺序重跑 `grok/current`，对每套 provider 固定执行 `3x` 直连 diagnose、`3x` `/api/ai/test`、`3x` 单条 classify，以及 `classify-batch` / `organize` 的 `active/pending/detail` `100ms` 轮询；两套 provider 均 `0 failures`，且 `active -> pending/preview/job=done` 时序完整可观察。 | 通过 |
+| `H1` 真实 provider AI 验收 | [10-ai-provider-h1-validation.md](./10-ai-provider-h1-validation.md) 已完成历史 `test`、`classify-batch`、`organize`、`apply/rollback`；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 又证明默认 Grok 源下的 full H1 已恢复全绿；[52-ai-provider-h1-timing-validation.md](./52-ai-provider-h1-timing-validation.md) 则把两套真实 provider 的 direct diagnose、旧版 full H1 与时序版 H1 统一补成了 2026-04-03 的新基线。 | 通过 |
+| `/api/ai/test` 瞬时重试与可操作诊断 | [26-ai-test-retry-validation.md](./26-ai-test-retry-validation.md) 已证明本地 timeout-retry 合同成立；[52-ai-provider-h1-timing-validation.md](./52-ai-provider-h1-timing-validation.md) 又证明 `grok/current` 各 `3x` 真实 `/api/ai/test` 全部 `200`，耗时稳定在 `1260ms` 到 `1497ms`。 | 通过 |
+| provider 直连诊断 | [27-ai-provider-diagnostic-validation.md](./27-ai-provider-diagnostic-validation.md) 曾把问题收口到 chat completion 链路；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 修正了默认 Grok 源；[52-ai-provider-h1-timing-validation.md](./52-ai-provider-h1-timing-validation.md) 又证明 `grok/current` 两套真实配置在 `/models` 与 `/chat/completions` 上都连续命中 `200` 且 `modelFound = true`。 | 通过 |
 | 设置页 AI 诊断 UI | [28-settings-ai-diagnostic-ui-validation.md](./28-settings-ai-diagnostic-ui-validation.md) 已证明设置页在真实浏览器中能同时展示成功态和 `models_ok=true` 的 timeout 诊断态，操作员不必再只靠 toast 或 network 面板。 | 通过 |
 | 多待应用 organize plan 合同 | [30-organize-apply-contract-validation.md](./30-organize-apply-contract-validation.md) 已证明同模板不重叠可直接 apply、同模板重叠进入显式冲突解决、跨模板继续按模板快照隔离 apply。 | 通过 |
 | AI organize assigning 单活锁与取消时序 | [36-ai-organize-assigning-lock-validation.md](./36-ai-organize-assigning-lock-validation.md) 已证明 start / retry 现在共用 `assigning` 单活锁，canceled in-flight plan 不会在 provider 返回后继续写 stale preview，新 plan 也能在 cancel 后正常 preview。 | 通过 |
@@ -90,12 +92,13 @@
 | 预置模板库扩容与切换 | [35-preset-template-library-validation.md](./35-preset-template-library-validation.md) 已证明模板库里可以直接基于预置模板创建自定义副本或创建后立即应用，且首页导航、分类管理和 AI 默认候选分类会同步切换到最新活动模板。 | 通过 |
 | 单条 classify 语义择优 | [22-single-classify-semantic-validation.md](./22-single-classify-semantic-validation.md) 已补齐本地语义 rerank、样本回归和 `description` 上下文。 | 通过 |
 | 单条 classify 样本集 gate | [23-single-classify-sample-gate-validation.md](./23-single-classify-sample-gate-validation.md) 已固化固定样本集、复验脚本和 `npm test` 自动化入口。 | 通过 |
-| 单条 classify focused H1 replay | [24-single-classify-h1-replay-validation.md](./24-single-classify-h1-replay-validation.md) 记录了旧 provider 的 timeout 基线；[25-single-classify-timeout-fallback-validation.md](./25-single-classify-timeout-fallback-validation.md) 证明过 timeout fallback；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 则证明默认 Grok 源下 focused replay 已恢复到 `1/1`。 | 通过 |
+| 单条 classify focused H1 replay | [24-single-classify-h1-replay-validation.md](./24-single-classify-h1-replay-validation.md) 记录了旧 provider 的 timeout 基线；[25-single-classify-timeout-fallback-validation.md](./25-single-classify-timeout-fallback-validation.md) 证明过 timeout fallback；[29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 证明默认 Grok 源下 focused replay 已恢复到 `1/1`；[52-ai-provider-h1-timing-validation.md](./52-ai-provider-h1-timing-validation.md) 则把两套真实 provider 的 `9` 条语义样本扩展到 `9/9 accepted`，并确认 H1 三样本的 `3x3` 单条 classify 没有出现不被接受的分类。 | 通过 |
 
 ## 3. 发布级结论
 
 - 代码侧与离线 gate 仍然闭环，可交接给后续维护者继续在现有 taxonomy / semantic contract 上维护。
 - `R11-QA-01` 已把当前 deterministic gate 串成 `npm run validate:delivery`，所以本轮交付结论不再只依赖“历史上各自跑过”的零散证据，而是有一条可直接复跑的交付前总入口。
+- `R12-H1-01` 又把真实 provider 的 `H1` 验收从“历史单次联调”升级成“可复跑、可对比、带时序留痕”的 release 证据；当前已没有剩余的真实 provider 时序盲区未闭环。
 - `R11-REL-02` 又补上了真实容器形态 smoke，所以当前交付结论不再只建立在临时 app harness 和本地 Node 进程之上；当前 Docker 交付物本身也已经被实证。
 - `R1-DOC-04` 的历史阻塞已解除，文档 / 页面漂移不再是发布阻塞项。
 - 截至 `R11-REL-02` 完成，当前 issue 队列与风险台账都已再次清空；在“不新增目标范围”的前提下，项目已达到当前定义下的可交付状态。
@@ -176,6 +179,7 @@
 | 单条 classify 样本集 gate | `npx tsx scripts/ai-classify-semantic-validate.ts` |
 | 单条 classify H1 focused replay | `npx tsx scripts/ai-h1-classify-semantic-validate.ts --ids react-reference-docs`；默认走 Grok，若要验证当前应用设置可加 `--provider current`；若要隔离 `/api/ai/classify` 本身，可加 `--skip-test` |
 | provider 直连诊断 | `npx tsx scripts/ai-provider-diagnose.ts --report /tmp/bookmarks-ai-provider-diagnose.json`；默认走 Grok，若要验证当前应用设置可加 `--provider current` |
+| 时序感知真实 AI `H1` | `npm run validate:ai-h1-timing -- --diagnose-attempts 3 --test-attempts 3 --classify-attempts 3 --timeout-cap-ms 60000 --poll-interval-ms 100`；默认顺序跑 `grok,current`，若只想验证当前应用设置可加 `--providers current` |
 | 真实 AI `H1` 全量 | `npx tsx scripts/ai-h1-validate.ts`；默认走 Grok，若要验证当前应用设置可加 `--provider current` |
 | 设置页 AI 诊断 UI | `npx tsx scripts/settings-ai-diagnostic-validate.ts` |
 | MCP UI gate | `npx tsx scripts/playwright-mcp-smoke-env.ts` 启动临时服务，再按 [08](./08-playwright-mcp-smoke-baseline.md) 与 [11](./11-playwright-mcp-release-journeys.md) 用内置 Playwright MCP 复跑 |
@@ -188,7 +192,7 @@
 | 导入启动 / 导出下载浏览器回放 | `npx tsx scripts/import-export-browser-validate.ts` |
 | 导入取消 / 通用任务取消 / 失败明细分页浏览器回放 | `npx tsx scripts/job-cancel-failures-browser-validate.ts` |
 | 扩展 round-trip | `npx tsx scripts/extension-roundtrip-validate.ts` |
-| 真实 AI `H1` | 按 [10](./10-ai-provider-h1-validation.md) 的步骤，用人工提供的临时凭证复跑，结束后清理临时环境 |
+| 真实 AI `H1` | 优先按 [52](./52-ai-provider-h1-timing-validation.md) 的时序版入口复跑；若需要对比历史 focused / full H1 口径，再参考 [10](./10-ai-provider-h1-validation.md) 与 [29](./29-grok-provider-default-validation.md) |
 
 ## 7. 清理结论
 
@@ -199,6 +203,7 @@
 - 本次 `R5-AI-07` direct diagnose 只写出脱敏 JSON 报告，不创建临时 DB；focused H1 replay 同样确认 `tempDirCleaned = true`。
 - 本次 `R5-AI-08` 设置页浏览器 harness 使用 `createTestApp()` 临时环境和 headless Chrome，退出后已清理临时目录与会话环境。
 - 本次 `R5-AI-09` 的默认 Grok direct diagnose、focused H1 和 full H1 都在报告中确认 `tempDirCleaned = true` 或无临时 DB；未遗留后台验证进程。
+- 本次 `R12-H1-01` 的 timing 版 H1、直连 diagnose、旧版 full H1 和语义样本复验都只把脱敏 JSON 报告写到本地 `/tmp`；各脚本的临时 DB / `.env` 目录均在退出时确认 `tempDirCleaned = true`，未向仓库回写任何真实密钥。
 - 本次 `R7-QA-07` 历史 issue 浏览器复验使用的 `createTestApp()` 临时环境、扩展 popup-harness / runtime 临时目录和 action popup fixture 环境都已在各脚本输出中确认清理；唯一新增前置是 Playwright Chromium 二进制缓存 `/home/human/.cache/ms-playwright/chromium-1208`，它属于后续复跑所需依赖，不是脏测试产物。
 - 本次 `R8-QA-01` 备份还原 / 任务详情浏览器回放同样基于 `createTestApp()` 临时环境，定向脚本与统一历史浏览器回放都已在退出时清理临时目录与测试数据。
 - 本次 `R8-QA-02` 任务列表清理 / 快照批量删除浏览器回放同样基于 `createTestApp()` 临时环境；定向脚本与统一历史浏览器回放都已在退出时清理临时目录、测试数据和快照文件。
