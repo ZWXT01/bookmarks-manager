@@ -1,6 +1,6 @@
 # bookmarks-manager Issue 级任务拆分
 
-更新时间：2026-04-02
+更新时间：2026-04-03
 
 配套文档：
 
@@ -18,7 +18,7 @@
 ## 2. issue 命名规则
 
 - 命名格式：`<阶段>-<域>-<序号>`。
-- 阶段枚举：`G1`、`R1`、`R15`、`R2`、`R3`、`R4`、`R5`、`R6`、`R7`、`R8`、`R9`、`R10`。
+- 阶段枚举：`G1`、`R1`、`R15`、`R2`、`R3`、`R4`、`R5`、`R6`、`R7`、`R8`、`R9`、`R10`、`R11`。
 - 域枚举建议：`QA`、`API`、`BE`、`DOC`、`AI`、`E2E`、`EXT`、`REL`、`H1`、`UI`、`CLEAN`。
 - 示例：`R15-AI-03`、`R1-BE-03`。
 
@@ -920,6 +920,49 @@
   - 仓库内 Playwright 的定位和行为合同与当前页面实现一致，不再依赖过时响应结构或原生浏览器确认框。
   - 文档明确该套件是补充冒烟而非主 gate，且本轮完成后 `npx tsc --noEmit`、`npm test`、`npm run build` 继续通过。
 
+## R11-QA-01 收口交付前整体功能回归 gate
+
+- 目标：在当前所有历史 issue 与风险台账都已收口后，再补一条可复跑的“交付前总回归入口”，把本地 deterministic gate 一次性跑完并形成明确交付结论，避免“零散验收都通过，但没有一条最终总入口”的交付盲区。
+- 范围：
+  - 新增统一总入口，顺序执行：
+    - `npx tsc --noEmit`
+    - `npm test`
+    - `npm run build`
+    - `npm run test:e2e`
+    - `npx tsx scripts/playwright-issue-regression-validate.ts`
+  - 归档本轮结果、耗时和覆盖面，明确这条总入口覆盖的是“本地 deterministic 回归 + 历史浏览器合同 + 仓库内 Playwright 补充 smoke”。
+  - 把“已重跑 / 未重跑”的交付结论写回功能矩阵与交接文档，避免把历史 H1 记录和本轮 deterministic 回归混成一句“都验证了”。
+- 非目标：
+  - 不在本 issue 中重跑需要真实凭证的 `H1` provider 验证；若 AI provider / endpoint 没变，本轮只复用既有验收记录。
+  - 不把容器化部署 smoke 混入同一条 issue；真实部署形态另由后续 issue 独立承接。
+- 依赖：`R10-QA-01`。
+- 验收：
+  - `npm run validate:delivery` 可以 clean run，并给出结构化结果汇总。
+  - 本地 deterministic 回归明确覆盖 `build`、`test`、仓库内 Playwright 补充 smoke 和历史浏览器回放矩阵。
+  - 功能矩阵、风险台账和交接文档都明确写出“本轮已重跑的交付 gate”和“仍沿用历史 H1 证据的部分”。
+
+## R11-REL-02 补齐 docker compose 真实部署形态 smoke
+
+- 目标：在本地 deterministic gate 之外，再补一条贴近真实部署形态的 container smoke，证明仓库当前 Docker 交付物可以 build、启动、登录、写入数据并在重启后保持最小可用，不再只靠 `createTestApp()` 临时环境做发布结论。
+- 范围：
+  - 新增 `docker compose` smoke 入口，使用临时 compose 文件、临时数据目录和随机端口启动容器化服务。
+  - 覆盖最小生产形态验证：
+    - 容器镜像 build 与服务启动
+    - 登录页静态资源合同
+    - 登录成功
+    - 首页新增书签
+    - 设置 / 任务 / 快照页面可访问
+    - 容器重启后书签仍存在
+  - 结束后清理临时 compose 文件、临时数据目录、容器与本次构建出的本地镜像。
+- 非目标：
+  - 不验证反向代理、TLS、外部对象存储、现网公网暴露或多节点部署。
+  - 不在本 issue 中追加真实 AI provider、扩展 runtime 或移动端矩阵。
+- 依赖：`R11-QA-01`。
+- 验收：
+  - `npm run validate:compose-smoke` 可以 clean run，并输出结构化 smoke 结果。
+  - 本轮容器化 smoke 证明当前 Docker 交付物至少具备“可 build、可启动、可登录、可写入、可重启保持”的最小发布能力。
+  - 交接文档明确这条容器 smoke 的边界、清理动作和非目标。
+
 ## 5. 推荐执行顺序
 
 1. `G1-QA-01`
@@ -971,3 +1014,5 @@
 47. `R9-QA-02`
 48. `R9-QA-03`
 49. `R10-QA-01`
+50. `R11-QA-01`
+51. `R11-REL-02`

@@ -1,6 +1,6 @@
 # bookmarks-manager 最终回归与交接说明
 
-更新时间：2026-04-02
+更新时间：2026-04-03
 
 关联文档：
 
@@ -33,6 +33,7 @@
 - [导入启动与导出下载浏览器回放验收记录](./45-import-export-browser-validation.md)
 - [导入取消、通用任务取消与失败明细分页浏览器回放验收记录](./48-job-cancel-failures-browser-validation.md)
 - [R10-QA-01 仓库内 Playwright 补充冒烟稳定化验收记录](./49-repo-playwright-supplemental-smoke-validation.md)
+- [R11-QA-01 交付前整体功能回归验收记录](./50-delivery-readiness-validation.md)
 
 ## 1. 执行信息
 
@@ -44,6 +45,7 @@
   - 内置 Playwright MCP UI gate
   - 历史 issue Playwright 浏览器复验矩阵
   - 仓库内 Playwright 补充 smoke（非主 gate）
+  - 交付前整体功能回归 gate
   - 备份还原与任务详情浏览器回放
   - 任务列表清理与快照批量删除浏览器回放
   - 导入启动与导出下载浏览器回放
@@ -55,8 +57,9 @@
 
 | 项目 | 证据 | 结果 |
 |---|---|---|
-| 自动化测试 | `npm test` 于 2026-04-02 通过，`22` 个测试文件、`192` 条测试全部通过。 | 通过 |
-| 构建 | `npm run build` 于 2026-04-02 通过。 | 通过 |
+| 自动化测试 | `npm test` 于 2026-04-03 再次通过，`22` 个测试文件、`192` 条测试全部通过。 | 通过 |
+| 构建 | `npm run build` 于 2026-04-03 再次通过。 | 通过 |
+| 交付前整体功能回归 gate | [50-delivery-readiness-validation.md](./50-delivery-readiness-validation.md) 已证明 `npm run validate:delivery` clean run 通过，并重新串跑 `tsc`、`npm test`、`build`、仓库内 Playwright `11 passed` 与历史浏览器矩阵 `16` 条脚本。 | 通过 |
 | 仓库内 Playwright 补充 smoke | [49-repo-playwright-supplemental-smoke-validation.md](./49-repo-playwright-supplemental-smoke-validation.md) 已证明 `npm run test:e2e` 恢复到 `11 passed`，覆盖首页书签 CRUD、分类导航 / 分类管理，以及搜索 / 快捷键等仓库原生场景；但这套回放仍不作为主 release gate。 | 通过 |
 | `R1-DOC-04` 浏览器补验收 | 本地临时环境 `http://127.0.0.1:45577` 通过内置 Playwright MCP 访问 `/login` 与 `/jobs`；标题分别为“登录 - 书签管理器”和“任务列表 - 书签管理器”，`warning/error` 计数为 `0`。 | 通过 |
 | MCP 关键业务旅程 | [11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md) 已覆盖登录、首页、设置、模板、快照、备份、任务 / SSE 与 mock AI UI 联动。 | 通过 |
@@ -89,6 +92,7 @@
 ## 3. 发布级结论
 
 - 代码侧与离线 gate 仍然闭环，可交接给后续维护者继续在现有 taxonomy / semantic contract 上维护。
+- `R11-QA-01` 已把当前 deterministic gate 串成 `npm run validate:delivery`，所以本轮交付结论不再只依赖“历史上各自跑过”的零散证据，而是有一条可直接复跑的交付前总入口。
 - `R1-DOC-04` 的历史阻塞已解除，文档 / 页面漂移不再是发布阻塞项。
 - 当前风险台账中已无 `open + blocked` 的遗留项，`RISK-001` 也已在默认 Grok provider 验证源下关闭。
 - 2026-04-02 复盘后新增的 3 条浏览器合同残余 `R9-QA-01`、`R9-QA-02` 与 `R9-QA-03` 现已全部收口；当前风险台账中不再保留这批页面合同的未闭环项。
@@ -145,6 +149,7 @@
 ## 5. 交接说明
 
 - UI gate 仍以内置 Playwright MCP 为主；`R7-QA-07`、`R8-QA-01`、`R8-QA-02`、`R8-QA-03`、`R9-QA-01`、`R9-QA-02`、`R9-QA-03` 继续扩展的 `scripts/playwright-issue-regression-validate.ts`、`scripts/backup-job-browser-validate.ts`、`scripts/backup-upload-delete-browser-validate.ts`、`scripts/jobs-snapshots-browser-validate.ts`、`scripts/snapshot-browse-download-browser-validate.ts`、`scripts/import-export-browser-validate.ts`、`scripts/job-cancel-failures-browser-validate.ts` 是历史 issue 与高风险页面合同的补充 browser replay；`R10-QA-01` 又把仓库内 `e2e/` 和 `playwright.config.ts` 收口为补充 smoke，可用于仓库原生交互复跑，但两者都不等于恢复仓库内 Playwright 为主 gate。
+- 当前 deterministic 交付前总入口是 `npm run validate:delivery`；若后续继续改用户可见页面、仓库内 Playwright 冒烟、历史浏览器 harness 或扩展 runtime，应优先复跑这条总入口，再按变更面补定向脚本。
 - 截至 2026-04-02，这一轮补录的浏览器合同残余已全部收口；若后续继续改首页任务 banner、导入进度弹层、任务详情取消或失败分页脚本，应直接在 `scripts/job-cancel-failures-browser-validate.ts` 上继续追加场景，而不是再散落到新的临时脚本。
 - AI 凭证继续只通过设置页写入本地环境；真实 `base_url`、`api_key`、`model` 不进入仓库、日志或文档样例。
 - 备份还原继续维持 partial-restore 合同，只恢复 `categories` 与 `bookmarks`，并保留 `pre_restore_*.db` 回滚点。
@@ -157,6 +162,7 @@
 |---|---|
 | 自动化回归 | `npm test` |
 | 构建验证 | `npm run build` |
+| 交付前整体功能回归 | `npm run validate:delivery` |
 | 单条 classify 语义回归 | `npm test -- tests/ai-classify-guardrail.test.ts tests/integration/ai-routes.test.ts tests/integration/ai-harness.test.ts` |
 | 单条 classify 样本集 gate | `npx tsx scripts/ai-classify-semantic-validate.ts` |
 | 单条 classify H1 focused replay | `npx tsx scripts/ai-h1-classify-semantic-validate.ts --ids react-reference-docs`；默认走 Grok，若要验证当前应用设置可加 `--provider current`；若要隔离 `/api/ai/classify` 本身，可加 `--skip-test` |

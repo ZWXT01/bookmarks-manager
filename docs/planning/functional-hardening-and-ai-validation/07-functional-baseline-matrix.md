@@ -1,6 +1,6 @@
 # bookmarks-manager 功能覆盖矩阵
 
-更新时间：2026-04-02
+更新时间：2026-04-03
 
 关联文档：
 
@@ -13,11 +13,12 @@
 
 | 项目 | 当前结论 | 证据 |
 |---|---|---|
-| 构建基线 | `npm run build` 于 2026-04-02 通过。 | 当前工作区在 `R10-QA-01` 仓库内 Playwright 补充 smoke 稳定化后重新 clean run 通过。 |
-| 自动化测试基线 | `npm test` 于 2026-04-02 通过，`22` 个测试文件、`192` 条测试全部通过。 | 当前工作区在 `R10-QA-01` 仓库内 Playwright 补充 smoke 稳定化后重新 clean run 通过。 |
-| 仓库内 Playwright 资产 | `e2e/` 与 `playwright.config.ts` 已在 2026-04-02 收口为可复跑的补充 smoke，`npm run test:e2e` 恢复到 `11` 条浏览器用例全部通过；但它仍不作为 release gate。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)、[R10-QA-01 仓库内 Playwright 补充冒烟稳定化验收记录](./49-repo-playwright-supplemental-smoke-validation.md)。 |
+| 构建基线 | `npm run build` 于 2026-04-03 再次通过。 | `R11-QA-01` 的 `npm run validate:delivery` 已重新 clean run，通过结果归档在 [50-delivery-readiness-validation.md](./50-delivery-readiness-validation.md)。 |
+| 自动化测试基线 | `npm test` 于 2026-04-03 再次通过，`22` 个测试文件、`192` 条测试全部通过。 | `R11-QA-01` 的 `npm run validate:delivery` 已重新 clean run，通过结果归档在 [50-delivery-readiness-validation.md](./50-delivery-readiness-validation.md)。 |
+| 仓库内 Playwright 资产 | `e2e/` 与 `playwright.config.ts` 已在 2026-04-03 的交付前总回归中再次通过，`npm run test:e2e` 维持 `11` 条浏览器用例全部通过；但它仍不作为 release gate。 | [R10-QA-01 仓库内 Playwright 补充冒烟稳定化验收记录](./49-repo-playwright-supplemental-smoke-validation.md)、[R11-QA-01 交付前整体功能回归验收记录](./50-delivery-readiness-validation.md)。 |
 | UI 验证主路径 | 当前主路径仍是内置 Playwright MCP，已覆盖最小 smoke、关键业务旅程，以及 `R1-DOC-04` 的本地 `/login + /jobs` 补验收；仓库内 Playwright 只保留为补充 smoke。 | [Playwright MCP Smoke 基线](./08-playwright-mcp-smoke-baseline.md)、[Playwright MCP 关键业务旅程验收](./11-playwright-mcp-release-journeys.md)、[R10-QA-01 仓库内 Playwright 补充冒烟稳定化验收记录](./49-repo-playwright-supplemental-smoke-validation.md)、[最终回归与交接说明](./13-release-handoff.md)。 |
-| 历史 issue 浏览器复验 | 独立 Playwright 浏览器矩阵已于 2026-04-02 再次 clean run 通过，顺序回放 `R1/R2/R3/R4/R5/R6/R7/R8/R9` 的 `16` 条浏览器脚本；这条矩阵补足历史 issue 复验，但不恢复仓库内 `e2e/` 为主 gate。 | [历史 issue Playwright 浏览器复验记录](./42-playwright-historical-issue-regression-validation.md)、[备份还原与任务详情浏览器回放验收记录](./43-backup-job-browser-validation.md)、[任务列表清理与快照批量删除浏览器回放验收记录](./44-jobs-snapshots-browser-validation.md)、[导入启动与导出下载浏览器回放验收记录](./45-import-export-browser-validation.md)、[R9-QA-01 备份上传还原与备份删除浏览器回放验收记录](./46-backup-upload-delete-browser-validation.md)、[R9-QA-02 快照查看/下载/单条删除与筛选浏览器回放验收记录](./47-snapshot-browse-download-browser-validation.md)、[R9-QA-03 导入取消、通用任务取消与失败明细分页浏览器回放验收记录](./48-job-cancel-failures-browser-validation.md)。 |
+| 历史 issue 浏览器复验 | 独立 Playwright 浏览器矩阵已于 2026-04-03 在交付前总回归中再次 clean run 通过，顺序回放 `R1/R2/R3/R4/R5/R6/R7/R8/R9` 的 `16` 条浏览器脚本；这条矩阵补足历史 issue 复验，但不恢复仓库内 `e2e/` 为主 gate。 | [历史 issue Playwright 浏览器复验记录](./42-playwright-historical-issue-regression-validation.md)、[备份还原与任务详情浏览器回放验收记录](./43-backup-job-browser-validation.md)、[任务列表清理与快照批量删除浏览器回放验收记录](./44-jobs-snapshots-browser-validation.md)、[导入启动与导出下载浏览器回放验收记录](./45-import-export-browser-validation.md)、[R9-QA-01 备份上传还原与备份删除浏览器回放验收记录](./46-backup-upload-delete-browser-validation.md)、[R9-QA-02 快照查看/下载/单条删除与筛选浏览器回放验收记录](./47-snapshot-browse-download-browser-validation.md)、[R9-QA-03 导入取消、通用任务取消与失败明细分页浏览器回放验收记录](./48-job-cancel-failures-browser-validation.md)、[R11-QA-01 交付前整体功能回归验收记录](./50-delivery-readiness-validation.md)。 |
+| 交付前总回归 gate | 新增 `npm run validate:delivery`，把 `tsc`、`npm test`、`build`、仓库内 Playwright 补充 smoke 和历史浏览器矩阵串成单条交付前入口。 | [R11-QA-01 交付前整体功能回归验收记录](./50-delivery-readiness-validation.md)。 |
 | 前端静态样式 gate | 页面已不再依赖运行时 `tailwind.js`，静态样式生成、页面资产合同和分类交互浏览器 harness 于 2026-03-29 全部通过。 | [静态 Tailwind 迁移验收](./21-static-tailwind-validation.md)。 |
 | 模板编辑弹窗可达性 gate | 模板选择 / 编辑弹窗已经显式收口为视口高度边界 + 固定头尾布局，并在 2026-03-30 通过页面壳体回归和小视口浏览器长树验收。 | [模板编辑弹窗长树可达性验收记录](./31-template-editor-modal-validation.md)。 |
 | 模板编辑后 AI 默认源 gate | 默认单条 `classify`、`classify-batch` 与 `organize` 现在统一跟随最新活动模板；显式 `template_id` 继续隔离，assigning 中途改模板时旧 preview 会被明确判 stale。 | [模板编辑后 AI 默认源验收记录](./32-ai-template-source-validation.md)。 |
@@ -80,6 +81,7 @@
 - 最小 smoke 已验证 `登录 -> 首页 -> 设置 -> 任务 -> 快照 -> 退出`，并在 2026-03-29 用本地临时环境补验了 `R1-DOC-04` 所需的 `/login` 与 `/jobs` 浏览器渲染闭环。
 - `R7-QA-07`、`R8-QA-01`、`R8-QA-02`、`R8-QA-03`、`R9-QA-01`、`R9-QA-02` 与 `R9-QA-03` 共同把独立 Playwright 浏览器矩阵扩到 `R1..R9` 的 `16` 条脚本，用于 clean rerun 历史 issue 的用户可见合同；它是对历史 issue 复验的补充，不等于恢复 `e2e/` 为主 gate。
 - `R10-QA-01` 已把仓库内 `e2e/` 与 `playwright.config.ts` 收口为可 clean rerun 的补充 smoke，入口是 `npm run test:e2e`；它用于补充性回放首页书签 / 分类 / 搜索等仓库原生场景，但仍不计入主 release gate。
+- `R11-QA-01` 又把上述 deterministic gate 串成 `npm run validate:delivery`，用作交付前总回归入口。
 - `R1.5` 的 AI gate 必须同时具备离线 mock / fixture 自动化和 `H1` 真实 provider 人工验收。
 - `R1.5` 的 AI gate 若在发版前沿用默认 Grok provider 验证源，还必须额外复跑 [29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 中的 direct diagnose、focused H1 和 full H1；若改用其它 provider / model，则改为显式传 `--provider current` 并同时复跑 [24-single-classify-h1-replay-validation.md](./24-single-classify-h1-replay-validation.md)、[25-single-classify-timeout-fallback-validation.md](./25-single-classify-timeout-fallback-validation.md)、[26-ai-test-retry-validation.md](./26-ai-test-retry-validation.md)、[27-ai-provider-diagnostic-validation.md](./27-ai-provider-diagnostic-validation.md)、[28-settings-ai-diagnostic-ui-validation.md](./28-settings-ai-diagnostic-ui-validation.md) 和 [29-grok-provider-default-validation.md](./29-grok-provider-default-validation.md) 对应脚本 / 结论。
 - `R2` 的最终 gate 以 `npm test`、`npm run build`、[11-playwright-mcp-release-journeys.md](./11-playwright-mcp-release-journeys.md)、[12-extension-roundtrip-validation.md](./12-extension-roundtrip-validation.md)、[19-extension-runtime-validation.md](./19-extension-runtime-validation.md)、[20-extension-action-popup-validation.md](./20-extension-action-popup-validation.md)、[10-ai-provider-h1-validation.md](./10-ai-provider-h1-validation.md)、[24-single-classify-h1-replay-validation.md](./24-single-classify-h1-replay-validation.md)、[25-single-classify-timeout-fallback-validation.md](./25-single-classify-timeout-fallback-validation.md)、[26-ai-test-retry-validation.md](./26-ai-test-retry-validation.md)、[27-ai-provider-diagnostic-validation.md](./27-ai-provider-diagnostic-validation.md)、[28-settings-ai-diagnostic-ui-validation.md](./28-settings-ai-diagnostic-ui-validation.md) 和 [13-release-handoff.md](./13-release-handoff.md) 为准。
