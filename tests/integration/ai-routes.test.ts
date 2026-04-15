@@ -12,7 +12,7 @@ import {
     textCompletion,
     type MockAIStep,
 } from '../helpers/ai';
-import { seedBookmarks } from '../helpers/factories';
+import { seedBookmarks, seedJob, seedPlan } from '../helpers/factories';
 
 describe('integration: ai route contracts', () => {
     let ctx: TestAppContext | null = null;
@@ -462,6 +462,39 @@ describe('integration: ai route contracts', () => {
             skipped: 0,
         });
         expect(harness.calls).toHaveLength(1);
+    });
+
+    it('rejects classify-batch when preview suggestions are still pending and returns pendingPlanId before config checks', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+
+        const previewJob = seedJob(ctx.db, {
+            type: 'ai_organize',
+            status: 'done',
+            message: 'preview ready',
+        });
+        const previewPlan = seedPlan(ctx.db, {
+            status: 'preview',
+            job_id: previewJob.id,
+            scope: 'all',
+        });
+
+        const response = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify-batch',
+            headers: session.headers,
+            payload: {
+                bookmark_ids: [1, 2],
+                batch_size: 10,
+            },
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toEqual({
+            error: 'pending plan already exists',
+            pendingPlanId: previewPlan.id,
+            pendingJobId: previewJob.id,
+        });
     });
 
     it('refreshes default single and batch AI category sources to the latest active template after edits', async () => {

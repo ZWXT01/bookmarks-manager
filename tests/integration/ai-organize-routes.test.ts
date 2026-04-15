@@ -262,6 +262,14 @@ describe('integration: ai organize route contracts', () => {
             { bookmark_id: bookmarkIds[1], category_path: '学习资源/教程', status: 'assigned' },
         ]);
 
+        const discardDefaultResponse = await appCtx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${defaultPlan!.id}/cancel`,
+            headers: authHeaders,
+        });
+        expect(discardDefaultResponse.statusCode).toBe(200);
+        expect(getPlan(appCtx.db, defaultPlan!.id)?.status).toBe('canceled');
+
         const explicitResponse = await appCtx.app.inject({
             method: 'POST',
             url: '/api/ai/organize',
@@ -1280,6 +1288,36 @@ describe('integration: ai organize route contracts', () => {
         await waitForCondition(() => getJob(appCtx.db, jobId)?.status === 'done');
     });
 
+    it('rejects starting a new organize plan while preview suggestions are still pending and returns pendingPlanId before config checks', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+
+        const previewJob = seedJob(ctx.db, {
+            type: 'ai_organize',
+            status: 'done',
+            message: 'preview ready',
+        });
+        const previewPlan = seedPlan(ctx.db, {
+            status: 'preview',
+            job_id: previewJob.id,
+            scope: 'all',
+        });
+
+        const response = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: session.headers,
+            payload: { scope: 'all', batch_size: 10 },
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toEqual({
+            error: 'pending plan already exists',
+            pendingPlanId: previewPlan.id,
+            pendingJobId: previewJob.id,
+        });
+    });
+
     it('rejects retry when another organize plan is already assigning and returns activePlanId', async () => {
         const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([() => deferred.promise]);
@@ -1322,6 +1360,40 @@ describe('integration: ai organize route contracts', () => {
         deferred.resolve(jsonCompletion({ assignments: buildAssignments(1, '技术开发/前端') }));
         await waitForCondition(() => getPlan(appCtx.db, activePlanId)?.status === 'preview');
         await waitForCondition(() => getJob(appCtx.db, activeJobId)?.status === 'done');
+    });
+
+    it('rejects retry when another preview organize plan is still pending and returns pendingPlanId before config checks', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+
+        const previewJob = seedJob(ctx.db, {
+            type: 'ai_organize',
+            status: 'done',
+            message: 'preview ready',
+        });
+        const previewPlan = seedPlan(ctx.db, {
+            status: 'preview',
+            job_id: previewJob.id,
+            scope: 'all',
+        });
+        const failedPlan = seedPlan(ctx.db, {
+            status: 'failed',
+            scope: 'all',
+        });
+
+        const response = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${failedPlan.id}/retry`,
+            headers: session.headers,
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toEqual({
+            error: 'pending plan already exists',
+            pendingPlanId: previewPlan.id,
+            pendingJobId: previewJob.id,
+        });
+        expect(getPlan(ctx.db, failedPlan.id)?.status).toBe('failed');
     });
 
     it('covers cancel transitions for assigning plans', async () => {

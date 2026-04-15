@@ -1419,6 +1419,15 @@
                 <!-- Phase: completed (preview/applied) -->
                 <template x-if="organizePhase === 'preview' || organizePhase === 'applied'">
                     <div class="space-y-4" :data-testid="organizePhase === 'applied' ? 'organize-phase-applied' : 'organize-phase-preview'">
+                        <template x-if="organizePhase === 'preview' && organizePreviewGuardActive">
+                            <div data-testid="organize-preview-guard"
+                                class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                                <div class="text-sm font-medium text-amber-800"
+                                    x-text="getOrganizePreviewGuardTitle()"></div>
+                                <div class="mt-1 text-xs leading-5 text-amber-700"
+                                    x-text="getOrganizePreviewGuardMessage()"></div>
+                            </div>
+                        </template>
                         <div class="flex flex-col items-center gap-3">
                             <div class="relative w-24 h-24">
                                 <svg class="w-24 h-24 transform -rotate-90">
@@ -1445,9 +1454,21 @@
                             </div>
                         </div>
                         <div class="flex justify-center gap-2 pt-2 border-t">
-                            <button @click="closeOrganizeModal()"
-                                data-testid="organize-complete-close"
-                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">关闭</button>
+                            <template x-if="organizePhase === 'preview'">
+                                <button @click="cancelOrganize()"
+                                    data-testid="organize-preview-discard"
+                                    class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃建议</button>
+                            </template>
+                            <template x-if="organizePhase === 'preview'">
+                                <button @click="applyOrganizePlan()"
+                                    data-testid="organize-preview-apply"
+                                    class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">应用建议</button>
+                            </template>
+                            <template x-if="organizePhase === 'applied'">
+                                <button @click="closeOrganizeModal()"
+                                    data-testid="organize-complete-close"
+                                    class="rounded border px-4 py-2 text-sm hover:bg-slate-50">关闭</button>
+                            </template>
                             <a x-show="organizePlan?.job_id" :href="'/jobs/' + organizePlan?.job_id"
                                 data-testid="organize-open-job"
                                 class="flex items-center gap-1 rounded-lg border border-slate-200 text-slate-600 px-4 py-2 text-sm hover:bg-slate-50 transition">

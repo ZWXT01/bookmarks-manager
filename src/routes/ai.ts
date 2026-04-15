@@ -92,6 +92,25 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         return row?.message ?? null;
     }
 
+    function getLatestPendingPlan(excludePlanId?: string | null) {
+        const row = excludePlanId
+            ? db.prepare(`
+                SELECT id, job_id
+                FROM ai_organize_plans
+                WHERE status = 'preview' AND id <> ?
+                ORDER BY created_at DESC
+                LIMIT 1
+            `).get(excludePlanId) as { id: string; job_id: string | null } | undefined
+            : db.prepare(`
+                SELECT id, job_id
+                FROM ai_organize_plans
+                WHERE status = 'preview'
+                ORDER BY created_at DESC
+                LIMIT 1
+            `).get() as { id: string; job_id: string | null } | undefined;
+        return row ?? null;
+    }
+
     function serializePlan(plan: Record<string, any>, options: { includeTargetTree?: boolean } = {}) {
         const result: any = { ...plan, message: getPlanJobMessage(plan.job_id ?? null) };
         if (plan.assignments) result.assignments = JSON.parse(plan.assignments);
@@ -309,6 +328,15 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             return reply.code(400).send({ error: 'batch_size 必须为 10、20 或 30' });
         }
 
+        const pendingPlan = getLatestPendingPlan();
+        if (pendingPlan) {
+            return reply.code(409).send({
+                error: 'pending plan already exists',
+                pendingPlanId: pendingPlan.id,
+                pendingJobId: pendingPlan.job_id ?? null,
+            });
+        }
+
         const config = getAIConfig(getSetting);
         if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
 
@@ -362,8 +390,6 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         const scope = typeof body.scope === 'string' ? body.scope.trim() : 'all';
         const batchSize = resolveBatchSize(body.batch_size);
         const templateId = typeof body.template_id === 'number' ? body.template_id : null;
-        const config = getAIConfig(getSetting);
-        if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
 
         if (!batchSize) {
             return reply.code(400).send({ error: 'batch_size 必须为 10、20 或 30' });
@@ -376,6 +402,18 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         if (!validScopes.includes(scope) && !isCategoryScope && !isIdsScope) {
             return reply.code(400).send({ error: 'scope 参数无效，必须为 all、uncategorized、category:N 或 ids:N,N,N' });
         }
+
+        const pendingPlan = getLatestPendingPlan();
+        if (pendingPlan) {
+            return reply.code(409).send({
+                error: 'pending plan already exists',
+                pendingPlanId: pendingPlan.id,
+                pendingJobId: pendingPlan.job_id ?? null,
+            });
+        }
+
+        const config = getAIConfig(getSetting);
+        if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
 
         try {
             const { getActiveTemplate, getTemplate } = await import('../template-service');
@@ -592,6 +630,15 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             if (!currentPlan) return reply.code(404).send({ error: 'plan not found' });
             if (currentPlan.status !== 'failed' && currentPlan.status !== 'error') {
                 return reply.code(409).send({ error: `invalid transition: ${currentPlan.status} → assigning` });
+            }
+
+            const pendingPlan = getLatestPendingPlan(planId);
+            if (pendingPlan) {
+                return reply.code(409).send({
+                    error: 'pending plan already exists',
+                    pendingPlanId: pendingPlan.id,
+                    pendingJobId: pendingPlan.job_id ?? null,
+                });
             }
 
             const config = getAIConfig(getSetting);

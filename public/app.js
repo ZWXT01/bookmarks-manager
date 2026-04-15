@@ -92,11 +92,13 @@ function bookmarkApp() {
     organizeProgress: { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 },
     organizePollTimer: null,
     organizeDiff: null,
+    organizePreviewGuardActive: false,
     organizeConflicts: [],
     organizeEmptyCategories: [],
     organizeResolving: false,
     organizeAppliedCount: 0,
     organizeDiffExpanded: {},
+    organizeQueuedStart: null,
     pendingPlans: [],
     backups: [],
     selectedManualBackup: '',
@@ -2435,8 +2437,12 @@ function bookmarkApp() {
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.success) {
-          if (res.status === 409) {
-            this.showToast('有正在执行的 AI 分类任务，请等待完成后再试', 'error');
+          if (res.status === 409 && data?.pendingPlanId) {
+            await this.recoverPendingPlan(data.pendingPlanId);
+            return;
+          }
+          if (res.status === 409 && data?.activePlanId) {
+            await this.recoverActivePlan(data.activePlanId);
             return;
           }
           this.showToast(data?.error || '启动 AI 分类失败', 'error');
@@ -2445,6 +2451,7 @@ function bookmarkApp() {
         this.classifyBatchTemplateId = null;
         this.organizePlan = { id: data.planId, job_id: data.jobId };
         this.organizePhase = 'assigning';
+        this.organizePreviewGuardActive = false;
         this.organizeProgress = { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 };
         this.showAIOrganizeModal = true;
         this.pollOrganizeProgress();
@@ -2456,21 +2463,69 @@ function bookmarkApp() {
       }
     },
 
-    openAIOrganizeModal() {
+    setOrganizeIdleState(preserveModal = true) {
+      if (this.organizePollTimer) {
+        clearInterval(this.organizePollTimer);
+        this.organizePollTimer = null;
+      }
+      if (!preserveModal) {
+        this.showAIOrganizeModal = false;
+      }
+      this.organizePlan = null;
+      this.organizePhase = 'idle';
+      this.organizeProgress = { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 };
+      this.organizeDiff = null;
+      this.organizePreviewGuardActive = false;
+      this.organizeConflicts = [];
+      this.organizeEmptyCategories = [];
+      this.organizeResolving = false;
+      this.organizeAppliedCount = 0;
+      this.organizeDiffExpanded = {};
+    },
+
+    getOrganizePreviewGuardTitle() {
+      return '上一次任务尚未完成';
+    },
+
+    getOrganizePreviewGuardMessage() {
+      return '请先应用建议或放弃建议。';
+    },
+
+    buildOrganizeStartPayload() {
+      if (this.organizeScope === 'category' && !this.organizeScopeCategoryId) {
+        this.showToast('请选择一个分类', 'error');
+        return null;
+      }
+      const scope = this.organizeScope === 'category' ? 'category:' + this.organizeScopeCategoryId : this.organizeScope;
+      return {
+        scope,
+        batch_size: this.classifyBatchSize || 20,
+        template_id: this.activeTemplate?.id || null,
+      };
+    },
+
+    async resumeQueuedOrganizeStart() {
+      if (!this.organizeQueuedStart) return;
+      const payload = this.organizeQueuedStart;
+      this.organizeQueuedStart = null;
+      await this.submitOrganizeStart(payload);
+    },
+
+    async openAIOrganizeModal() {
       if (!this.isAIConfigured()) {
         this.showToast('请先在设置页配置 AI（Base URL、API Key、Model）', 'error');
         return;
       }
       this.organizeScope = 'all';
       this.organizeScopeCategoryId = '';
-      this.organizePlan = null;
-      this.organizePhase = 'idle';
-      this.organizeDiff = null;
-      this.organizeConflicts = [];
-      this.organizeEmptyCategories = [];
-      this.organizeAppliedCount = 0;
-      this.loadPendingPlans();
+      this.organizeQueuedStart = null;
+      this.setOrganizeIdleState(true);
       this.showAIOrganizeModal = true;
+      await this.loadPendingPlans();
+      const latestPendingPlan = Array.isArray(this.pendingPlans) && this.pendingPlans.length > 0 ? this.pendingPlans[0] : null;
+      if (latestPendingPlan?.id) {
+        await this.recoverPendingPlan(latestPendingPlan.id);
+      }
     },
 
     isAIConfigured() {
@@ -2529,36 +2584,43 @@ function bookmarkApp() {
     },
 
     async startOrganize() {
-      if (this.organizeScope === 'category' && !this.organizeScopeCategoryId) {
-        this.showToast('请选择一个分类', 'error');
-        return;
-      }
+      const payload = this.buildOrganizeStartPayload();
+      if (!payload) return;
+      this.organizeQueuedStart = payload;
+      await this.submitOrganizeStart(payload);
+    },
+
+    async submitOrganizeStart(payload) {
       try {
         this.organizePhase = 'assigning';
-        const scope = this.organizeScope === 'category' ? 'category:' + this.organizeScopeCategoryId : this.organizeScope;
+        this.organizePreviewGuardActive = false;
         const res = await fetch('/api/ai/organize', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            scope,
-            batch_size: this.classifyBatchSize || 20,
-            template_id: this.activeTemplate?.id || null
-          })
+          body: JSON.stringify(payload)
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.success) {
+          if (res.status === 409 && data?.pendingPlanId) {
+            await this.recoverPendingPlan(data.pendingPlanId);
+            return;
+          }
           if (res.status === 409 && data?.activePlanId) {
+            this.organizeQueuedStart = null;
             await this.recoverActivePlan(data.activePlanId);
             return;
           }
+          this.organizeQueuedStart = null;
           this.showToast(data?.error || '启动整理失败', 'error');
           this.organizePhase = 'idle';
           return;
         }
+        this.organizeQueuedStart = null;
         this.organizePlan = { id: data.planId, job_id: data.jobId };
         this.organizeProgress = { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 };
         this.pollOrganizeProgress();
       } catch {
+        this.organizeQueuedStart = null;
         this.showToast('启动整理失败', 'error');
         this.organizePhase = 'idle';
       }
@@ -2585,6 +2647,8 @@ function bookmarkApp() {
           needs_review_count: data.needs_review_count || 0,
         };
         this.organizeDiff = data.diff || null;
+        this.organizePreviewGuardActive = false;
+        this.showAIOrganizeModal = true;
         this.showToast('已有进行中的整理计划', 'info');
         if (data.status === 'assigning') { this.organizePhase = 'assigning'; this.pollOrganizeProgress(); }
         else if (data.status === 'preview') { this.organizePhase = 'preview'; }
@@ -2594,6 +2658,35 @@ function bookmarkApp() {
       } catch {
         this.showToast('恢复计划失败', 'error');
         this.organizePhase = 'idle';
+      }
+    },
+
+    async recoverPendingPlan(planId) {
+      if (!planId) return false;
+      try {
+        const res = await fetch('/api/ai/organize/' + encodeURIComponent(planId));
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.id || data.status !== 'preview') {
+          this.showToast('未找到待处理建议', 'error');
+          this.setOrganizeIdleState(true);
+          return false;
+        }
+        this.organizePlan = data;
+        this.organizeProgress = {
+          batches_done: data.batches_done || 0,
+          batches_total: data.batches_total || 0,
+          failed_batch_ids: data.failed_batch_ids || [],
+          needs_review_count: data.needs_review_count || 0,
+        };
+        this.organizeDiff = data.diff || null;
+        this.organizePhase = 'preview';
+        this.organizePreviewGuardActive = true;
+        this.showAIOrganizeModal = true;
+        return true;
+      } catch {
+        this.showToast('恢复建议失败', 'error');
+        this.setOrganizeIdleState(true);
+        return false;
       }
     },
 
@@ -2637,12 +2730,16 @@ function bookmarkApp() {
             this.organizePhase = 'preview';
           } else if (data.status === 'applied') {
             this.organizePhase = 'applied';
+            this.organizePreviewGuardActive = false;
           } else if (data.status === 'assigning') {
             this.organizePhase = 'assigning';
+            this.organizePreviewGuardActive = false;
           } else if (data.status === 'failed') {
             this.organizePhase = 'failed';
+            this.organizePreviewGuardActive = false;
           } else if (data.status === 'error') {
             this.organizePhase = 'error';
+            this.organizePreviewGuardActive = false;
           }
         }
       } catch { }
@@ -2673,10 +2770,16 @@ function bookmarkApp() {
           if (this.organizeConflicts.length > 0 || this.organizeEmptyCategories.length > 0) {
             this.organizeResolving = true;
           } else {
+            this.organizePreviewGuardActive = false;
             this.organizePhase = 'applied';
             this.showToast('整理已应用，共移动 ' + (data.applied_count || 0) + ' 个书签', 'success');
-            this.loadBookmarks();
-            this.loadCategories();
+            await this.loadBookmarks();
+            await this.loadCategories();
+            await this.loadPendingPlans();
+            if (this.organizeQueuedStart) {
+              this.setOrganizeIdleState(true);
+              await this.resumeQueuedOrganizeStart();
+            }
           }
         } else {
           this.showToast(data?.error || '应用失败', 'error');
@@ -2698,13 +2801,19 @@ function bookmarkApp() {
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data?.success) {
+          this.organizePreviewGuardActive = false;
           this.organizePhase = 'applied';
           const totalApplied = (data.applied_count || 0) + (this.organizeAppliedCount || 0);
           this.showToast('整理已应用，共移动 ' + totalApplied + ' 个书签', 'success');
           this.organizeAppliedCount = 0;
-          this.loadBookmarks();
-          this.loadCategories();
+          await this.loadBookmarks();
+          await this.loadCategories();
+          await this.loadPendingPlans();
           await this.loadOrganizePlan();
+          if (this.organizeQueuedStart) {
+            this.setOrganizeIdleState(true);
+            await this.resumeQueuedOrganizeStart();
+          }
         } else {
           this.showToast(data?.error || '应用失败', 'error');
         }
@@ -2735,12 +2844,21 @@ function bookmarkApp() {
 
     async cancelOrganize() {
       if (!this.organizePlan?.id) return;
+      const wasPreview = this.organizePhase === 'preview';
+      const previewGuardActive = this.organizePreviewGuardActive;
       try {
         const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/cancel', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }
         });
         const data = await res.json().catch(() => null);
         if (res.ok) {
+          await this.loadPendingPlans();
+          if (wasPreview) {
+            this.showToast(previewGuardActive ? '已放弃上一次建议' : '已放弃建议', 'info');
+            this.setOrganizeIdleState(true);
+            await this.resumeQueuedOrganizeStart();
+            return;
+          }
           this.showToast('已取消', 'info');
           this.closeOrganizeModal();
         } else {
@@ -2762,7 +2880,12 @@ function bookmarkApp() {
           this.organizePlan = { ...(this.organizePlan || {}), status: 'assigning', message: null };
           this.organizeProgress = { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 };
           this.organizePhase = 'assigning';
+          this.organizePreviewGuardActive = false;
           this.pollOrganizeProgress();
+        } else if (res.status === 409 && data?.pendingPlanId) {
+          await this.recoverPendingPlan(data.pendingPlanId);
+        } else if (res.status === 409 && data?.activePlanId) {
+          await this.recoverActivePlan(data.activePlanId);
         } else {
           this.showToast((data && data.error) ? data.error : '重试失败', 'error');
         }
@@ -2772,12 +2895,8 @@ function bookmarkApp() {
     },
 
     closeOrganizeModal() {
-      this.showAIOrganizeModal = false;
-      if (this.organizePollTimer) { clearInterval(this.organizePollTimer); this.organizePollTimer = null; }
-      this.organizePlan = null;
-      this.organizePhase = 'idle';
-      this.organizeResolving = false;
-      this.organizeDiffExpanded = {};
+      this.organizeQueuedStart = null;
+      this.setOrganizeIdleState(false);
     },
 
     getDiffMovesByCategory() {
@@ -2812,11 +2931,12 @@ function bookmarkApp() {
         const data = await res.json().catch(() => null);
         this.pendingPlans = (data?.plans || []);
       } catch { this.pendingPlans = []; }
+      return this.pendingPlans;
     },
 
-    viewPendingPlan(plan) {
-      if (plan.job_id) {
-        window.location.href = '/jobs/' + plan.job_id;
+    async viewPendingPlan(plan) {
+      if (plan?.id) {
+        await this.recoverPendingPlan(plan.id);
       }
     },
 
