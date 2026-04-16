@@ -1,6 +1,6 @@
 import { VALID_BATCH_SIZES, type BatchSize } from './ai-organize';
 
-export const DEFAULT_AI_BATCH_SIZE: BatchSize = 30;
+const DEFAULT_AI_BATCH_SIZE: BatchSize = 30;
 
 export function parseAiBatchSize(value: unknown): BatchSize | null {
   const raw = typeof value === 'string' ? value.trim() : value;

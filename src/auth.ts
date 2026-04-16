@@ -1,4 +1,4 @@
-import type { FastifyRequest, FastifyReply } from 'fastify';
+import type { FastifyRequest } from 'fastify';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
 import type { Db } from './db';
@@ -39,16 +39,6 @@ export function initUserTable(db: Db): void {
     db.prepare('INSERT INTO users (username, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?)').run(
       defaultUsername, hash, now, now
     );
-  }
-}
-
-export function checkAuth(req: FastifyRequest, reply: FastifyReply): void {
-  // 支持 API Token 认证
-  if ((req as any).apiTokenAuth) {
-    return;
-  }
-  if (!req.session.authenticated) {
-    reply.redirect('/login');
   }
 }
 

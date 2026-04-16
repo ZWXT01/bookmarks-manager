@@ -16,7 +16,7 @@ export const snapshotRoutes: FastifyPluginCallback<SnapshotRoutesOptions> = (app
     const { db, snapshotsDir, staticApiToken } = opts;
 
     // GET /snapshots - 快照管理页面
-    app.get('/snapshots', async (req: FastifyRequest, reply: FastifyReply) => {
+    app.get('/snapshots', async (_req: FastifyRequest, reply: FastifyReply) => {
         const total = (db.prepare('SELECT COUNT(*) as count FROM snapshots').get() as { count: number }).count;
         const totalSize = (db.prepare('SELECT SUM(file_size) as total FROM snapshots').get() as { total: number | null }).total || 0;
 

@@ -1,31 +1,4 @@
-/**
- * Route context shared across all route modules
- */
-import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
-import type { Database } from 'better-sqlite3';
-
-export type Db = Database;
-
-export interface RouteContext {
-    db: Db;
-    backupDir: string;
-    snapshotsDir: string;
-    checkConcurrency: number;
-    checkTimeoutMs: number;
-    checkRetries: number;
-    checkRetryDelayMs: number;
-    effectiveCheckRetries: (fallback: number) => number;
-    effectiveCheckRetryDelayMs: (fallback: number) => number;
-    effectiveBackupEnabled: (fallback: boolean) => boolean;
-    effectiveBackupRetention: (fallback: number) => number;
-    getSetting: (key: string) => string | null;
-    setSetting: (key: string, value: string) => void;
-    getIntSetting: (key: string, min: number, max: number, fallback: number) => number;
-    getBoolSetting: (key: string, fallback: boolean) => boolean;
-    runBackupNow: (manual?: boolean) => { fileName: string; fullPath: string; skipped?: boolean };
-}
-
-// Common row types
+// Common row types shared between routes and app rendering
 export interface CategoryRow {
     id: number;
     name: string;
@@ -56,7 +29,7 @@ export interface BookmarkEditRow {
     category_id: number | null;
 }
 
-// Helper functions
+// Small parsing helpers used by route modules
 export function toInt(val: unknown): number | null {
     if (typeof val === 'number' && Number.isInteger(val)) return val;
     if (typeof val === 'string') {

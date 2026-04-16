@@ -46,7 +46,7 @@ export const settingsRoutes: FastifyPluginCallback<SettingsRoutesOptions> = (app
     } = opts;
 
     // GET /settings - 设置页面
-    app.get('/settings', async (req: FastifyRequest, reply: FastifyReply) => {
+    app.get('/settings', async (_req: FastifyRequest, reply: FastifyReply) => {
         const curCheckRetries = getIntSetting('check_retries', 0, 5, checkRetries);
         const curCheckRetryDelayMs = getIntSetting('check_retry_delay_ms', 0, 10_000, checkRetryDelayMs);
         const curBackupEnabled = getBoolSetting('backup_enabled', backupEnabled);

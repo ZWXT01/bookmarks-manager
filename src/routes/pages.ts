@@ -5,7 +5,6 @@ import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { getJob, countJobFailures, listJobFailuresPaged } from '../jobs';
 import { getPlan as getOrganizePlan, computeDiff } from '../ai-organize-plan';
-import { toIntClamp } from '../utils/helpers';
 
 export interface PagesRoutesOptions {
     db: Database;

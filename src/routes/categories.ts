@@ -3,7 +3,7 @@
  * 
  * Handles all /api/categories/* endpoints
  */
-import { FastifyInstance, FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
+import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import {
   getCategoryTree,

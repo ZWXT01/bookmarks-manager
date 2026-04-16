@@ -14,7 +14,7 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
     const { db } = opts;
 
     // GET /api/jobs/current - 获取当前运行的任务
-    app.get('/api/jobs/current', async (req: FastifyRequest, reply: FastifyReply) => {
+    app.get('/api/jobs/current', async (_req: FastifyRequest, reply: FastifyReply) => {
         try {
             const row = db.prepare(`
         SELECT id, type, status, total, processed, inserted, skipped, failed, message, created_at, updated_at

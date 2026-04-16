@@ -1,7 +1,7 @@
 /**
  * Check Routes - 书签检查路由
  */
-import { FastifyPluginCallback, FastifyRequest, FastifyReply, FastifyInstance } from 'fastify';
+import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { getJob, updateJob, createJob, jobQueue } from '../jobs';
 import { runCheckJob } from '../checker';

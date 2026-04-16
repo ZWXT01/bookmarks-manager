@@ -418,7 +418,7 @@ function pickSemanticCategory(
   return resolvedCategory;
 }
 
-export function resolveSingleClassifyCategory(rawCategory: string, allowedPaths: string[]): string | null {
+function resolveSingleClassifyCategory(rawCategory: string, allowedPaths: string[]): string | null {
   const normalized = normalizeClassifyPath(rawCategory);
   if (!normalized) return null;
   if (allowedPaths.length === 0) return normalized;

@@ -24,13 +24,6 @@ export function toIntClamp(value: unknown, min: number, max: number, fallback: n
 }
 
 /**
- * 转义 SQL LIKE 模式中的特殊字符
- */
-export function escapeLikePattern(input: string): string {
-    return input.replace(/[%_]/g, '\\$&');
-}
-
-/**
  * 验证字符串长度
  */
 export function validateStringLength(value: string, maxLength: number, fieldName: string): void {
@@ -70,16 +63,4 @@ export function safeRedirectTarget(input: unknown, fallback: string): string {
     if (trimmed.startsWith('//')) return fallback;
     if (trimmed.includes('\r') || trimmed.includes('\n')) return fallback;
     return trimmed;
-}
-
-/**
- * HTML 转义
- */
-export function escapeHtml(input: string): string {
-    return input
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;')
-        .replace(/'/g, '&#39;');
 }

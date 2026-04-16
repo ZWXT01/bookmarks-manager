@@ -7,7 +7,7 @@ import type { Database } from 'better-sqlite3';
 import { deleteCategoryWithSync, getOrCreateCategoryByPathWithSync, renameCategoryWithSync } from '../category-service';
 import { syncCategoriesToActiveTemplate } from '../template-service';
 import { canonicalizeUrl } from '../url';
-import { toInt, validateStringLength, safeRedirectTarget, withFlash } from '../utils/helpers';
+import { toInt, validateStringLength } from '../utils/helpers';
 
 export interface FormsRoutesOptions {
     db: Database;

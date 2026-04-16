@@ -3,17 +3,17 @@
  * 
  * Exports all route plugins for registration in main app
  */
-export { bookmarkRoutes, type BookmarkRoutesOptions } from './bookmarks';
-export { categoryRoutes, type CategoryRoutesOptions } from './categories';
-export { settingsRoutes, type SettingsRoutesOptions } from './settings';
-export { snapshotRoutes, type SnapshotRoutesOptions } from './snapshots';
-export { backupRoutes, type BackupRoutesOptions } from './backups';
-export { aiRoutes, type AIRoutesOptions } from './ai';
-export { authRoutes, type AuthRoutesOptions } from './auth';
-export { jobsRoutes, type JobsRoutesOptions } from './jobs';
-export { checkRoutes, type CheckRoutesOptions } from './check';
-export { importRoutes, type ImportRoutesOptions } from './import';
-export { pagesRoutes, type PagesRoutesOptions } from './pages';
-export { formsRoutes, type FormsRoutesOptions } from './forms';
-export { templateRoutes, type TemplateRoutesOptions } from './templates';
-export * from './types';
+export { bookmarkRoutes } from './bookmarks';
+export { categoryRoutes } from './categories';
+export { settingsRoutes } from './settings';
+export { snapshotRoutes } from './snapshots';
+export { backupRoutes } from './backups';
+export { aiRoutes } from './ai';
+export { authRoutes } from './auth';
+export { jobsRoutes } from './jobs';
+export { checkRoutes } from './check';
+export { importRoutes } from './import';
+export { pagesRoutes } from './pages';
+export { formsRoutes } from './forms';
+export { templateRoutes } from './templates';
+export type { CategoryRow, CategoryEditRow, BookmarkRow, BookmarkEditRow } from './types';
