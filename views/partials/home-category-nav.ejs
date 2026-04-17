@@ -1,0 +1,152 @@
+<section class="home-nav-shell panel-card panel-card--compact" data-testid="home-category-nav-shell">
+  <div class="home-nav-shell__header">
+    <div>
+      <div class="panel-title">分类导航</div>
+      <p class="panel-description">一级分类横向切换，存在子分类时可悬停或点击展开；保留原有 all / uncategorized / child 行为。</p>
+    </div>
+    <div class="home-nav-shell__actions">
+      <span class="status-badge status-badge--muted" x-text="categoryTree.length + ' 个一级分类'"></span>
+      <button
+        @click="openCategoryManager()"
+        @focus="closeCategoryDropdown()"
+        class="btn-secondary btn-sm"
+        data-testid="open-category-manager"
+        aria-label="管理分类"
+        title="管理分类"
+        type="button"
+      >⚙️ 管理分类</button>
+    </div>
+  </div>
+
+  <div class="home-nav-shell__hint">提示：桌面端可滚轮或拖拽横向滚动分类标签；移动端轻触分类可展开子分类。</div>
+
+  <div class="relative z-30">
+    <div class="category-tabs-container rounded-xl shadow-sm border">
+      <button @click="scrollCategoryTabs('left')" class="category-tabs-scroll-btn mr-2" aria-label="向左滚动" title="向左滚动" type="button">◀</button>
+
+      <div
+        class="category-tabs"
+        :class="{ 'is-dragging': _categoryTabsDragging }"
+        role="tablist"
+        aria-label="分类导航"
+        x-ref="categoryTabsContainer"
+        @pointerdown="startCategoryTabsDrag($event)"
+        @pointermove="handleCategoryTabsDrag($event)"
+        @pointerup="stopCategoryTabsDrag($event)"
+        @pointercancel="stopCategoryTabsDrag($event)"
+        @lostpointercapture="stopCategoryTabsDrag($event)"
+        @click.capture="handleCategoryTabsClickCapture($event)"
+        @wheel="handleCategoryTabsWheel($event)"
+      >
+        <button
+          @click="loadCategory(null)"
+          @focus="closeCategoryDropdown()"
+          type="button"
+          role="tab"
+          data-testid="category-nav-all-tab"
+          :aria-selected="currentCategory === null"
+          aria-label="全部书签"
+          class="category-tab"
+          :class="currentCategory === null ? 'active' : ''"
+        >
+          <span class="category-tab-icon">📚</span>
+          <span>全部</span>
+          <span class="text-[10px] opacity-70" x-text="totalCount"></span>
+        </button>
+
+        <button
+          @click="loadCategory('uncategorized')"
+          @focus="closeCategoryDropdown()"
+          type="button"
+          role="tab"
+          data-testid="category-nav-uncategorized-tab"
+          :aria-selected="currentCategory === 'uncategorized'"
+          aria-label="未分类书签"
+          class="category-tab"
+          :class="currentCategory === 'uncategorized' ? 'active' : ''"
+        >
+          <span class="category-tab-icon">📂</span>
+          <span>未分类</span>
+          <span class="text-[10px] opacity-70" x-text="uncategorizedCount"></span>
+        </button>
+
+        <template x-for="cat in categoryTree" :key="cat.id">
+          <div
+            class="relative group flex items-center gap-1"
+            role="presentation"
+            @mouseenter="cat.children && cat.children.length > 0 ? handleCategoryHover(cat.id) : null"
+            @mouseleave="cat.children && cat.children.length > 0 ? handleCategoryLeave() : null"
+          >
+            <button
+              @click="handleCategoryClick(cat)"
+              @focus="if (cat.children && cat.children.length > 0) { if (skipNextFocusOpen) { skipNextFocusOpen = false; } else { openCategoryDropdown(cat.id); } } else { closeCategoryDropdown(); }"
+              @blur="cat.children && cat.children.length > 0 ? handleCategoryBlur($event) : null"
+              @keydown.arrow-down.prevent="cat.children && cat.children.length > 0 ? focusFirstSubcategory(cat.id) : null"
+              @keydown.escape.prevent="closeCategoryDropdown(true)"
+              type="button"
+              :id="'category-tab-' + cat.id"
+              role="tab"
+              :aria-selected="currentCategory == cat.id"
+              :aria-haspopup="cat.children && cat.children.length > 0 ? 'true' : null"
+              :aria-expanded="cat.children && cat.children.length > 0 ? (categoryDropdownVisible && activeParentCategory == cat.id) : null"
+              :aria-controls="cat.children && cat.children.length > 0 ? 'subcategory-panel-' + cat.id : null"
+              :aria-label="cat.name + '分类'"
+              data-testid="category-nav-tab"
+              :data-category-id="cat.id"
+              class="category-tab"
+              :class="currentCategory == cat.id ? 'active' : ''"
+            >
+              <span class="category-tab-icon" x-text="cat.icon || '📁'" :style="cat.color ? 'color:' + cat.color : ''"></span>
+              <span x-text="cat.name"></span>
+            </button>
+          </div>
+        </template>
+      </div>
+
+      <button @click="scrollCategoryTabs('right')" class="category-tabs-scroll-btn ml-2" aria-label="向右滚动" title="向右滚动" type="button">▶</button>
+    </div>
+
+    <div
+      x-show="categoryDropdownVisible"
+      x-ref="subcategoryPanel"
+      data-testid="subcategory-panel"
+      :id="'subcategory-panel-' + activeParentCategory"
+      role="region"
+      :aria-label="activeParentCategory ? (categoryTree.find(c => c.id == activeParentCategory)?.name + ' 的子分类') : '子分类'"
+      x-transition:enter="transition ease-out duration-200"
+      x-transition:enter-start="opacity-0 translate-y-1"
+      x-transition:enter-end="opacity-100 translate-y-0"
+      x-transition:leave="transition ease-in duration-150"
+      x-transition:leave-start="opacity-100 translate-y-0"
+      x-transition:leave-end="opacity-0 translate-y-1"
+      @click.away="closeCategoryDropdown()"
+      @keydown.escape.prevent="closeCategoryDropdown(true)"
+      @mouseenter="handleDropdownPanelEnter()"
+      @mouseleave="handleDropdownPanelLeave()"
+      @focusin="handleDropdownPanelEnter()"
+      @focusout="handleDropdownPanelFocusOut($event)"
+      class="absolute top-full left-0 right-0 z-50 category-dropdown-panel-external rounded-b-xl border shadow-lg"
+      style="max-height: 70vh; overflow-y: auto;"
+    >
+      <template x-if="activeParentCategory">
+        <div class="col-span-full grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+          <template x-for="child in (categoryTree.find(c => c.id == activeParentCategory)?.children || [])" :key="child.id">
+            <button
+              @click="loadCategory(child.id); closeCategoryDropdown()"
+              type="button"
+              :aria-label="(child.displayName || child.name) + '子分类'"
+              data-testid="subcategory-nav-item"
+              :data-category-id="child.id"
+              class="subcategory-item focus:outline-none focus:ring-2 focus:ring-blue-500"
+              :class="currentCategory == child.id ? 'active' : ''"
+            >
+              <span class="subcategory-item-icon" x-text="child.icon || '📄'" :style="child.color ? 'color:' + child.color : ''"></span>
+              <span class="subcategory-item-text" x-text="child.displayName || child.name"></span>
+              <span class="subcategory-item-count text-[10px] opacity-50" x-text="child.count"></span>
+            </button>
+          </template>
+        </div>
+      </template>
+    </div>
+  </div>
+</section>

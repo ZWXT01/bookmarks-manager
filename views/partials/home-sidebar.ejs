@@ -1,0 +1,129 @@
+<aside
+  id="home-sidebar"
+  :class="showMobileSidebar ? 'is-open' : ''"
+  class="home-sidebar custom-scrollbar"
+  data-testid="home-sidebar"
+  aria-label="首页侧边工具区"
+>
+  <div class="home-sidebar__panel">
+    <div class="home-sidebar__mobile-header lg:hidden">
+      <div>
+        <div class="page-kicker">Workspace tools</div>
+        <div class="home-sidebar__mobile-title">侧边工具区</div>
+      </div>
+      <button @click="closeMobileSidebar()" class="home-sidebar__mobile-close" type="button" aria-label="关闭侧边工具栏">✕</button>
+    </div>
+
+    <section class="card p-4 flex-shrink-0 animate-fade-in">
+      <div class="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <h2 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-md bg-gradient-to-br from-orange-400 to-amber-500 flex items-center justify-center text-white text-xs">⚡</span>
+            快捷操作
+          </h2>
+          <p class="text-xs text-slate-500 mt-1">先进入分类，再执行新增、模板和导出等高频动作。</p>
+        </div>
+        <span class="status-badge status-badge--info">高频入口</span>
+      </div>
+      <div class="grid grid-cols-2 gap-2">
+        <button @click="openAddBookmarkModal(); closeMobileSidebar()" data-testid="open-add-bookmark" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-green-50 hover:border-green-200 transition-all group" type="button">
+          <span class="text-xl mb-1 group-hover:scale-110 transition-transform">➕</span>
+          <span class="text-[10px] text-slate-500 font-medium">添加书签</span>
+        </button>
+        <button @click="openCategoryManager(); closeMobileSidebar()" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-blue-50 hover:border-blue-200 transition-all group" type="button">
+          <span class="text-xl mb-1 group-hover:scale-110 transition-transform">📁</span>
+          <span class="text-[10px] text-slate-500 font-medium">管理分类</span>
+        </button>
+        <button @click="openCreateCategoryModal(null); closeMobileSidebar()" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-emerald-50 hover:border-emerald-200 transition-all group" type="button">
+          <span class="text-xl mb-1 group-hover:scale-110 transition-transform">📂</span>
+          <span class="text-[10px] text-slate-500 font-medium">添加分类</span>
+        </button>
+        <button @click="openExportModal(); closeMobileSidebar()" data-testid="open-export-modal" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-amber-50 hover:border-amber-200 transition-all group" type="button">
+          <span class="text-xl mb-1 group-hover:scale-110 transition-transform">📤</span>
+          <span class="text-[10px] text-slate-500 font-medium">导出书签</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="card p-4 flex-shrink-0">
+      <div class="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <h2 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-md bg-gradient-to-br from-violet-500 to-purple-500 flex items-center justify-center text-white text-xs">🗂️</span>
+            分类模板
+          </h2>
+          <p class="text-xs text-slate-500 mt-1">切换当前模板，保持分类结构与书签分布兼容。</p>
+        </div>
+        <span class="status-badge status-badge--muted" x-text="activeTemplate ? '已选择' : '未选择'"></span>
+      </div>
+      <template x-if="activeTemplate">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-sm text-slate-600 truncate" data-testid="active-template-name" x-text="activeTemplate.name"></span>
+          <button @click="showTemplateSelectModal = true; closeMobileSidebar()" data-testid="open-template-select" class="text-xs text-blue-500 hover:text-blue-700 whitespace-nowrap" type="button">切换模板</button>
+        </div>
+      </template>
+      <template x-if="!activeTemplate">
+        <div class="flex items-center justify-between gap-2">
+          <span class="text-xs text-slate-400">请先选择分类模板</span>
+          <button @click="showTemplateSelectModal = true; closeMobileSidebar()" data-testid="open-template-select" class="text-xs text-blue-500 hover:text-blue-700 whitespace-nowrap" type="button">选择模板</button>
+        </div>
+      </template>
+      <div class="flex gap-1 mt-3">
+        <button @click="showToast('该功能正在开发中，敬请期待', 'info')" class="flex-1 text-xs px-2 py-1 rounded border border-dashed border-slate-300 text-slate-400 hover:text-slate-600 hover:border-slate-400" type="button">AI 设计模板 <span class="text-[10px] bg-amber-100 text-amber-600 px-1 rounded">Beta</span></button>
+        <button @click="showToast('该功能正在开发中，敬请期待', 'info')" class="flex-1 text-xs px-2 py-1 rounded border border-dashed border-slate-300 text-slate-400 hover:text-slate-600 hover:border-slate-400" type="button">AI 改造模板 <span class="text-[10px] bg-amber-100 text-amber-600 px-1 rounded">Beta</span></button>
+      </div>
+    </section>
+
+    <section class="card p-4 flex-shrink-0">
+      <div class="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <h2 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-md bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white text-xs">🛠️</span>
+            运维工具
+          </h2>
+          <p class="text-xs text-slate-500 mt-1">检查、AI 整理和备份还原保留原有业务语义，仅调整入口层级。</p>
+        </div>
+      </div>
+      <div class="space-y-2">
+        <button @click="openCheckModal(); closeMobileSidebar()" class="btn-secondary w-full text-left justify-start" type="button">🔍 批量检查</button>
+        <button @click="openAIOrganizeModal(); closeMobileSidebar()" data-testid="open-ai-organize" class="btn-secondary w-full text-left justify-start" type="button">🤖 AI 整理</button>
+        <button @click="openBackupModal(); closeMobileSidebar()" class="btn-secondary w-full text-left justify-start md:hidden" type="button">💾 备份还原</button>
+        <a href="/snapshots" class="btn-secondary w-full justify-start md:hidden">📸 快照管理</a>
+        <a href="/jobs" class="btn-secondary w-full justify-start md:hidden">📋 任务列表</a>
+      </div>
+    </section>
+
+    <section class="card p-4 flex-shrink-0 animate-fade-in">
+      <div class="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <h2 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+            <span class="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs">📥</span>
+            导入书签
+          </h2>
+          <p class="text-xs text-slate-500 mt-1">保持原有导入合同与文件格式支持，适合批量整理前先导入数据。</p>
+        </div>
+      </div>
+      <form id="import-form" data-testid="import-form" @submit.prevent="startImport($el); closeMobileSidebar()">
+        <input type="file" name="file" accept=".html,.htm,.json,.txt" required data-testid="import-file-input" class="w-full text-xs mb-3 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+        <label class="flex items-center gap-2 text-xs text-slate-600 mb-2">
+          <input type="checkbox" x-model="importOverrideCategory" data-testid="import-override-category">
+          忽略原有分类，统一导入到：
+        </label>
+        <input type="hidden" name="overrideCategory" :value="importOverrideCategory ? '1' : ''">
+        <div class="mb-3" x-show="importOverrideCategory">
+          <select name="defaultCategoryId" data-testid="import-default-category" class="w-full rounded-lg border px-3 py-2 text-xs">
+            <option value="">未分类</option>
+            <template x-for="cat in categories" :key="cat.id">
+              <option :value="cat.id" x-text="cat.name"></option>
+            </template>
+          </select>
+        </div>
+        <label class="flex items-center gap-2 text-xs text-slate-600 mb-3">
+          <input type="checkbox" name="skipDuplicates" value="1" checked data-testid="import-skip-duplicates">
+          跳过重复书签
+        </label>
+        <button type="submit" data-testid="import-submit" class="btn-primary w-full">开始导入</button>
+      </form>
+    </section>
+  </div>
+</aside>

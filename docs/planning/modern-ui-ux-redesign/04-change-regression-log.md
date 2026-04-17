@@ -369,11 +369,12 @@
 - title：首页信息架构与导航壳体重构
 - wave：`W2`
 - issue_ref：[执行任务板 - UIR-DEV-060](./03-execution-board.md)
-- commit_refs：待执行
+- commit_refs：本轮开发提交待写入
 - commit_message_examples：`[UIR-DEV-060][dev] redesign home workspace shell`
 - gemini_review_required：是；聚焦首页 IA、分类 tabs、侧边工具区和移动端 drawer
 - last_updated_at：2026-04-17
-- delivery_gate：`open`
+- local_validation：`npx vitest run tests/integration/page-assets.test.ts`、`npx tsx scripts/category-nav-validate.ts` passed；`npx tsx scripts/category-interaction-validate.ts` failed（行动作菜单层级 / 裁切问题待收口）
+- delivery_gate：`in_progress`
 
 ### 3.1 计划引入内容
 
@@ -387,7 +388,28 @@
 
 | area | object_type | object_name | actual_change | user_visible_impact | notes |
 |---|---|---|---|---|---|
-| uiux | home | IA shell and navigation | 待执行 | 首页层级更清晰、移动端更稳 |  |
+| frontend | template | home shell partials | 已拆出 `views/partials/home-header.ejs`、`home-sidebar.ejs`、`home-category-nav.ejs` 并重组 `views/index.ejs` 顶层壳体 | 首页结构更清晰，后续 `UIR-DEV-070~120` 可在更稳定的壳体上继续改 | 不改 `/` 数据来源与既有 `data-testid` |
+| uiux | home | workspace overview card | 已新增首页概览卡，展示当前工作区、结果量、未分类数量、已选书签和快捷入口 | 首页首屏层级更明确，进入列表前就能判断当前操作范围 | 仅增强壳体，不改搜索 / 列表业务语义 |
+| uiux | navigation | category nav shell + mobile drawer | 已重做顶部 header、侧边工具区、分类导航头部、移动端抽屉和 overlay 样式 | 桌面 / 移动端导航更统一，分类入口和工具入口更易达 | 保留 `category-nav-*`、`subcategory-panel`、`open-category-manager` 等契约 |
+| frontend | script | home selector regression | 已补首页壳体 selector 断言，并微调 `scripts/category-interaction-validate.ts` 的单行作用域选择 | 首页壳体回归可直接覆盖新入口 | category interaction harness 仍暴露菜单层级问题，暂未作为本任务完成信号 |
+
+### 3.2A Gemini 审阅结论
+
+- 审阅会话：`Gemini session 5f451dae-f6fb-4e67-ad2d-1951947a702f`
+- 采用：
+  - 优先重构首页 header / sidebar / category navigation 的 DOM 分层，不先改书签 CRUD 与搜索语义；
+  - 在 EJS + Alpine 现状下用 partial 拆分大模板，保留 `bookmarkApp()` 和现有 `data-testid`；
+  - 先落移动端 drawer、分类导航外壳和首页 workspace overview，再把搜索 / 列表细节留给 `UIR-DEV-070`；
+  - 保持 `localStorage.theme` / `viewMode` 和分类 tabs 拖拽 / 滚轮逻辑不动。
+- 裁剪：
+  - 本轮未拆分 `public/app.js` 状态机；
+  - 未进入书签列表视觉重构、CRUD modal、模板编辑器和 AI organize 细节改造。
+
+### 3.2B 本地验证结论
+
+- `npx vitest run tests/integration/page-assets.test.ts` 通过，确认新首页壳体 selector、原有 modal / import-export / AI organize 契约仍存在。
+- `npx tsx scripts/category-nav-validate.ts` 通过，确认分类 tabs 单行布局、按钮滚动、滚轮滚动、拖拽滚动与刷新后稳定性仍正常。
+- `npx tsx scripts/category-interaction-validate.ts` 当前失败：单条书签操作菜单在新首页壳体下仍存在层级 / 裁切问题，导致 `bookmark-row-move-button` 在自动化点击时被主工作区容器拦截。该问题更接近 `UIR-DEV-070/080` 的列表与动作区收口，live verify 前需继续修复。
 
 ### 3.3 关联回归用例
 

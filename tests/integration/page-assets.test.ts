@@ -217,6 +217,26 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="export-download"');
     });
 
+    it('renders the redesigned home shell selectors for workspace navigation regression', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: '/',
+            headers,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('data-testid="home-page"');
+        expect(response.body).toContain('data-testid="home-topbar"');
+        expect(response.body).toContain('data-testid="home-drawer-toggle"');
+        expect(response.body).toContain('data-testid="home-sidebar"');
+        expect(response.body).toContain('data-testid="home-overview-card"');
+        expect(response.body).toContain('data-testid="home-category-nav-shell"');
+        expect(response.body).toContain('data-testid="home-overview-add-bookmark"');
+    });
+
     it('renders repo playwright smoke selectors for search, bookmark editing, and category management', async () => {
         const session = await ctx.login();
         const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);

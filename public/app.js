@@ -156,12 +156,19 @@ function bookmarkApp() {
     get templateEditChildCount() {
       return (this.templateEditTree || []).reduce((total, node) => total + ((node.children || []).length), 0);
     },
-    get templateEditSummary() {
-      const roots = this.templateEditRootCount;
-      const children = this.templateEditChildCount;
-      if (!roots && !children) return '暂无分类，先添加一级分类或从现有模板复制。';
-      return `${roots} 个一级分类 · ${children} 个子分类`;
-    },
+	    get templateEditSummary() {
+	      const roots = this.templateEditRootCount;
+	      const children = this.templateEditChildCount;
+	      if (!roots && !children) return '暂无分类，先添加一级分类或从现有模板复制。';
+	      return `${roots} 个一级分类 · ${children} 个子分类`;
+	    },
+	    get currentCategoryName() {
+	      if (this.currentCategory === null || this.currentCategory === '') return '全部书签';
+	      if (this.currentCategory === 'uncategorized') return '未分类';
+	      const currentId = String(this.currentCategory);
+	      const current = (this.categories || []).find((cat) => String(cat.id) === currentId);
+	      return current?.name || '当前分类';
+	    },
 
     // 多入口 AI 分类
     showBatchSizeModal: false,
@@ -893,28 +900,32 @@ function bookmarkApp() {
       });
     },
 
-    openCategoryManager() {
-      this.showCategoryManager = true;
-      this.categoryManagerSearch = '';
-      // Focus management: auto-focus search input when modal opens
-      this.$nextTick(() => {
+	    openCategoryManager() {
+	      this.showCategoryManager = true;
+	      this.categoryManagerSearch = '';
+	      // Focus management: auto-focus search input when modal opens
+	      this.$nextTick(() => {
         const searchInput = document.querySelector('#category-manager-search');
         if (searchInput) searchInput.focus();
         this.initCategoryManagerDragSort();
       });
     },
 
-    closeCategoryManager() {
-      if (this.categoryManagerSortable) {
-        this.categoryManagerSortable.destroy();
-        this.categoryManagerSortable = null;
-      }
-      this.showCategoryManager = false;
-    },
+	    closeCategoryManager() {
+	      if (this.categoryManagerSortable) {
+	        this.categoryManagerSortable.destroy();
+	        this.categoryManagerSortable = null;
+	      }
+	      this.showCategoryManager = false;
+	    },
 
-    openAddBookmarkModal() {
-      this.showAddBookmarkModal = true;
-    },
+	    closeMobileSidebar() {
+	      this.showMobileSidebar = false;
+	    },
+
+	    openAddBookmarkModal() {
+	      this.showAddBookmarkModal = true;
+	    },
 
     closeAddBookmarkModal() {
       this.showAddBookmarkModal = false;

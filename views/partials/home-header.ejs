@@ -1,0 +1,75 @@
+<header class="page-topbar glass-header" data-testid="home-topbar">
+  <div class="page-topbar__inner home-topbar__inner">
+    <div class="page-topbar__meta">
+      <div class="home-topbar__brand">
+        <button
+          @click="showMobileSidebar = !showMobileSidebar"
+          data-testid="home-drawer-toggle"
+          class="home-topbar__drawer-toggle lg:hidden"
+          :aria-expanded="showMobileSidebar ? 'true' : 'false'"
+          aria-controls="home-sidebar"
+          aria-label="打开侧边工具栏"
+          type="button"
+        >
+          <span class="text-xl" x-text="showMobileSidebar ? '✕' : '☰'"></span>
+        </button>
+        <div>
+          <div class="page-kicker">Bookmarks workspace</div>
+          <div class="page-heading">📚 书签工作台</div>
+          <div class="page-subheading">在同一工作区内处理分类导航、模板、导入导出、批量检查与 AI 整理；保持现有 API 与主题 / 视图偏好兼容。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="page-actions home-topbar__actions">
+      <template x-if="currentJob && (currentJob.status === 'running' || currentJob.status === 'queued')">
+        <div
+          data-testid="current-job-banner"
+          :data-job-id="currentJob.id"
+          :data-job-type="currentJob.type"
+          class="home-topbar__job-banner"
+          @click="window.location.href='/jobs'"
+        >
+          <span
+            class="animate-pulse hidden md:inline"
+            x-text="currentJob.type === 'ai_organize' ? '🤖 AI整理' : currentJob.type === 'check' ? '🔍 检查' : currentJob.type === 'import' ? '📥 导入' : '任务'"
+          ></span>
+          <span
+            class="md:hidden"
+            x-text="currentJob.type === 'ai_organize' ? '🤖' : currentJob.type === 'check' ? '🔍' : currentJob.type === 'import' ? '📥' : '⚙️'"
+          ></span>
+          <span data-testid="current-job-progress" x-text="currentJob.processed + '/' + currentJob.total" class="font-medium"></span>
+          <div class="w-12 sm:w-20 h-1.5 progress-bar">
+            <div
+              class="progress-bar-fill"
+              :style="'width:' + (currentJob.total > 0 ? Math.floor(currentJob.processed / currentJob.total * 100) : 0) + '%'"
+            ></div>
+          </div>
+          <button
+            @click.stop="cancelCurrentJob()"
+            aria-label="取消任务"
+            data-testid="current-job-cancel"
+            class="text-rose-500 hover:text-rose-700"
+            type="button"
+          >✕</button>
+        </div>
+      </template>
+
+      <button @click="openBackupModal()" data-testid="open-backup-modal" class="btn-secondary btn-sm hidden md:inline-flex items-center gap-1" title="备份与还原" type="button">💾 <span>备份还原</span></button>
+      <a href="/snapshots" class="btn-secondary btn-sm hidden md:inline-flex items-center gap-1" title="快照管理">📸 <span>快照管理</span></a>
+      <a href="/jobs" class="btn-secondary btn-sm hidden md:inline-flex items-center gap-1" title="任务列表">📋 <span>任务列表</span></a>
+      <button @click="toggleTheme()" class="btn-secondary btn-sm hidden md:inline-flex items-center gap-1" aria-label="切换主题" type="button">
+        <span x-text="theme === 'dark' ? '☀️' : '🌙'"></span>
+        <span x-text="theme === 'dark' ? '浅色' : '深色'"></span>
+      </button>
+      <div class="flex md:hidden">
+        <button @click="toggleTheme()" class="p-2 text-lg" x-text="theme === 'dark' ? '☀️' : '🌙'" type="button"></button>
+      </div>
+      <a href="/settings" class="btn-secondary btn-sm hidden md:inline-flex items-center gap-1">⚙️ <span>设置</span></a>
+      <form action="/logout" method="POST" class="inline">
+        <button type="submit" class="btn-danger btn-sm hidden md:inline-flex items-center gap-1">🚪 <span>退出</span></button>
+        <button type="submit" class="btn-danger btn-sm md:hidden p-2">🚪</button>
+      </form>
+    </div>
+  </div>
+</header>

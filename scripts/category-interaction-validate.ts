@@ -265,8 +265,9 @@ async function openBookmarkActions(page: Page, title: string): Promise<void> {
 }
 
 async function moveOneBookmark(page: Page, title: string, targetLabel: string): Promise<void> {
+    const row = page.locator('[data-testid="bookmark-row"]', { hasText: title }).first();
     await openBookmarkActions(page, title);
-    await page.getByTestId('bookmark-row-move-button').click();
+    await row.getByTestId('bookmark-row-move-button').click();
     await page.getByTestId('move-one-modal').waitFor({ state: 'visible' });
     await page.locator('[data-testid="move-one-category-select"]').selectOption({ label: targetLabel });
     await page.getByTestId('confirm-move-one-bookmark').click();
