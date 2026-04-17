@@ -19,41 +19,119 @@
   </script>
 </head>
 
-<body class="auth-page">
-  <main class="page-shell page-shell--narrow">
-    <section class="auth-card">
-      <div class="auth-eyebrow">🔐 安全登录</div>
-      <h1 class="auth-title">登录到书签管理器</h1>
-      <p class="auth-subtitle">继续访问你的自托管书签工作台，管理收藏、检查任务与快照归档。</p>
-
-      <% if (error) { %>
-        <div class="auth-error mt-6" role="alert">
-          <%= error %>
+<body class="auth-page login-page" data-testid="login-page">
+  <main class="page-shell page-shell--auth">
+    <div class="auth-layout">
+      <section class="auth-card login-card" aria-labelledby="login-title">
+        <div class="auth-card__header">
+          <div class="auth-card__intro">
+            <div class="auth-eyebrow">🔐 安全登录</div>
+            <h1 id="login-title" class="auth-title">登录到书签管理器</h1>
+            <p class="auth-subtitle">继续访问你的自托管书签工作台，管理收藏、检查任务、网页快照与 AI 整理流程。</p>
+          </div>
+          <button id="theme-toggle" type="button" class="btn-secondary btn-sm auth-theme-toggle"
+            data-testid="login-theme-toggle" aria-label="切换主题">🌙</button>
         </div>
-      <% } %>
 
-      <form method="post" action="/login" class="section-stack mt-6">
-        <label class="form-field">
-          <span class="form-label">用户名</span>
-          <input type="text" name="username" required autofocus autocomplete="username" class="form-control"
-            placeholder="请输入用户名" />
-        </label>
+        <% if (error) { %>
+          <div class="auth-error mt-6" role="alert" data-testid="login-error">
+            <div class="auth-error__icon" aria-hidden="true">!</div>
+            <div>
+              <div class="auth-error__title">登录失败</div>
+              <div><%= error %></div>
+            </div>
+          </div>
+        <% } %>
 
-        <label class="form-field">
-          <span class="form-label">密码</span>
-          <input type="password" name="password" required autocomplete="current-password" class="form-control"
-            placeholder="请输入密码" />
-        </label>
+        <form method="post" action="/login" class="section-stack auth-form mt-6" data-testid="login-form">
+          <label class="form-field">
+            <span class="form-label">用户名</span>
+            <input type="text" name="username" required autofocus autocomplete="username" class="form-control"
+              placeholder="请输入用户名" aria-label="请输入用户名" data-testid="login-username-input" />
+            <span class="form-hint">输入管理员用户名继续。</span>
+          </label>
 
-        <label for="remember" class="remember-field">
-          <input type="checkbox" name="remember" id="remember" />
-          <span>记住我（7天内免登录）</span>
-        </label>
+          <label class="form-field">
+            <span class="form-label">密码</span>
+            <input type="password" name="password" required autocomplete="current-password" class="form-control"
+              placeholder="请输入密码" aria-label="请输入密码" data-testid="login-password-input" />
+            <span class="form-hint">支持浏览器自动填充当前站点密码。</span>
+          </label>
 
-        <button type="submit" class="btn-primary btn-lg w-full justify-center">登录</button>
-      </form>
-    </section>
+          <div class="auth-form__meta">
+            <label for="remember" class="remember-field" data-testid="login-remember-toggle">
+              <input type="checkbox" name="remember" id="remember" />
+              <span>记住我（7天内免登录）</span>
+            </label>
+            <div class="auth-inline-note">连续失败 10 次后，当前 IP 会被锁定 30 分钟。</div>
+          </div>
+
+          <button type="submit" class="btn-primary btn-lg w-full justify-center" data-testid="login-submit">登录</button>
+        </form>
+
+        <div class="auth-footer-note">
+          登录页会自动沿用你上次使用的主题偏好；登录成功后会直接返回书签工作台。
+        </div>
+      </section>
+
+      <aside class="auth-showcase" aria-label="产品概览">
+        <div class="auth-showcase__badge">Self-hosted workspace</div>
+        <h2 class="auth-showcase__title">一个入口，继续你的收藏整理流。</h2>
+        <p class="auth-showcase__description">
+          登录后即可回到同一套管理界面，继续分类导航、批量检查、任务追踪、快照归档与 AI 整理。
+        </p>
+
+        <div class="auth-stat-grid" aria-hidden="true">
+          <div class="auth-stat-card">
+            <span class="auth-stat-card__title">收藏整理</span>
+            <span class="auth-stat-card__meta">分类、搜索、批量操作保持连续。</span>
+          </div>
+          <div class="auth-stat-card">
+            <span class="auth-stat-card__title">任务追踪</span>
+            <span class="auth-stat-card__meta">导入、检查与整理状态可持续查看。</span>
+          </div>
+          <div class="auth-stat-card">
+            <span class="auth-stat-card__title">快照留档</span>
+            <span class="auth-stat-card__meta">网页归档与回看入口集中管理。</span>
+          </div>
+        </div>
+
+        <div class="auth-feature-list">
+          <article class="auth-feature-card">
+            <div class="auth-feature-card__title">更聚焦的首屏</div>
+            <p class="auth-feature-card__desc">表单、错误反馈与主题切换统一到同一套设计语言，桌面端与移动端都更清晰。</p>
+          </article>
+          <article class="auth-feature-card">
+            <div class="auth-feature-card__title">保持原有登录契约</div>
+            <p class="auth-feature-card__desc">不改变 `/login` 提交字段、会话行为与静态资源加载方式，只重做视觉层与交互层。</p>
+          </article>
+          <article class="auth-feature-card">
+            <div class="auth-feature-card__title">更自然的错误定位</div>
+            <p class="auth-feature-card__desc">错误信息集中展示在表单上方，同时保留明确的输入提示与键盘友好结构。</p>
+          </article>
+        </div>
+      </aside>
+    </div>
   </main>
+
+  <script>
+    (function () {
+      var btn = document.getElementById('theme-toggle');
+      if (!btn) return;
+      var updateIcon = function () {
+        var theme = document.documentElement.getAttribute('data-theme');
+        btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+      };
+      updateIcon();
+      btn.addEventListener('click', function () {
+        var current = document.documentElement.getAttribute('data-theme');
+        var next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        updateIcon();
+      });
+    })();
+  </script>
 </body>
 
 </html>

@@ -126,11 +126,12 @@
 - title：登录页现代化改造
 - wave：`W1`
 - issue_ref：[执行任务板 - UIR-DEV-020](./03-execution-board.md)
-- commit_refs：待执行
+- commit_refs：`[UIR-DEV-020][dev] modernize login page shell`
 - commit_message_examples：`[UIR-DEV-020][dev] modernize login page shell`
 - gemini_review_required：是；聚焦首屏层级、表单反馈、错误态与暗色兼容
 - last_updated_at：2026-04-17
-- delivery_gate：`open`
+- local_validation：`npx vitest run tests/integration/page-assets.test.ts` passed
+- delivery_gate：`in_testing`
 
 ### 3.1 计划引入内容
 
@@ -144,7 +145,20 @@
 
 | area | object_type | object_name | actual_change | user_visible_impact | notes |
 |---|---|---|---|---|---|
-| uiux | login | shell and form feedback | 待执行 | 登录首屏更现代、错误态更清晰 |  |
+| frontend | template | login split shell | 已将登录页改为表单卡片 + 产品概览双区布局，并新增主题切换入口与稳定 `data-testid` | 首屏层级更清晰，桌面 / 移动端结构更统一 | 保留 `/login` 表单字段与提交方式 |
+| uiux | form | login inputs / remember / error banner | 已强化输入提示、记住我容器、错误提示横幅与会话说明 | 输入反馈更明确，错误态更易识别 | 未改错误消息文本语义 |
+| test | integration | login page shell selectors | 已为登录页补充 page-assets 断言，覆盖新选择器与静态资源合同 | 登录页壳体回归更稳 | 仅增补断言，不影响其他页面契约 |
+
+### 3.2A Gemini 审阅结论
+
+- 审阅会话：`Gemini session 4a8cde07-4d6d-45b8-b6f6-5a197d9db237`
+- 采用：
+  - 引入更明确的卡片式登录区与独立信息展示区，强化首屏 CTA 与信息层级；
+  - 保持 `username/password/remember` 字段名不变，同时增强错误提示、输入 hint 与移动端 spacing；
+  - 补充登录页稳定选择器，避免后续浏览器回放依赖脆弱 DOM 路径。
+- 裁剪：
+  - 未做字段级错误拆分，继续沿用后端统一错误消息；
+  - 未引入新框架、额外静态资源文件或新的登录业务能力。
 
 ### 3.3 关联回归用例
 

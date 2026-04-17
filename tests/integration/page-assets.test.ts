@@ -30,6 +30,12 @@ describe('integration: page assets', () => {
         expect(response.body).toContain(staticCssHref);
         expect(response.body).not.toContain(runtimeTailwindHref);
         expect(response.body).not.toContain(runtimeWarningText);
+        expect(response.body).toContain('data-testid="login-page"');
+        expect(response.body).toContain('data-testid="login-form"');
+        expect(response.body).toContain('data-testid="login-theme-toggle"');
+        expect(response.body).toContain('data-testid="login-username-input"');
+        expect(response.body).toContain('data-testid="login-password-input"');
+        expect(response.body).toContain('data-testid="login-submit"');
     });
 
     it('serves authenticated pages with the static tailwind asset only', async () => {
