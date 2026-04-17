@@ -76,12 +76,13 @@
 - title：共享设计系统与页面壳体契约
 - wave：`W1`
 - issue_ref：[执行任务板 - UIR-DEV-010](./03-execution-board.md)
-- commit_refs：待提交（UIR-DEV-010 本轮开发提交）
+- commit_refs：`4dc338f`
 - commit_message_examples：`[UIR-DEV-010][dev] establish shared design tokens and shell`
 - gemini_review_required：是；聚焦设计 Token、表单 / 按钮 / 卡片 / 空态 / 动效统一方案
 - last_updated_at：2026-04-17
 - local_validation：`npm test -- tests/integration/page-assets.test.ts` passed
-- delivery_gate：`in_progress`
+- live_validation：`2026-04-17` Racknerd live quick verify passed；证据索引见 `./evidence/2026-04-17-w1-live-quick-verify.md`
+- delivery_gate：`passed`
 
 ### 3.1 计划引入内容
 
@@ -97,7 +98,7 @@
 |---|---|---|---|---|---|
 | frontend | stylesheet | shared design tokens | 已补充页面壳体、布局、surface、dialog、badge、table shell 与 auth shell 基础样式 | 全站壳体与视觉层级更统一 | 保留既有 `theme` / `viewMode` 与 selector 契约 |
 | frontend | dialog | AppDialog shell | 已改为设计系统类驱动，并补充 `role=dialog`、`aria-modal` 与焦点恢复 | 全站弹窗视觉与主题更一致 | 未改 `AppDialog.alert/confirm` 调用方式 |
-| uiux | page_shell | shared shell | 已接入登录页、设置页、任务列表、任务详情、快照页的共享页头 / 容器骨架 | 次级页面层级更清晰，W2 首页可复用同一套壳体 | 真实站点快速验证待执行 |
+| uiux | page_shell | shared shell | 已接入登录页、设置页、任务列表、任务详情、快照页的共享页头 / 容器骨架 | 次级页面层级更清晰，W2 首页可复用同一套壳体 | 2026-04-17 Racknerd 真实站点桌面 / 移动端快速验证已通过 |
 
 ### 3.2A Gemini 审阅结论
 
@@ -110,6 +111,12 @@
   - 本轮未引入新的前端框架或大规模模板拆分；
   - 未改首页 Alpine 状态机与既有 `/api/*` 契约。
 
+### 3.2B Racknerd 快速验证与留证
+
+- 2026-04-17 已在 `https://bookmarks.1018666.xyz` 完成共享壳体 live quick verify，确认登录页、设置页、任务列表 / 详情、快照页均已切到统一 page shell。
+- Playwright MCP 抓拍已留档：`live-login-desktop.png`、`live-settings-desktop.png`、`live-settings-dark-desktop.png`、`live-jobs-desktop.png`、`live-job-detail-desktop.png`、`live-snapshots-desktop.png`。
+- 本轮未改 `Dockerfile`、`docker-compose.yml`、`package.json` 或 `package-lock.json`；Racknerd 快速验证以同步 `views/`、`public/` 与修正后的 `dist/routes/settings.js` 运行时产物为准，未在业务机执行重型构建。
+
 ### 3.3 关联回归用例
 
 | case_id | case_scope | notes |
@@ -118,7 +125,7 @@
 | REG-GLOBAL-003 | 选择器契约 | 共享壳体改造后必须保持选择器稳定 |
 | REG-GLOBAL-005 | 主题与持久化 | 深色模式与持久化不能被共享样式破坏 |
 | REG-A11Y-001 | 模态焦点 | 共享 dialog 与 shell 的可访问性验证 |
-| DEV-LOCAL-001 | 本地低成本验证 | `npm test -- tests/integration/page-assets.test.ts` 已通过，待远端构建 / live quick verify |
+| DEV-LOCAL-001 | 本地低成本验证 | `npm test -- tests/integration/page-assets.test.ts` 与 2026-04-17 Racknerd live quick verify 均已通过 |
 
 ## UIR-DEV-020
 
@@ -126,12 +133,13 @@
 - title：登录页现代化改造
 - wave：`W1`
 - issue_ref：[执行任务板 - UIR-DEV-020](./03-execution-board.md)
-- commit_refs：`[UIR-DEV-020][dev] modernize login page shell`
+- commit_refs：`2579925`
 - commit_message_examples：`[UIR-DEV-020][dev] modernize login page shell`
 - gemini_review_required：是；聚焦首屏层级、表单反馈、错误态与暗色兼容
 - last_updated_at：2026-04-17
 - local_validation：`npx vitest run tests/integration/page-assets.test.ts`、`npx tsx scripts/job-cancel-failures-browser-validate.ts`、`npx tsx scripts/jobs-snapshots-browser-validate.ts` passed
-- delivery_gate：`in_testing`
+- live_validation：`2026-04-17` 真实站点 `/login` 新壳体、错误提示横幅与公开入口已验证；证据索引见 `./evidence/2026-04-17-w1-live-quick-verify.md`
+- delivery_gate：`passed`
 
 ### 3.1 计划引入内容
 
@@ -160,6 +168,12 @@
   - 未做字段级错误拆分，继续沿用后端统一错误消息；
   - 未引入新框架、额外静态资源文件或新的登录业务能力。
 
+### 3.2B Racknerd 快速验证与留证
+
+- 2026-04-17 直接访问真实站点 `/login`，确认新登录首屏、产品概览区、记住我容器与主题切换入口已渲染。
+- 使用错误凭据提交真实站点登录表单后，已确认 `login-error` 横幅与剩余尝试次数提示仍走原有登录合同。
+- Playwright MCP 已留档：`live-login-desktop.png`。
+
 ### 3.3 关联回归用例
 
 | case_id | case_scope | notes |
@@ -174,12 +188,13 @@
 - title：设置页布局与表单体验重构
 - wave：`W1`
 - issue_ref：[执行任务板 - UIR-DEV-030](./03-execution-board.md)
-- commit_refs：`[UIR-DEV-030][dev] redesign settings page layout`
+- commit_refs：`5987e10`
 - commit_message_examples：`[UIR-DEV-030][dev] redesign settings page layout`
 - gemini_review_required：是；聚焦设置分组、响应式表单、AI 诊断区域层级
 - last_updated_at：2026-04-17
 - local_validation：`npx vitest run tests/integration/page-assets.test.ts tests/integration/ops-routes.test.ts` passed
-- delivery_gate：`in_testing`
+- live_validation：`2026-04-17` 设置页桌面 / 移动 / 深色 quick verify passed；证据索引见 `./evidence/2026-04-17-w1-live-quick-verify.md`
+- delivery_gate：`passed`
 
 ### 3.1 计划引入内容
 
@@ -209,7 +224,13 @@
 - 裁剪：
   - 未引入新的前端框架或拆出单独页面脚本模块；
   - 未改 `/settings`、`/api/settings*`、`/api/change-password`、`/api/tokens*` 契约；
-  - 未在本轮改变真实站点验证路径，live quick verify 仍待后续执行。
+  - 真实站点 quick verify 已于 2026-04-17 完成。
+
+### 3.2B Racknerd 快速验证与留证
+
+- 2026-04-17 通过临时 API token 换 Session 进入真实站点设置页，确认 `settings-overview-card`、`settings-form-shell`、`ai-batch-size-input` 均已渲染。
+- Playwright MCP 已留档：`live-settings-desktop.png`、`live-settings-mobile.png`、`live-settings-dark-desktop.png`。
+- 由于本轮唯一运行时代码变更仅为设置页渲染参数补齐，验证前已同步修正 `dist/routes/settings.js`，并在验证后保持业务契约不变。
 
 ### 3.3 关联回归用例
 
@@ -228,12 +249,13 @@
 - title：任务列表与详情页统一改造
 - wave：`W1`
 - issue_ref：[执行任务板 - UIR-DEV-040](./03-execution-board.md)
-- commit_refs：`[UIR-DEV-040][dev] redesign jobs center pages`
+- commit_refs：`e154194`
 - commit_message_examples：`[UIR-DEV-040][dev] redesign jobs center pages`
 - gemini_review_required：是；聚焦状态标签、进度区、失败表和详情层级
 - last_updated_at：2026-04-17
 - local_validation：`npx vitest run tests/integration/page-assets.test.ts` passed
-- delivery_gate：`in_testing`
+- live_validation：`2026-04-17` 任务列表 / 详情桌面 / 移动端 quick verify passed；证据索引见 `./evidence/2026-04-17-w1-live-quick-verify.md`
+- delivery_gate：`passed`
 
 ### 3.1 计划引入内容
 
@@ -263,6 +285,12 @@
   - 未改 `/jobs*`、`/api/jobs*`、SSE / 轮询 / 取消任务 / failure pagination / organize 业务状态机；
   - 未删除或重命名任何现有 `data-testid`，只增补 `jobs-overview-card`、`jobs-row-status-badge`、`jobs-row-progress-bar`、`job-summary-grid`、`job-progress-percent`。
 
+### 3.2B Racknerd 快速验证与留证
+
+- 2026-04-17 通过临时 API token 换 Session 进入真实站点任务中心，确认 `jobs-overview-card`、`jobs-table` 与行级进度条正常渲染。
+- 为覆盖详情页，验证时临时写入 1 条 synthetic failed job，并确认 `job-detail-page`、`job-summary-grid`、`job-progress-percent` 与失败表渲染正确；验证后 synthetic job 与对应 failure 记录已删除。
+- Playwright MCP 已留档：`live-jobs-desktop.png`、`live-jobs-mobile.png`、`live-job-detail-desktop.png`。
+
 ### 3.3 关联回归用例
 
 | case_id | case_scope | notes |
@@ -279,12 +307,13 @@
 - title：快照页统一改造
 - wave：`W1`
 - issue_ref：[执行任务板 - UIR-DEV-050](./03-execution-board.md)
-- commit_refs：`[UIR-DEV-050][dev] redesign snapshots page`
+- commit_refs：`bc3e435`
 - commit_message_examples：`[UIR-DEV-050][dev] redesign snapshots page`
 - gemini_review_required：是；聚焦统计卡、筛选条、列表项与删除确认
 - last_updated_at：2026-04-17
 - local_validation：`npx vitest run tests/integration/page-assets.test.ts`、`npx tsx scripts/snapshot-browse-download-browser-validate.ts` passed
-- delivery_gate：`in_testing`
+- live_validation：`2026-04-17` 快照页桌面 / 移动端 quick verify passed；证据索引见 `./evidence/2026-04-17-w1-live-quick-verify.md`
+- delivery_gate：`passed`
 
 ### 3.1 计划引入内容
 
@@ -315,6 +344,12 @@
   - 未引入新的前端框架或把快照页改写为 Alpine 状态机；
   - 未折叠单条操作为更多菜单，仍保留直达查看 / 下载 / 删除按钮；
   - 未改 `/api/snapshots*`、文件访问、theme 持久化或删除业务语义。
+
+### 3.2B Racknerd 快速验证与留证
+
+- 2026-04-17 通过临时 API token 换 Session 进入真实站点快照页，确认 `snapshot-filter-bar`、`snapshot-stats-card`、`snapshot-list` 均已按新壳体渲染。
+- Playwright MCP 已留档：`live-snapshots-desktop.png`、`live-snapshots-mobile.png`。
+- 验证完成后已删除临时 API token，未保留额外测试数据。
 
 ### 3.3 关联回归用例
 
