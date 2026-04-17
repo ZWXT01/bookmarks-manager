@@ -373,7 +373,7 @@
 - commit_message_examples：`[UIR-DEV-060][dev] redesign home workspace shell`
 - gemini_review_required：是；聚焦首页 IA、分类 tabs、侧边工具区和移动端 drawer
 - last_updated_at：2026-04-17
-- local_validation：`npx vitest run tests/integration/page-assets.test.ts`、`npx tsx scripts/category-nav-validate.ts` passed；`npx tsx scripts/category-interaction-validate.ts` failed（行动作菜单层级 / 裁切问题待收口）
+- local_validation：`npx vitest run tests/integration/page-assets.test.ts`、`npx tsx scripts/category-nav-validate.ts`、`npx tsx scripts/category-interaction-validate.ts` passed
 - delivery_gate：`in_progress`
 
 ### 3.1 计划引入内容
@@ -391,7 +391,8 @@
 | frontend | template | home shell partials | 已拆出 `views/partials/home-header.ejs`、`home-sidebar.ejs`、`home-category-nav.ejs` 并重组 `views/index.ejs` 顶层壳体 | 首页结构更清晰，后续 `UIR-DEV-070~120` 可在更稳定的壳体上继续改 | 不改 `/` 数据来源与既有 `data-testid` |
 | uiux | home | workspace overview card | 已新增首页概览卡，展示当前工作区、结果量、未分类数量、已选书签和快捷入口 | 首页首屏层级更明确，进入列表前就能判断当前操作范围 | 仅增强壳体，不改搜索 / 列表业务语义 |
 | uiux | navigation | category nav shell + mobile drawer | 已重做顶部 header、侧边工具区、分类导航头部、移动端抽屉和 overlay 样式 | 桌面 / 移动端导航更统一，分类入口和工具入口更易达 | 保留 `category-nav-*`、`subcategory-panel`、`open-category-manager` 等契约 |
-| frontend | script | home selector regression | 已补首页壳体 selector 断言，并微调 `scripts/category-interaction-validate.ts` 的单行作用域选择 | 首页壳体回归可直接覆盖新入口 | category interaction harness 仍暴露菜单层级问题，暂未作为本任务完成信号 |
+| frontend | script | home selector regression | 已补首页壳体 selector 断言，并微调 `scripts/category-interaction-validate.ts` 的单行作用域选择 | 首页壳体回归可直接覆盖新入口 | 当前本地 harness 已通过，后续仍需 live verify |
+| frontend | interaction | table row action menu layering | 已将首页表格行动作菜单改为 fixed anchor 定位，避免被分页 / 批量条遮挡或拦截点击 | 单条移动 / 编辑 / 删除等动作在新壳体下恢复可点 | 本轮本地 harness 已验证通过 |
 
 ### 3.2A Gemini 审阅结论
 
@@ -409,7 +410,8 @@
 
 - `npx vitest run tests/integration/page-assets.test.ts` 通过，确认新首页壳体 selector、原有 modal / import-export / AI organize 契约仍存在。
 - `npx tsx scripts/category-nav-validate.ts` 通过，确认分类 tabs 单行布局、按钮滚动、滚轮滚动、拖拽滚动与刷新后稳定性仍正常。
-- `npx tsx scripts/category-interaction-validate.ts` 当前失败：单条书签操作菜单在新首页壳体下仍存在层级 / 裁切问题，导致 `bookmark-row-move-button` 在自动化点击时被主工作区容器拦截。该问题更接近 `UIR-DEV-070/080` 的列表与动作区收口，live verify 前需继续修复。
+- `npx tsx scripts/category-interaction-validate.ts` 已通过：分类管理、子分类导航、单条 / 批量移动和模板切换在新首页壳体下保持闭环。
+- 当前仍待执行：`txcloud` build 验证与 Racknerd live quick verify；通过后才可将 `UIR-DEV-060` 标记为 `done`。
 
 ### 3.3 关联回归用例
 

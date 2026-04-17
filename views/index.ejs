@@ -274,23 +274,27 @@
                                                 <div x-show="openDropdownId === bookmark.id"
                                                     @click.away="closeAllDropdowns()" x-effect="if (openDropdownId === bookmark.id) { 
                                                         $nextTick(() => { 
-                                                            const rect = $el.parentElement.getBoundingClientRect();
+                                                            const anchor = $el.parentElement;
+                                                            const rect = anchor.getBoundingClientRect();
+                                                            const menuWidth = $el.offsetWidth || 128;
+                                                            const menuHeight = $el.offsetHeight || 220;
+                                                            const viewportPadding = 8;
                                                             const spaceBelow = window.innerHeight - rect.bottom;
-                                                            const spaceAbove = rect.top;
-                                                            if (spaceBelow < 250 && spaceAbove > spaceBelow && spaceAbove > 220) {
-                                                                $el.style.top = 'auto';
-                                                                $el.style.bottom = '100%';
-                                                                $el.style.marginBottom = '0.25rem';
-                                                                $el.style.marginTop = '0';
-                                                            } else {
-                                                                $el.style.bottom = 'auto';
-                                                                $el.style.top = '100%';
-                                                                $el.style.marginTop = '0.25rem';
-                                                                $el.style.marginBottom = '0';
-                                                            }
+                                                            const canOpenUp = rect.top > menuHeight + viewportPadding;
+                                                            const openUp = spaceBelow < menuHeight + viewportPadding && canOpenUp;
+                                                            let left = rect.right - menuWidth;
+                                                            left = Math.min(Math.max(viewportPadding, left), window.innerWidth - menuWidth - viewportPadding);
+                                                            let top = openUp ? rect.top - menuHeight - 4 : rect.bottom + 4;
+                                                            top = Math.min(Math.max(viewportPadding, top), window.innerHeight - menuHeight - viewportPadding);
+                                                            $el.style.left = left + 'px';
+                                                            $el.style.right = 'auto';
+                                                            $el.style.top = top + 'px';
+                                                            $el.style.bottom = 'auto';
+                                                            $el.style.marginTop = '0';
+                                                            $el.style.marginBottom = '0';
                                                         });
                                                     }"
-                                                    class="absolute right-0 z-50 w-32 rounded-lg border bg-white dark:bg-slate-800 dark:border-slate-600 shadow-lg py-1 text-left max-h-80 overflow-y-auto">
+                                                    class="fixed z-[80] w-32 rounded-lg border bg-white dark:bg-slate-800 dark:border-slate-600 shadow-lg py-1 text-left max-h-80 overflow-y-auto">
                                                     <button @click="openEditBookmark(bookmark); closeAllDropdowns()"
                                                         data-testid="bookmark-row-edit-button"
                                                         class="block w-full px-3 py-1.5 text-xs hover:bg-slate-50 text-left">✏️
