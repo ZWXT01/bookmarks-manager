@@ -64,11 +64,21 @@ export const settingsRoutes: FastifyPluginCallback<SettingsRoutesOptions> = (app
         const aiApiKey = getSetting('ai_api_key') ?? '';
         const aiModel = getSetting('ai_model') ?? '';
         const aiBatchSize = formatAiBatchSize(getSetting('ai_batch_size'));
+        const defaultAiBatchSize = formatAiBatchSize(null);
 
         return reply.view('settings.ejs', {
             curCheckRetries, curCheckRetryDelayMs, curBackupEnabled, curBackupIntervalMinutes, curBackupRetention,
             curPeriodicCheckEnabled, curPeriodicCheckSchedule, curPeriodicCheckHour,
             checkEnvOverride, backupEnvOverride, aiBaseUrl, aiApiKey, aiModel, aiBatchSize,
+            defaultCheckRetries: checkRetries,
+            defaultCheckRetryDelayMs: checkRetryDelayMs,
+            defaultBackupEnabled: backupEnabled,
+            defaultBackupIntervalMinutes: backupIntervalMinutes,
+            defaultBackupRetention: backupRetention,
+            defaultPeriodicCheckEnabled: periodicCheckEnabled,
+            defaultPeriodicCheckSchedule: periodicCheckSchedule,
+            defaultPeriodicCheckHour: periodicCheckHour,
+            defaultAiBatchSize,
             envFilePath, dbPath, backupDir,
         });
     });

@@ -21,261 +21,389 @@
   </script>
 </head>
 
-<body class="app-shell settings-page">
+<body class="app-shell settings-page" data-testid="settings-page">
   <header class="page-topbar glass-header">
     <div class="page-topbar__inner">
       <div class="page-topbar__meta">
         <div class="page-kicker">System console</div>
         <div class="page-heading">⚙️ 设置</div>
-        <div class="page-subheading">如同时配置了环境变量，则以环境变量为准（本应用启动时也会读取 .env）。</div>
+        <div class="page-subheading">统一管理检查、备份、AI 与 API Token 等运行时配置；不改变既有接口契约与主题持久化行为。</div>
       </div>
       <div class="page-actions">
-        <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
+        <button id="theme-toggle" class="btn-secondary btn-sm" data-testid="settings-theme-toggle" aria-label="切换主题">🌙</button>
         <a class="btn-secondary btn-sm inline-flex items-center" href="/">← 返回</a>
       </div>
     </div>
   </header>
 
-  <div id="settings-toast" class="fixed top-4 right-4 z-50 hidden rounded border px-4 py-2 text-sm shadow-lg"></div>
+  <div id="settings-toast" class="fixed top-4 right-4 z-50 hidden rounded border px-4 py-2 text-sm shadow-lg settings-toast"></div>
 
   <div class="page-shell page-content settings-content">
-
-    <form id="settings-form" method="post" action="/settings" class="section-stack">
-      <div class="card p-4">
-        <div class="text-sm font-bold text-slate-700 flex items-center gap-2">
-          <span
-            class="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-cyan-500 flex items-center justify-center text-white text-xs">🔍</span>
-          检查默认参数
+    <section class="panel-card panel-card--compact settings-overview" data-testid="settings-overview-card">
+      <div class="panel-header settings-overview__header">
+        <div>
+          <div class="panel-title">
+            <span class="settings-card-icon settings-card-icon--indigo" aria-hidden="true">🧭</span>
+            <span>运行与集成设置</span>
+          </div>
+          <p class="panel-description">设置页已经统一到共享设计系统，桌面端采用多分区工作台，移动端自动回退为单列顺序布局，便于快速保存和诊断。</p>
         </div>
-        <div class="mt-3 grid grid-cols-2 gap-3">
-          <label class="block">
-            <div class="text-xs text-slate-600">默认重试次数</div>
-            <input name="check_retries" value="<%= curCheckRetries %>"
-              class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+        <div class="settings-badge-row" aria-hidden="true">
+          <span class="status-badge status-badge--info">Web UI</span>
+          <span class="status-badge status-badge--muted">API 合同保持兼容</span>
+        </div>
+      </div>
+
+      <div class="settings-summary-grid">
+        <article class="settings-summary-card" data-testid="settings-summary-runtime">
+          <div class="settings-summary-card__label">即时生效</div>
+          <div class="settings-summary-card__value">检查默认值 · AI Provider</div>
+          <div class="settings-summary-card__meta">保存后即可继续用于主页检查弹窗、AI 测试连接与日常管理流程。</div>
+        </article>
+        <article class="settings-summary-card" data-testid="settings-summary-restart">
+          <div class="settings-summary-card__label">重启后生效</div>
+          <div class="settings-summary-card__value">备份与定期检查调度</div>
+          <div class="settings-summary-card__meta">涉及启动期创建的定时器；修改后请按需重启服务。</div>
+        </article>
+        <article class="settings-summary-card" data-testid="settings-summary-env">
+          <div class="settings-summary-card__label">同步目标</div>
+          <div class="settings-summary-card__value">.env 与运行时数据库</div>
+          <div class="settings-summary-card__meta">env 路径：<span class="settings-code-inline"><%- envFilePath %></span></div>
+        </article>
+      </div>
+    </section>
+
+    <div class="settings-layout">
+      <form id="settings-form" method="post" action="/settings" class="section-stack settings-main-column" data-testid="settings-form-shell">
+        <section class="panel-card settings-section-card" data-testid="settings-check-card">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <span class="settings-card-icon settings-card-icon--blue" aria-hidden="true">🔍</span>
+                <span>检查默认参数</span>
+              </div>
+              <p class="panel-description">用于主页检查弹窗默认值、导入后自动检查参数，以及未显式传参的检查接口。</p>
+            </div>
+            <div class="settings-badge-row">
+              <span class="status-badge status-badge--success">保存后即时生效</span>
+            </div>
+          </div>
+
+          <div class="settings-field-grid settings-field-grid--two">
+            <label class="form-field">
+              <span class="form-label">默认重试次数</span>
+              <input name="check_retries" value="<%= curCheckRetries %>" class="form-control" inputmode="numeric" />
+              <span class="form-hint">推荐用于网络波动场景；保存后会立即影响后续检查请求。</span>
+            </label>
+            <label class="form-field">
+              <span class="form-label">默认重试间隔（ms）</span>
+              <input name="check_retry_delay_ms" value="<%= curCheckRetryDelayMs %>" class="form-control" inputmode="numeric" />
+              <span class="form-hint">用于控制重试节奏，兼容现有检查接口与导入后的自动检查流程。</span>
+            </label>
+          </div>
+
+          <div class="surface-muted settings-note-stack">
+            <div>这些默认值会用于：主页检查弹窗默认选项、导入后自动检查的重试参数、以及未显式传参的检查接口。</div>
+            <div>保存后即时生效，并同步写入 <span class="settings-code-inline">.env</span>（<span class="settings-code-inline"><%- envFilePath %></span>）供下次启动使用。</div>
+          </div>
+
+          <%- checkEnvOverride ? `<div class="settings-inline-alert settings-inline-alert--warning">提示：检测到已配置 CHECK_* 环境变量，本次保存会覆盖数据库默认值并立即生效；环境变量仅作为启动时的初始值。</div>` : '' %>
+        </section>
+
+        <section class="panel-card settings-section-card" data-testid="settings-backup-card">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <span class="settings-card-icon settings-card-icon--amber" aria-hidden="true">💾</span>
+                <span>备份参数</span>
+              </div>
+              <p class="panel-description">控制定时备份开关、频率与保留份数，适合与部署侧的回滚策略配合使用。</p>
+            </div>
+            <div class="settings-badge-row">
+              <span class="status-badge status-badge--muted">修改后需重启</span>
+            </div>
+          </div>
+
+          <div class="settings-field-grid settings-field-grid--three">
+            <label class="form-field">
+              <span class="form-label">启用备份</span>
+              <select name="backup_enabled" class="form-control">
+                <option value="0" <%- curBackupEnabled ? '' : 'selected' %>>关闭</option>
+                <option value="1" <%- curBackupEnabled ? 'selected' : '' %>>开启</option>
+              </select>
+              <span class="form-hint">保持现有备份任务契约与目录结构不变。</span>
+            </label>
+            <label class="form-field">
+              <span class="form-label">间隔（分钟）</span>
+              <input name="backup_interval_minutes" value="<%= curBackupIntervalMinutes %>" class="form-control" inputmode="numeric" />
+              <span class="form-hint">定时器在启动时创建；建议根据部署资源调整频率。</span>
+            </label>
+            <label class="form-field">
+              <span class="form-label">保留份数</span>
+              <input name="backup_retention" value="<%= curBackupRetention %>" class="form-control" inputmode="numeric" />
+              <span class="form-hint">控制自动清理时保留的备份数量。</span>
+            </label>
+          </div>
+
+          <div class="surface-muted settings-note-stack">
+            <div>备份文件默认写入 <span class="settings-code-inline"><%- backupDir %></span>，与现有还原流程保持兼容。</div>
+            <div>修改后需重启生效，因为定时器会在应用启动时初始化。</div>
+          </div>
+
+          <%- backupEnvOverride ? `<div class="settings-inline-alert settings-inline-alert--warning">提示：检测到已配置 BACKUP_* 环境变量，运行时将以环境变量为准。</div>` : '' %>
+        </section>
+
+        <section class="panel-card settings-section-card" data-testid="settings-periodic-card">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <span class="settings-card-icon settings-card-icon--emerald" aria-hidden="true">🔄</span>
+                <span>定期检查</span>
+              </div>
+              <p class="panel-description">通过固定周期在后台自动检查全部书签有效性，适合低频全量巡检。</p>
+            </div>
+            <div class="settings-badge-row">
+              <span class="status-badge status-badge--muted">调度参数</span>
+            </div>
+          </div>
+
+          <div class="settings-field-grid settings-field-grid--three">
+            <label class="form-field">
+              <span class="form-label">启用定期检查</span>
+              <select name="periodic_check_enabled" class="form-control">
+                <option value="0" <%- curPeriodicCheckEnabled ? '' : 'selected' %>>关闭</option>
+                <option value="1" <%- curPeriodicCheckEnabled ? 'selected' : '' %>>开启</option>
+              </select>
+              <span class="form-hint">继续复用现有调度行为，不改变任务类型与结果语义。</span>
+            </label>
+            <label class="form-field">
+              <span class="form-label">检查周期</span>
+              <select name="periodic_check_schedule" class="form-control">
+                <option value="weekly" <%- curPeriodicCheckSchedule==='weekly' ? 'selected' : '' %>>每周（周一）</option>
+                <option value="monthly" <%- curPeriodicCheckSchedule==='monthly' ? 'selected' : '' %>>每月（1号）</option>
+              </select>
+              <span class="form-hint">适合按周或按月做全量体检；保存后不会改变已有历史任务。</span>
+            </label>
+            <label class="form-field">
+              <span class="form-label">执行时间</span>
+              <select name="periodic_check_hour" class="form-control">
+                <option value="2" <%- curPeriodicCheckHour===2 ? 'selected' : '' %>>凌晨2点</option>
+                <option value="3" <%- curPeriodicCheckHour===3 ? 'selected' : '' %>>凌晨3点</option>
+                <option value="4" <%- curPeriodicCheckHour===4 ? 'selected' : '' %>>凌晨4点</option>
+                <option value="5" <%- curPeriodicCheckHour===5 ? 'selected' : '' %>>凌晨5点</option>
+              </select>
+              <span class="form-hint">开启后系统会在指定时间自动检查全部书签，修改后需重启生效。</span>
+            </label>
+          </div>
+        </section>
+
+        <section class="panel-card settings-section-card" data-testid="settings-ai-card">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <span class="settings-card-icon settings-card-icon--purple" aria-hidden="true">🤖</span>
+                <span>AI 自动分类（OpenAI 兼容）</span>
+              </div>
+              <p class="panel-description">保持现有 <span class="settings-code-inline">/api/ai/*</span> 契约不变，同时提供更清晰的 Provider 配置、预设填充与诊断反馈。</p>
+            </div>
+            <div class="panel-actions settings-ai-actions">
+              <label class="form-field settings-inline-select">
+                <span class="form-label">快捷预设</span>
+                <select id="ai-preset-select" class="form-control settings-preset-select">
+                  <option value="">— 快捷预设 —</option>
+                  <option value="grok">Grok (grok2api)</option>
+                  <option value="openai">OpenAI</option>
+                </select>
+              </label>
+              <button id="ai-test-btn" data-testid="ai-test-btn" type="button" class="btn-secondary btn-sm">测试连接</button>
+            </div>
+          </div>
+
+          <div class="settings-field-grid settings-field-grid--two">
+            <label class="form-field settings-field-span-2">
+              <span class="form-label">Base URL</span>
+              <input data-testid="ai-base-url-input" name="ai_base_url" value="<%- aiBaseUrl %>"
+                placeholder="例如 https://api.openai.com/v1 或 https://grok2api.1018666.xyz/v1" class="form-control" />
+              <span class="form-hint">保持与现有 AI 测试连接、分类建议与 organize 流程相同的 Base URL 语义。</span>
+            </label>
+            <label class="form-field settings-field-span-2">
+              <span class="form-label">API Key</span>
+              <input data-testid="ai-api-key-input" name="ai_api_key" value="<%- aiApiKey %>" type="password" class="form-control" autocomplete="off" />
+              <span class="form-hint">仅在运行时使用，不写入文档与 Git 记录；保存时沿用既有后端字段名。</span>
+            </label>
+            <label class="form-field">
+              <span class="form-label">Model</span>
+              <input data-testid="ai-model-input" name="ai_model" value="<%- aiModel %>" placeholder="例如 gpt-4o-mini 或 grok-4" class="form-control" />
+              <span class="form-hint">保留当前模型字段名与诊断脚本依赖的输入钩子。</span>
+            </label>
+            <label class="form-field">
+              <span class="form-label">AI 批处理大小</span>
+              <input id="ai-batch-size-input" data-testid="ai-batch-size-input" name="ai_batch_size" value="<%- aiBatchSize %>" class="form-control" inputmode="numeric" />
+              <span class="form-hint">当前支持的有效值会由后端自动归一化；默认值为 <span class="settings-code-inline"><%- defaultAiBatchSize %></span>。</span>
+            </label>
+          </div>
+
+          <div id="ai-test-result" data-testid="ai-test-result" class="settings-ai-result mt-4 hidden rounded-2xl border p-4">
+            <div class="flex items-center justify-between gap-2">
+              <div id="ai-test-result-title" data-testid="ai-test-result-title" class="text-sm font-semibold text-slate-700"></div>
+              <div id="ai-test-result-badge" data-testid="ai-test-result-badge" class="rounded border px-2 py-1 text-xs"></div>
+            </div>
+            <div id="ai-test-result-message" data-testid="ai-test-result-message" class="mt-2 text-xs text-slate-600"></div>
+            <div id="ai-test-result-details" data-testid="ai-test-result-details" class="mt-2 hidden text-xs text-slate-600"></div>
+          </div>
+
+          <div class="surface-muted settings-note-stack">
+            <div>配置后可调用 <span class="settings-code-inline">/api/ai/classify</span> 获取分类建议，并继续用于 AI organize 等功能。</div>
+            <div>页面内诊断结果会保留既有测试断言与浏览器回放依赖的 <span class="settings-code-inline">data-testid</span>。</div>
+          </div>
+        </section>
+
+        <div class="panel-card panel-card--compact settings-submit-row" data-testid="settings-actions-card">
+          <div class="settings-submit-row__meta">
+            <div class="settings-submit-row__title">保存策略</div>
+            <div class="settings-submit-row__description">恢复默认设置只会重置检查 / 备份 / 定期检查与 AI 批处理大小；AI Provider 凭据会保留。</div>
+          </div>
+          <div class="panel-actions settings-submit-row__actions">
+            <button id="settings-reset" type="button" class="btn-secondary btn-sm">恢复默认设置</button>
+            <button id="settings-save" type="submit" class="btn-primary">保存设置</button>
+          </div>
+        </div>
+      </form>
+
+      <aside class="section-stack settings-side-column" data-testid="settings-side-column">
+        <section class="panel-card settings-section-card" data-testid="settings-security-card">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <span class="settings-card-icon settings-card-icon--slate" aria-hidden="true">🔐</span>
+                <span>账号安全</span>
+              </div>
+              <p class="panel-description">继续复用现有 <span class="settings-code-inline">/api/change-password</span> 路径；仅优化布局、输入反馈与按钮层级。</p>
+            </div>
+          </div>
+
+          <div class="section-stack settings-side-stack">
+            <label class="form-field">
+              <span class="form-label">原密码</span>
+              <input id="old-password" type="password" class="form-control" autocomplete="current-password" />
+            </label>
+            <label class="form-field">
+              <span class="form-label">新密码（至少 6 位）</span>
+              <input id="new-password" type="password" class="form-control" autocomplete="new-password" />
+            </label>
+            <label class="form-field">
+              <span class="form-label">确认新密码</span>
+              <input id="confirm-password" type="password" class="form-control" autocomplete="new-password" />
+            </label>
+            <button id="change-password-btn" type="button" class="btn-primary">修改密码</button>
+          </div>
+
+          <div class="surface-muted settings-note-stack">
+            <div>密码错误 10 次后账号将被锁定 15 分钟。</div>
+            <div>修改成功后会自动清空输入框，避免凭据停留在页面上。</div>
+          </div>
+        </section>
+
+        <section class="panel-card settings-section-card" data-testid="settings-token-card">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <span class="settings-card-icon settings-card-icon--rose" aria-hidden="true">🪪</span>
+                <span>API Tokens</span>
+              </div>
+              <p class="panel-description">供浏览器扩展与第三方应用访问 API 使用；创建后仅显示一次，请立即复制保存。</p>
+            </div>
+            <div class="panel-actions">
+              <button id="create-token-btn" type="button" class="btn-secondary btn-sm">创建 Token</button>
+            </div>
+          </div>
+
+          <div id="token-list" class="settings-token-list" data-testid="settings-token-list">
+            <div class="settings-empty-state">加载中...</div>
+          </div>
+
+          <div id="new-token-display" class="settings-token-display mt-4 hidden rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <div class="text-xs font-semibold text-emerald-700">新 Token 已创建（仅显示一次）</div>
+            <div class="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center">
+              <input id="new-token-value" type="text" readonly class="form-control flex-1 font-mono text-xs" />
+              <button id="copy-token-btn" type="button" class="btn-secondary btn-sm">复制</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card settings-section-card" data-testid="settings-system-card">
+          <div class="panel-header">
+            <div>
+              <div class="panel-title">
+                <span class="settings-card-icon settings-card-icon--teal" aria-hidden="true">🗂️</span>
+                <span>系统信息</span>
+              </div>
+              <p class="panel-description">展示当前数据与备份目录，便于排查部署与文件路径问题。</p>
+            </div>
+          </div>
+
+          <div class="table-shell overflow-hidden settings-system-table">
+            <div class="table-scroll">
+              <table class="w-full table-fixed">
+                <thead>
+                  <tr>
+                    <th class="w-[35%] px-3 py-2 text-left text-xs font-semibold text-slate-600">Key</th>
+                    <th class="w-[65%] px-3 py-2 text-left text-xs font-semibold text-slate-600">Value</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y">
+                  <tr>
+                    <td class="px-3 py-2 font-mono text-xs text-slate-700">DB_PATH</td>
+                    <td class="px-3 py-2 font-mono text-xs text-slate-700"><%- dbPath %></td>
+                  </tr>
+                  <tr>
+                    <td class="px-3 py-2 font-mono text-xs text-slate-700">BACKUP_DIR</td>
+                    <td class="px-3 py-2 font-mono text-xs text-slate-700"><%- backupDir %></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+
+    <div id="create-token-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50 p-4">
+      <div class="settings-modal-panel" role="dialog" aria-modal="true" aria-labelledby="create-token-title">
+        <div class="panel-header settings-modal-panel__header">
+          <div>
+            <div id="create-token-title" class="panel-title">
+              <span class="settings-card-icon settings-card-icon--rose" aria-hidden="true">🪪</span>
+              <span>创建 API Token</span>
+            </div>
+            <p class="panel-description">沿用现有 Token 创建接口，只优化弹窗壳体、输入反馈与按钮层级。</p>
+          </div>
+        </div>
+        <div class="section-stack settings-modal-body">
+          <label class="form-field">
+            <span class="form-label">Token 名称</span>
+            <input id="token-name" type="text" placeholder="例如：浏览器扩展" class="form-control" />
+            <div id="token-name-error" class="text-xs text-rose-600 hidden">请输入 Token 名称</div>
           </label>
-          <label class="block">
-            <div class="text-xs text-slate-600">默认重试间隔(ms)</div>
-            <input name="check_retry_delay_ms" value="<%= curCheckRetryDelayMs %>"
-              class="mt-1 w-full rounded border px-3 py-2 text-sm" />
+          <label class="form-field">
+            <span class="form-label">有效期</span>
+            <select id="token-expires" class="form-control">
+              <option value="">永不过期</option>
+              <option value="7">7 天</option>
+              <option value="30">30 天</option>
+              <option value="90">90 天</option>
+              <option value="365">1 年</option>
+            </select>
+            <span class="form-hint">仅调整过期时间，不改变 Token 访问范围与权限模型。</span>
           </label>
         </div>
-        <div class="mt-3 text-xs text-slate-500">这些默认值会用于：主页检查弹窗默认选项、导入后自动检查的重试参数、以及未显式传参的检查接口。</div>
-        <div class="mt-1 text-xs text-slate-500">保存后即时生效，并同步写入 .env（<%- envFilePath %>）供下次启动使用。</div>
-        <%- checkEnvOverride ? `<div class="mt-1 text-xs text-amber-600">提示：检测到已配置 CHECK_*
-          环境变量，本次保存会覆盖数据库默认值并立即生效；环境变量仅作为启动时的初始值。
-      </div>` : '' %>
-  </div>
-
-  <div class="card p-4">
-    <div class="text-sm font-bold text-slate-700 flex items-center gap-2">
-      <span
-        class="w-6 h-6 rounded-md bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center text-white text-xs">💾</span>
-      备份参数
-    </div>
-    <div class="mt-3 grid grid-cols-3 gap-3">
-      <label class="block col-span-1">
-        <div class="text-xs text-slate-600">启用备份</div>
-        <select name="backup_enabled" class="mt-1 w-full rounded border px-3 py-2 text-sm">
-          <option value="0" <%- curBackupEnabled ? '' : 'selected' %>>关闭</option>
-          <option value="1" <%- curBackupEnabled ? 'selected' : '' %>>开启</option>
-        </select>
-      </label>
-      <label class="block col-span-1">
-        <div class="text-xs text-slate-600">间隔(分钟)</div>
-        <input name="backup_interval_minutes" value="<%= curBackupIntervalMinutes %>"
-          class="mt-1 w-full rounded border px-3 py-2 text-sm" />
-      </label>
-      <label class="block col-span-1">
-        <div class="text-xs text-slate-600">保留份数</div>
-        <input name="backup_retention" value="<%= curBackupRetention %>"
-          class="mt-1 w-full rounded border px-3 py-2 text-sm" />
-      </label>
-    </div>
-    <div class="mt-3 text-xs text-slate-500">修改后需重启生效（定时器在启动时创建）。</div>
-    <%- backupEnvOverride ? `<div class="mt-1 text-xs text-amber-600">提示：检测到已配置 BACKUP_* 环境变量，运行时将以环境变量为准。
-  </div>` : '' %>
-  </div>
-
-  <div class="card p-4">
-    <div class="text-sm font-bold text-slate-700 flex items-center gap-2">
-      <span
-        class="w-6 h-6 rounded-md bg-gradient-to-br from-emerald-500 to-teal-500 flex items-center justify-center text-white text-xs">🔄</span>
-      定期检查
-    </div>
-    <div class="mt-3 grid grid-cols-3 gap-3">
-      <label class="block">
-        <div class="text-xs text-slate-600">启用定期检查</div>
-        <select name="periodic_check_enabled" class="mt-1 w-full rounded border px-3 py-2 text-sm">
-          <option value="0" <%- curPeriodicCheckEnabled ? '' : 'selected' %>>关闭</option>
-          <option value="1" <%- curPeriodicCheckEnabled ? 'selected' : '' %>>开启</option>
-        </select>
-      </label>
-      <label class="block">
-        <div class="text-xs text-slate-600">检查周期</div>
-        <select name="periodic_check_schedule" class="mt-1 w-full rounded border px-3 py-2 text-sm">
-          <option value="weekly" <%- curPeriodicCheckSchedule==='weekly' ? 'selected' : '' %>>每周（周一）</option>
-          <option value="monthly" <%- curPeriodicCheckSchedule==='monthly' ? 'selected' : '' %>>每月（1号）</option>
-        </select>
-      </label>
-      <label class="block">
-        <div class="text-xs text-slate-600">执行时间</div>
-        <select name="periodic_check_hour" class="mt-1 w-full rounded border px-3 py-2 text-sm">
-          <option value="2" <%- curPeriodicCheckHour===2 ? 'selected' : '' %>>凌晨2点</option>
-          <option value="3" <%- curPeriodicCheckHour===3 ? 'selected' : '' %>>凌晨3点</option>
-          <option value="4" <%- curPeriodicCheckHour===4 ? 'selected' : '' %>>凌晨4点</option>
-          <option value="5" <%- curPeriodicCheckHour===5 ? 'selected' : '' %>>凌晨5点</option>
-        </select>
-      </label>
-    </div>
-    <div class="mt-3 text-xs text-slate-500">开启后系统会在指定时间自动检查所有书签的有效性。修改后需重启生效。</div>
-  </div>
-
-  <div class="card p-4">
-    <div class="flex items-center justify-between">
-      <div class="text-sm font-bold text-slate-700 flex items-center gap-2">
-        <span
-          class="w-6 h-6 rounded-md bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-xs">🤖</span>
-        AI 自动分类（OpenAI 兼容）
-      </div>
-      <div class="flex items-center gap-2">
-        <select id="ai-preset-select" class="rounded border px-2 py-1 text-xs">
-          <option value="">— 快捷预设 —</option>
-          <option value="grok">Grok (grok2api)</option>
-          <option value="openai">OpenAI</option>
-        </select>
-        <button id="ai-test-btn" data-testid="ai-test-btn" type="button" class="btn-secondary btn-sm">测试连接</button>
-      </div>
-    </div>
-    <div class="mt-3 space-y-3">
-      <label class="block">
-        <div class="text-xs text-slate-600">Base URL</div>
-        <input data-testid="ai-base-url-input" name="ai_base_url" value="<%- aiBaseUrl %>"
-          placeholder="例如 https://api.openai.com/v1 或 https://grok2api.1018666.xyz/v1"
-          class="mt-1 w-full rounded border px-3 py-2 text-sm" />
-      </label>
-      <label class="block">
-        <div class="text-xs text-slate-600">API Key</div>
-        <input data-testid="ai-api-key-input" name="ai_api_key" value="<%- aiApiKey %>" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
-      </label>
-      <label class="block">
-        <div class="text-xs text-slate-600">Model</div>
-        <input data-testid="ai-model-input" name="ai_model" value="<%- aiModel %>" placeholder="例如 gpt-4o-mini 或 grok-4"
-          class="mt-1 w-full rounded border px-3 py-2 text-sm" />
-      </label>
-    </div>
-    <div id="ai-test-result" data-testid="ai-test-result" class="mt-3 hidden rounded border p-3">
-      <div class="flex items-center justify-between gap-2">
-        <div id="ai-test-result-title" data-testid="ai-test-result-title" class="text-sm font-semibold text-slate-700"></div>
-        <div id="ai-test-result-badge" data-testid="ai-test-result-badge" class="rounded border px-2 py-1 text-xs"></div>
-      </div>
-      <div id="ai-test-result-message" data-testid="ai-test-result-message" class="mt-2 text-xs text-slate-600"></div>
-      <div id="ai-test-result-details" data-testid="ai-test-result-details" class="mt-2 hidden text-xs text-slate-600"></div>
-    </div>
-    <div class="mt-3 text-xs text-slate-500">配置后可调用 /api/ai/classify 获取分类建议（先输出分类路径）。</div>
-  </div>
-
-  <div class="flex items-center justify-between gap-2">
-    <button id="settings-reset" type="button" class="btn-danger btn-sm">恢复默认设置</button>
-    <button id="settings-save" type="submit" class="btn-primary">保存</button>
-  </div>
-  </form>
-
-  <div class="mt-2 rounded-lg border bg-white p-3 shadow-sm">
-    <div class="text-sm font-semibold text-slate-700">账号安全</div>
-    <div class="mt-3 space-y-3">
-      <label class="block">
-        <div class="text-xs text-slate-600">原密码</div>
-        <input id="old-password" type="password" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
-      </label>
-      <label class="block">
-        <div class="text-xs text-slate-600">新密码（至少6位）</div>
-        <input id="new-password" type="password" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
-      </label>
-      <label class="block">
-        <div class="text-xs text-slate-600">确认新密码</div>
-        <input id="confirm-password" type="password" class="mt-1 w-full rounded border px-3 py-2 text-sm" />
-      </label>
-      <button id="change-password-btn" type="button"
-        class="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">修改密码</button>
-    </div>
-    <div class="mt-3 text-xs text-slate-500">密码错误10次后账号将被锁定15分钟。</div>
-  </div>
-
-  <div class="mt-2 rounded-lg border bg-white p-3 shadow-sm">
-    <div class="flex items-center justify-between">
-      <div class="text-sm font-semibold text-slate-700">API Tokens</div>
-      <button id="create-token-btn" type="button" class="rounded border px-3 py-1 text-xs hover:bg-slate-50">创建
-        Token</button>
-    </div>
-    <div class="mt-3 text-xs text-slate-500">API Tokens 用于浏览器扩展或第三方应用访问 API。Token 只在创建时显示一次，请妥善保存。</div>
-    <div id="token-list" class="mt-3">
-      <div class="text-xs text-slate-400">加载中...</div>
-    </div>
-    <div id="new-token-display" class="mt-3 hidden rounded border border-emerald-200 bg-emerald-50 p-3">
-      <div class="text-xs font-semibold text-emerald-700">新 Token 已创建（仅显示一次）：</div>
-      <div class="mt-2 flex items-center gap-2">
-        <input id="new-token-value" type="text" readonly
-          class="flex-1 rounded border bg-white px-3 py-2 font-mono text-xs" />
-        <button id="copy-token-btn" type="button" class="rounded border px-3 py-2 text-xs hover:bg-white">复制</button>
+        <div class="panel-actions settings-modal-actions">
+          <button id="cancel-token-btn" type="button" class="btn-secondary">取消</button>
+          <button id="confirm-token-btn" type="button" class="btn-primary">创建</button>
+        </div>
       </div>
     </div>
   </div>
-
-  <div id="create-token-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
-    <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
-      <div class="text-sm font-semibold text-slate-700">创建 API Token</div>
-      <div class="mt-3 space-y-3">
-        <label class="block">
-          <div class="text-xs text-slate-600">Token 名称</div>
-          <input id="token-name" type="text" placeholder="例如：浏览器扩展"
-            class="mt-1 w-full rounded border px-3 py-2 text-sm" />
-          <div id="token-name-error" class="mt-1 text-xs text-rose-600 hidden">请输入 Token 名称</div>
-        </label>
-        <label class="block">
-          <div class="text-xs text-slate-600">有效期</div>
-          <select id="token-expires" class="mt-1 w-full rounded border px-3 py-2 text-sm">
-            <option value="">永不过期</option>
-            <option value="7">7 天</option>
-            <option value="30">30 天</option>
-            <option value="90">90 天</option>
-            <option value="365">1 年</option>
-          </select>
-        </label>
-      </div>
-      <div class="mt-4 flex justify-end gap-2">
-        <button id="cancel-token-btn" type="button"
-          class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
-        <button id="confirm-token-btn" type="button"
-          class="rounded bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">创建</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="mt-2 rounded-lg border bg-white p-3 shadow-sm">
-    <div class="text-sm font-semibold text-slate-700">系统信息</div>
-    <div class="mt-2 overflow-hidden rounded border">
-      <table class="w-full table-fixed">
-        <thead class="bg-slate-50">
-          <tr>
-            <th class="w-[35%] px-3 py-2 text-left text-xs font-semibold text-slate-600">Key</th>
-            <th class="w-[65%] px-3 py-2 text-left text-xs font-semibold text-slate-600">Value</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y">
-          <tr>
-            <td class="px-3 py-2 font-mono text-xs text-slate-700">DB_PATH</td>
-            <td class="px-3 py-2 font-mono text-xs text-slate-700"><%- dbPath %></td>
-          </tr>
-          <tr>
-            <td class="px-3 py-2 font-mono text-xs text-slate-700">BACKUP_DIR</td>
-            <td class="px-3 py-2 font-mono text-xs text-slate-700"><%- backupDir %></td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-  </div>
-
   <script>
     (function () {
       var form = document.getElementById('settings-form');
@@ -286,6 +414,17 @@
       var aiTestResultBadge = document.getElementById('ai-test-result-badge');
       var aiTestResultMessage = document.getElementById('ai-test-result-message');
       var aiTestResultDetails = document.getElementById('ai-test-result-details');
+      var settingsDefaults = <%- JSON.stringify({
+        check_retries: String(defaultCheckRetries),
+        check_retry_delay_ms: String(defaultCheckRetryDelayMs),
+        backup_enabled: defaultBackupEnabled ? '1' : '0',
+        backup_interval_minutes: String(defaultBackupIntervalMinutes),
+        backup_retention: String(defaultBackupRetention),
+        periodic_check_enabled: defaultPeriodicCheckEnabled ? '1' : '0',
+        periodic_check_schedule: defaultPeriodicCheckSchedule,
+        periodic_check_hour: String(defaultPeriodicCheckHour),
+        ai_batch_size: defaultAiBatchSize,
+      }) %>;
 
       function showToast(msg, type) {
         if (!toast) return;
@@ -382,6 +521,41 @@
         entries.forEach(pushAiDiagnosticLine);
       }
 
+      function setFieldValue(name, value) {
+        if (!form || value == null) return;
+        var field = form.querySelector('[name="' + name + '"]');
+        if (!field) return;
+        field.value = String(value);
+      }
+
+      function applySavedSettings(saved) {
+        if (!saved || typeof saved !== 'object') return;
+        if (saved.check_retries != null) setFieldValue('check_retries', saved.check_retries);
+        if (saved.check_retry_delay_ms != null) setFieldValue('check_retry_delay_ms', saved.check_retry_delay_ms);
+        if (saved.backup_enabled != null) setFieldValue('backup_enabled', saved.backup_enabled ? '1' : '0');
+        if (saved.backup_interval_minutes != null) setFieldValue('backup_interval_minutes', saved.backup_interval_minutes);
+        if (saved.backup_retention != null) setFieldValue('backup_retention', saved.backup_retention);
+        if (saved.periodic_check_enabled != null) setFieldValue('periodic_check_enabled', saved.periodic_check_enabled ? '1' : '0');
+        if (saved.periodic_check_schedule != null) setFieldValue('periodic_check_schedule', saved.periodic_check_schedule);
+        if (saved.periodic_check_hour != null) setFieldValue('periodic_check_hour', saved.periodic_check_hour);
+        if (saved.ai_base_url != null) setFieldValue('ai_base_url', saved.ai_base_url);
+        if (saved.ai_model != null) setFieldValue('ai_model', saved.ai_model);
+        if (saved.ai_batch_size != null) setFieldValue('ai_batch_size', saved.ai_batch_size);
+      }
+
+      function applyDefaultSettings(defaults) {
+        if (!defaults || typeof defaults !== 'object') return;
+        setFieldValue('check_retries', defaults.check_retries);
+        setFieldValue('check_retry_delay_ms', defaults.check_retry_delay_ms);
+        setFieldValue('backup_enabled', defaults.backup_enabled);
+        setFieldValue('backup_interval_minutes', defaults.backup_interval_minutes);
+        setFieldValue('backup_retention', defaults.backup_retention);
+        setFieldValue('periodic_check_enabled', defaults.periodic_check_enabled);
+        setFieldValue('periodic_check_schedule', defaults.periodic_check_schedule);
+        setFieldValue('periodic_check_hour', defaults.periodic_check_hour);
+        setFieldValue('ai_batch_size', defaults.ai_batch_size);
+      }
+
       if (!form) return;
       form.addEventListener('submit', async function (e) {
         e.preventDefault();
@@ -405,37 +579,7 @@
           var data = await res.json().catch(function () { return null; });
           if (res.ok) {
             try {
-              var saved = data && data.saved ? data.saved : null;
-              if (saved) {
-                if (saved.check_retries != null) {
-                  var el1 = form.querySelector('input[name="check_retries"]');
-                  if (el1) el1.value = String(saved.check_retries);
-                }
-                if (saved.check_retry_delay_ms != null) {
-                  var el2 = form.querySelector('input[name="check_retry_delay_ms"]');
-                  if (el2) el2.value = String(saved.check_retry_delay_ms);
-                }
-                if (saved.backup_enabled != null) {
-                  var el3 = form.querySelector('select[name="backup_enabled"]');
-                  if (el3) el3.value = saved.backup_enabled ? '1' : '0';
-                }
-                if (saved.backup_interval_minutes != null) {
-                  var el4 = form.querySelector('input[name="backup_interval_minutes"]');
-                  if (el4) el4.value = String(saved.backup_interval_minutes);
-                }
-                if (saved.backup_retention != null) {
-                  var el5 = form.querySelector('input[name="backup_retention"]');
-                  if (el5) el5.value = String(saved.backup_retention);
-                }
-                if (saved.ai_base_url != null) {
-                  var el6 = form.querySelector('input[name="ai_base_url"]');
-                  if (el6) el6.value = String(saved.ai_base_url);
-                }
-                if (saved.ai_model != null) {
-                  var el7 = form.querySelector('input[name="ai_model"]');
-                  if (el7) el7.value = String(saved.ai_model);
-                }
-              }
+              applySavedSettings(data && data.saved ? data.saved : null);
             } catch { }
             try {
               var env = data && data.env ? data.env : null;
@@ -465,7 +609,7 @@
       var resetBtn = document.getElementById('settings-reset');
       if (resetBtn) {
         resetBtn.addEventListener('click', async function () {
-          if (!await AppDialog.confirm('确定要恢复默认设置吗？这将清空 AI 配置并重置所有参数为默认值。')) return;
+          if (!await AppDialog.confirm('确定要恢复默认设置吗？这会重置检查、备份、定期检查与 AI 批处理大小，AI Provider 凭据会保留。')) return;
           resetBtn.disabled = true;
           resetBtn.classList.add('opacity-60');
           try {
@@ -474,25 +618,11 @@
               headers: { 'Accept': 'application/json' }
             });
             var data = await res.json().catch(function () { return null; });
-            if (res.ok && data && data.defaults) {
-              var d = data.defaults;
-              var el1 = form.querySelector('input[name="check_retries"]');
-              if (el1) el1.value = d.check_retries || '2';
-              var el2 = form.querySelector('input[name="check_retry_delay_ms"]');
-              if (el2) el2.value = d.check_retry_delay_ms || '1000';
-              var el3 = form.querySelector('select[name="backup_enabled"]');
-              if (el3) el3.value = d.backup_enabled === '1' ? '1' : '0';
-              var el4 = form.querySelector('input[name="backup_interval_minutes"]');
-              if (el4) el4.value = d.backup_interval_minutes || '60';
-              var el5 = form.querySelector('input[name="backup_retention"]');
-              if (el5) el5.value = d.backup_retention || '7';
-              var el6 = form.querySelector('input[name="ai_base_url"]');
-              if (el6) el6.value = d.ai_base_url || '';
-              var el7 = form.querySelector('input[name="ai_api_key"]');
-              if (el7) el7.value = d.ai_api_key || '';
-              var el8 = form.querySelector('input[name="ai_model"]');
-              if (el8) el8.value = d.ai_model || '';
-              showToast('已恢复默认设置', 'success');
+            if (res.ok && data && data.success) {
+              applyDefaultSettings(settingsDefaults);
+              resetAiTestResult();
+              if (aiPresetSelect) aiPresetSelect.value = '';
+              showToast('已恢复默认设置（AI Provider 凭据已保留）', 'success');
             } else {
               showToast((data && data.error) ? data.error : '重置失败', 'error');
             }
@@ -651,7 +781,7 @@
           var res = await fetch('/api/tokens');
           var data = await res.json();
           if (data.tokens && data.tokens.length > 0) {
-            var html = '<div class="overflow-hidden rounded border"><table class="w-full"><thead class="bg-slate-50"><tr>';
+            var html = '<div class="table-shell settings-token-table overflow-hidden"><div class="table-scroll"><table class="w-full"><thead><tr>';
             html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">名称</th>';
             html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">Token</th>';
             html += '<th class="px-3 py-2 text-left text-xs font-semibold text-slate-600">创建时间</th>';
@@ -662,16 +792,16 @@
             for (var i = 0; i < data.tokens.length; i++) {
               var t = data.tokens[i];
               var isExpired = t.expires_at && new Date(t.expires_at) < new Date();
-              html += '<tr class="' + (isExpired ? 'bg-rose-50' : '') + '">';
+              html += '<tr class="' + (isExpired ? 'settings-token-row settings-token-row--expired' : 'settings-token-row') + '">';
               html += '<td class="px-3 py-2 text-xs text-slate-700">' + t.name + '</td>';
               html += '<td class="px-3 py-2 font-mono text-xs text-slate-500">' + t.token_prefix + '</td>';
               html += '<td class="px-3 py-2 text-xs text-slate-500">' + formatDate(t.created_at) + '</td>';
               html += '<td class="px-3 py-2 text-xs text-slate-500">' + formatDate(t.last_used_at) + '</td>';
               html += '<td class="px-3 py-2 text-xs ' + (isExpired ? 'text-rose-600' : 'text-slate-500') + '">' + (t.expires_at ? formatDate(t.expires_at) + (isExpired ? ' (已过期)' : '') : '永不过期') + '</td>';
-              html += '<td class="px-3 py-2"><button data-token-id="' + t.id + '" class="delete-token-btn rounded border border-rose-300 px-2 py-1 text-xs text-rose-600 hover:bg-rose-50">删除</button></td>';
+              html += '<td class="px-3 py-2"><button data-token-id="' + t.id + '" class="delete-token-btn btn-secondary btn-sm settings-token-delete">删除</button></td>';
               html += '</tr>';
             }
-            html += '</tbody></table></div>';
+            html += '</tbody></table></div></div>';
             tokenList.innerHTML = html;
 
             // 绑定删除按钮事件
@@ -695,10 +825,10 @@
               });
             });
           } else {
-            tokenList.innerHTML = '<div class="text-xs text-slate-400">暂无 API Token</div>';
+            tokenList.innerHTML = '<div class="settings-empty-state">暂无 API Token</div>';
           }
         } catch {
-          tokenList.innerHTML = '<div class="text-xs text-rose-500">加载失败</div>';
+          tokenList.innerHTML = '<div class="settings-empty-state settings-empty-state--error">加载失败</div>';
         }
       }
 
@@ -709,6 +839,11 @@
           if (tokenNameInput) tokenNameInput.value = '';
           if (tokenExpiresSelect) tokenExpiresSelect.value = '';
           if (newTokenDisplay) newTokenDisplay.classList.add('hidden');
+          if (tokenNameInput) {
+            setTimeout(function () {
+              tokenNameInput.focus();
+            }, 0);
+          }
         });
       }
 
@@ -716,6 +851,15 @@
         cancelTokenBtn.addEventListener('click', function () {
           createTokenModal.classList.add('hidden');
           createTokenModal.classList.remove('flex');
+        });
+      }
+
+      if (createTokenModal) {
+        createTokenModal.addEventListener('click', function (event) {
+          if (event.target === createTokenModal) {
+            createTokenModal.classList.add('hidden');
+            createTokenModal.classList.remove('flex');
+          }
         });
       }
 
@@ -775,10 +919,20 @@
       }
 
       if (copyTokenBtn && newTokenValue) {
-        copyTokenBtn.addEventListener('click', function () {
-          newTokenValue.select();
-          document.execCommand('copy');
-          showToast('Token 已复制到剪贴板', 'success');
+        copyTokenBtn.addEventListener('click', async function () {
+          try {
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+              await navigator.clipboard.writeText(newTokenValue.value);
+            } else {
+              newTokenValue.select();
+              document.execCommand('copy');
+            }
+            showToast('Token 已复制到剪贴板', 'success');
+          } catch {
+            newTokenValue.select();
+            document.execCommand('copy');
+            showToast('Token 已复制到剪贴板', 'success');
+          }
         });
       }
 

@@ -67,11 +67,16 @@ describe('integration: page assets', () => {
         });
 
         expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('data-testid="settings-page"');
+        expect(response.body).toContain('data-testid="settings-overview-card"');
+        expect(response.body).toContain('data-testid="settings-ai-card"');
+        expect(response.body).toContain('data-testid="settings-token-card"');
         expect(response.body).toContain('data-testid="ai-test-btn"');
         expect(response.body).toContain('data-testid="ai-test-result"');
         expect(response.body).toContain('data-testid="ai-base-url-input"');
         expect(response.body).toContain('data-testid="ai-api-key-input"');
         expect(response.body).toContain('data-testid="ai-model-input"');
+        expect(response.body).toContain('data-testid="ai-batch-size-input"');
         expect(response.body).toContain('基础连通正常，聊天补全未通过');
         expect(response.body).toContain('https://grok2api.1018666.xyz/v1');
         expect(response.body).not.toContain('grop2api.1018666.xyz');

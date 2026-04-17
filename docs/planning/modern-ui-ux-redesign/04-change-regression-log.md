@@ -174,11 +174,12 @@
 - title：设置页布局与表单体验重构
 - wave：`W1`
 - issue_ref：[执行任务板 - UIR-DEV-030](./03-execution-board.md)
-- commit_refs：待执行
+- commit_refs：`[UIR-DEV-030][dev] redesign settings page layout`
 - commit_message_examples：`[UIR-DEV-030][dev] redesign settings page layout`
 - gemini_review_required：是；聚焦设置分组、响应式表单、AI 诊断区域层级
 - last_updated_at：2026-04-17
-- delivery_gate：`open`
+- local_validation：`npx vitest run tests/integration/page-assets.test.ts tests/integration/ops-routes.test.ts` passed
+- delivery_gate：`in_testing`
 
 ### 3.1 计划引入内容
 
@@ -192,7 +193,23 @@
 
 | area | object_type | object_name | actual_change | user_visible_impact | notes |
 |---|---|---|---|---|---|
-| uiux | settings | unified cards and forms | 待执行 | 设置页更清晰、可读、可操作 |  |
+| frontend | template | settings workspace shell | 已重组为“顶部概览 + 主设置列 + 侧边安全 / Token / 系统信息列”的响应式布局，并为移动端补单列回退 | 设置页层级更清晰，桌面与移动端阅读路径更自然 | 保留 `/settings` 表单字段、现有按钮 ID 与 AI 诊断 `data-testid` |
+| frontend | form | AI settings + reset helpers | 已补齐 `ai_batch_size` 输入、统一表单语义类，并修正“恢复默认设置”前端回填逻辑与提示文案 | AI 配置区更完整；重置后表单回填与后端真实行为一致 | 不改 `/api/settings/reset` 响应结构；AI Provider 凭据继续保留 |
+| frontend | token_panel | token table + modal shell | 已统一 Token 列表表格、空态、创建弹窗与复制反馈样式，并补充更自然的打开焦点与遮罩关闭行为 | Token 管理区更易读，弹窗反馈更一致 | 不改 `/api/tokens*` 契约 |
+| test | integration | settings shell selectors | 已增补设置页概览 / AI / Token 区块与 `ai_batch_size` 选择器断言 | 设置页 UI 契约回归更稳 | page-assets 与 ops-routes 均已通过 |
+
+### 3.2A Gemini 审阅结论
+
+- 审阅会话：`Gemini session ba1d1980-0ad4-4a20-87bb-64ade3a83e2c`
+- 采用：
+  - 以共享设计系统类统一设置页卡片、表单、说明文本与响应式网格；
+  - 设置页采用主列 + 侧列布局，移动端自动回退单列，减少原先 `grid-cols-2/3` 的小屏挤压；
+  - 保留现有 AI 诊断相关 `id` / `data-testid`，并补齐后端已支持但页面缺失的 `ai_batch_size` 字段；
+  - 尽量不大改内联脚本，只做最小 DOM 适配与回填逻辑修正。
+- 裁剪：
+  - 未引入新的前端框架或拆出单独页面脚本模块；
+  - 未改 `/settings`、`/api/settings*`、`/api/change-password`、`/api/tokens*` 契约；
+  - 未在本轮改变真实站点验证路径，live quick verify 仍待后续执行。
 
 ### 3.3 关联回归用例
 
