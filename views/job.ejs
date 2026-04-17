@@ -20,7 +20,7 @@
   </script>
 </head>
 
-<body class="bg-slate-50 text-slate-900" data-testid="job-detail-page" data-job-id="<%= job.id %>" data-processed="<%= job.processed %>"
+<body class="app-shell job-detail-page" data-testid="job-detail-page" data-job-id="<%= job.id %>" data-processed="<%= job.processed %>"
   data-total="<%= job.total %>" data-plan-id="<%= typeof organizePlanId !== 'undefined' && organizePlanId ? organizePlanId : '' %>">
   <%
     const isLegacyAiTask = job.type === 'ai_classify' || job.type === 'ai_simplify';
@@ -40,35 +40,30 @@
       : isLegacyAiTask ? 'bg-gradient-to-r from-amber-500 to-amber-700'
       : 'bg-gradient-to-r from-slate-700 to-slate-900';
   %>
-  <!-- Header - 统一风格 -->
-  <div class="glass-header border-b sticky top-0 z-40">
-    <div class="mx-auto max-w-screen-2xl px-4 py-3">
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">📊
-            任务进度</div>
-          <div class="text-xs text-slate-500">ID：<span class="font-mono">
-              <%= job.id %>
-            </span></div>
-        </div>
-        <div class="flex items-center gap-2">
-          <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
-          <a class="btn-secondary btn-sm" href="/jobs">任务列表</a>
-          <a class="btn-secondary btn-sm" href="<%= backUrl %>">← 返回</a>
-        </div>
+  <header class="page-topbar glass-header">
+    <div class="page-topbar__inner">
+      <div class="page-topbar__meta">
+        <div class="page-kicker">Jobs center</div>
+        <div class="page-heading">📊 任务进度</div>
+        <div class="page-subheading">ID：<span class="font-mono"><%= job.id %></span></div>
+      </div>
+      <div class="page-actions">
+        <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
+        <a class="btn-secondary btn-sm" href="/jobs">任务列表</a>
+        <a class="btn-secondary btn-sm" href="<%= backUrl %>">← 返回</a>
       </div>
     </div>
-  </div>
+  </header>
 
-  <div class="mx-auto max-w-screen-2xl px-4 py-4">
-    <div class="card p-4">
+  <div class="page-shell page-content">
+    <div class="card panel-card">
       <div class="flex items-center justify-between">
         <div>
           <div class="flex items-center gap-2">
             <span class="text-lg"><%= jobIcon %></span>
             <span class="text-sm font-semibold text-slate-700"><%= jobLabel %></span>
             <span id="job-status" data-testid="job-status"
-              class="text-xs px-2 py-0.5 rounded <%= job.status === 'running' ? 'bg-blue-100 text-blue-700' : job.status === 'done' ? 'bg-green-100 text-green-700' : job.status === 'failed' ? 'bg-rose-100 text-rose-700' : job.status === 'canceled' ? 'bg-slate-100 text-slate-600' : 'bg-slate-100 text-slate-600' %>">
+              class="status-badge <%= job.status === 'running' ? 'status-badge--info' : job.status === 'done' ? 'status-badge--success' : job.status === 'failed' ? 'status-badge--danger' : 'status-badge--muted' %>">
               <%= job.status==='running' ? '运行中' : job.status==='done' ? '已完成' : job.status==='failed' ? '失败' :
                 job.status==='canceled' ? '已取消' : job.status %>
             </span>
@@ -114,7 +109,7 @@
           </div>
           <% if (job.status==='running' || job.status==='pending' ) { %>
             <button id="cancel-job-btn" data-testid="cancel-job-btn"
-              class="rounded border border-rose-300 px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50">取消任务</button>
+              class="btn-danger btn-sm">取消任务</button>
             <% } %>
         </div>
       </div>

@@ -20,28 +20,26 @@
   </script>
 </head>
 
-<body class="bg-slate-50 text-slate-900" data-testid="jobs-page">
-  <!-- Header - 统一风格 -->
-  <div class="glass-header border-b sticky top-0 z-40">
-    <div class="mx-auto max-w-screen-2xl px-4 py-3">
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">📋
-            任务列表</div>
-          <div class="text-xs text-slate-500">导入/检查任务历史（共 <%= total %> 条）</div>
-        </div>
-        <div class="flex items-center gap-2">
-          <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
-          <button id="clear-completed-btn" data-testid="jobs-clear-completed" class="btn-secondary btn-sm">清理已完成</button>
-          <button id="clear-all-btn" data-testid="jobs-clear-all" class="btn-danger btn-sm">清空全部</button>
-          <a class="btn-secondary btn-sm" href="/">← 返回</a>
-        </div>
+<body class="app-shell jobs-page" data-testid="jobs-page">
+  <header class="page-topbar glass-header">
+    <div class="page-topbar__inner">
+      <div class="page-topbar__meta">
+        <div class="page-kicker">Jobs center</div>
+        <div class="page-heading">📋 任务列表</div>
+        <div class="page-subheading">导入 / 检查任务历史（共 <%= total %> 条）。</div>
+      </div>
+      <div class="page-actions">
+        <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
+        <button id="clear-completed-btn" data-testid="jobs-clear-completed" class="btn-secondary btn-sm">清理已完成</button>
+        <button id="clear-all-btn" data-testid="jobs-clear-all" class="btn-danger btn-sm">清空全部</button>
+        <a class="btn-secondary btn-sm" href="/">← 返回</a>
       </div>
     </div>
-  </div>
+  </header>
 
-  <div class="mx-auto max-w-screen-2xl px-4 py-4">
-    <div class="card overflow-hidden">
+  <div class="page-shell page-content">
+    <div class="card panel-card table-shell overflow-hidden">
+      <div class="table-scroll">
       <table class="w-full table-fixed" data-testid="jobs-table">
         <thead class="bg-slate-50">
           <tr>
@@ -99,8 +97,9 @@
                 <% }); %>
         </tbody>
       </table>
+      </div>
 
-      <div class="border-t bg-white px-3 py-3">
+      <div class="table-footer border-t bg-white px-3 py-3">
         <div class="flex items-center justify-between">
           <div class="text-xs text-slate-500">第 <%= page %>/<%= totalPages %> 页</div>
           <div class="flex items-center gap-2">

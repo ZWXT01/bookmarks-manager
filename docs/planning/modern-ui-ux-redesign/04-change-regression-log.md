@@ -76,11 +76,12 @@
 - title：共享设计系统与页面壳体契约
 - wave：`W1`
 - issue_ref：[执行任务板 - UIR-DEV-010](./03-execution-board.md)
-- commit_refs：待执行
+- commit_refs：待提交（UIR-DEV-010 本轮开发提交）
 - commit_message_examples：`[UIR-DEV-010][dev] establish shared design tokens and shell`
 - gemini_review_required：是；聚焦设计 Token、表单 / 按钮 / 卡片 / 空态 / 动效统一方案
 - last_updated_at：2026-04-17
-- delivery_gate：`open`
+- local_validation：`npm test -- tests/integration/page-assets.test.ts` passed
+- delivery_gate：`in_progress`
 
 ### 3.1 计划引入内容
 
@@ -94,8 +95,20 @@
 
 | area | object_type | object_name | actual_change | user_visible_impact | notes |
 |---|---|---|---|---|---|
-| frontend | stylesheet | shared design tokens | 待执行 | 全站视觉更统一 |  |
-| uiux | page_shell | shared shell | 待执行 | 次级页面层级更清晰 |  |
+| frontend | stylesheet | shared design tokens | 已补充页面壳体、布局、surface、dialog、badge、table shell 与 auth shell 基础样式 | 全站壳体与视觉层级更统一 | 保留既有 `theme` / `viewMode` 与 selector 契约 |
+| frontend | dialog | AppDialog shell | 已改为设计系统类驱动，并补充 `role=dialog`、`aria-modal` 与焦点恢复 | 全站弹窗视觉与主题更一致 | 未改 `AppDialog.alert/confirm` 调用方式 |
+| uiux | page_shell | shared shell | 已接入登录页、设置页、任务列表、任务详情、快照页的共享页头 / 容器骨架 | 次级页面层级更清晰，W2 首页可复用同一套壳体 | 真实站点快速验证待执行 |
+
+### 3.2A Gemini 审阅结论
+
+- 审阅会话：`Gemini session b00b5647-0404-414b-83de-3a942d61edc1`
+- 采用：
+  - 统一 CSS variable 驱动的 page shell / card / form / table / dialog 基础层；
+  - 先统一登录 / 设置 / 任务 / 快照的页头、容器、暗色模式与响应式骨架，再把更细颗粒 UX 留给 `UIR-DEV-020~050`；
+  - `dialog.js` 仅做最小必要改造，不触碰现有业务调用方式。
+- 裁剪：
+  - 本轮未引入新的前端框架或大规模模板拆分；
+  - 未改首页 Alpine 状态机与既有 `/api/*` 契约。
 
 ### 3.3 关联回归用例
 
@@ -105,6 +118,7 @@
 | REG-GLOBAL-003 | 选择器契约 | 共享壳体改造后必须保持选择器稳定 |
 | REG-GLOBAL-005 | 主题与持久化 | 深色模式与持久化不能被共享样式破坏 |
 | REG-A11Y-001 | 模态焦点 | 共享 dialog 与 shell 的可访问性验证 |
+| DEV-LOCAL-001 | 本地低成本验证 | `npm test -- tests/integration/page-assets.test.ts` 已通过，待远端构建 / live quick verify |
 
 ## UIR-DEV-020
 

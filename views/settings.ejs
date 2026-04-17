@@ -21,28 +21,26 @@
   </script>
 </head>
 
-<body class="bg-slate-50 text-slate-900">
-  <div class="glass-header border-b sticky top-0 z-40">
-    <div class="mx-auto max-w-screen-2xl px-4 py-3">
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">⚙️
-            设置</div>
-          <div class="text-xs text-slate-500">说明：如同时配置了环境变量，则以环境变量为准（本应用启动时也会读取 .env）。</div>
-        </div>
-        <div class="flex items-center gap-2">
-          <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
-          <a class="btn-secondary btn-sm inline-flex items-center" href="/">← 返回</a>
-        </div>
+<body class="app-shell settings-page">
+  <header class="page-topbar glass-header">
+    <div class="page-topbar__inner">
+      <div class="page-topbar__meta">
+        <div class="page-kicker">System console</div>
+        <div class="page-heading">⚙️ 设置</div>
+        <div class="page-subheading">如同时配置了环境变量，则以环境变量为准（本应用启动时也会读取 .env）。</div>
+      </div>
+      <div class="page-actions">
+        <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
+        <a class="btn-secondary btn-sm inline-flex items-center" href="/">← 返回</a>
       </div>
     </div>
-  </div>
+  </header>
 
   <div id="settings-toast" class="fixed top-4 right-4 z-50 hidden rounded border px-4 py-2 text-sm shadow-lg"></div>
 
-  <div class="mx-auto max-w-screen-2xl px-2 py-2">
+  <div class="page-shell page-content settings-content">
 
-    <form id="settings-form" method="post" action="/settings" class="space-y-2">
+    <form id="settings-form" method="post" action="/settings" class="section-stack">
       <div class="card p-4">
         <div class="text-sm font-bold text-slate-700 flex items-center gap-2">
           <span
