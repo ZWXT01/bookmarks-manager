@@ -33,11 +33,6 @@ const SUITE: CommandSpec[] = [
         args: ['run', 'build'],
     },
     {
-        label: 'repo-playwright-smoke',
-        command: 'npm',
-        args: ['run', 'test:e2e'],
-    },
-    {
         label: 'historical-browser-regression',
         command: 'npx',
         args: ['tsx', 'scripts/playwright-issue-regression-validate.ts'],

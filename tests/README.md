@@ -14,4 +14,4 @@
 - 新的 app 级测试不要再复制 `.env`、登录、临时目录或 job queue 清理逻辑，统一走 `createTestApp()`。
 - 新的夹具、种子数据和通用断言优先放到 `tests/helpers/`，不要在单个 spec 内再复制一份。
 - 已被 `tests/integration/` 覆盖的旧轻量 route spec 应删除，而不是继续并行维护。
-- UI 验证当前不依赖仓库内 Playwright；`e2e/` 和 `playwright.config.ts` 不是当前 release gate，页面 smoke 统一使用内置 Playwright MCP。
+- UI 验证当前统一走内置 Playwright MCP 和 `scripts/*validate.ts` 浏览器回放脚本，不再维护仓库内独立 Playwright 套件。

@@ -14,6 +14,19 @@ export interface PagesRoutesOptions {
 export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts, done) => {
     const { db, toIntClamp: clamp } = opts;
 
+    function buildCategoryPathMap() {
+        const rows = db.prepare(`
+            SELECT c.id, c.name, p.name AS parent_name
+            FROM categories c
+            LEFT JOIN categories p ON p.id = c.parent_id
+        `).all() as Array<{ id: number; name: string; parent_name: string | null }>;
+        const map = new Map<number, string>();
+        for (const row of rows) {
+            map.set(row.id, row.parent_name ? `${row.parent_name}/${row.name}` : row.name);
+        }
+        return map;
+    }
+
     // GET /jobs/:id - 任务详情页面
     app.get('/jobs/:id', async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
         const jobId = req.params.id;
@@ -65,11 +78,12 @@ export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts
                 const pageSlice = allAssignments.slice(offset, offset + organizePageSize);
 
                 const bmIds = pageSlice.map(a => a.bookmark_id);
-                const bmMap = new Map<number, { title: string; url: string }>();
+                const bmMap = new Map<number, { title: string; url: string; category_id: number | null }>();
                 if (bmIds.length) {
-                    const rows = db.prepare(`SELECT id, title, url FROM bookmarks WHERE id IN (${bmIds.map(() => '?').join(',')})`).all(...bmIds) as { id: number; title: string; url: string }[];
-                    for (const r of rows) bmMap.set(r.id, { title: r.title, url: r.url });
+                    const rows = db.prepare(`SELECT id, title, url, category_id FROM bookmarks WHERE id IN (${bmIds.map(() => '?').join(',')})`).all(...bmIds) as Array<{ id: number; title: string; url: string; category_id: number | null }>;
+                    for (const r of rows) bmMap.set(r.id, { title: r.title, url: r.url, category_id: r.category_id ?? null });
                 }
+                const categoryPathMap = buildCategoryPathMap();
 
                 organizeAssignments = pageSlice.map(a => ({
                     bookmark_id: a.bookmark_id,
@@ -77,6 +91,11 @@ export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts
                     status: a.status,
                     title: bmMap.get(a.bookmark_id)?.title ?? '[已删除的书签]',
                     url: bmMap.get(a.bookmark_id)?.url ?? '',
+                    current_category: bmMap.get(a.bookmark_id)?.category_id != null
+                        ? (categoryPathMap.get(bmMap.get(a.bookmark_id)!.category_id!) ?? null)
+                        : null,
+                    can_apply: a.status === 'assigned' && typeof a.category_path === 'string' && a.category_path.trim() !== '',
+                    default_action: a.status === 'assigned' && typeof a.category_path === 'string' && a.category_path.trim() !== '' ? 'apply' : 'discard',
                 }));
             }
         }

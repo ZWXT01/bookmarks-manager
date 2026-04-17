@@ -40,7 +40,10 @@ export interface ConflictItem {
 }
 export interface ApplyResult { conflicts: ConflictItem[]; empty_categories: { id: number; name: string }[]; applied_count: number }
 export interface RollbackResult { restored_categories: number; restored_bookmarks: number }
+export type BookmarkDecisionAction = 'apply' | 'discard';
+export interface BookmarkApplyDecision { bookmark_id: number; action: BookmarkDecisionAction }
 export interface ResolveDecisions {
+  decisions?: BookmarkApplyDecision[];
   conflicts?: { bookmark_id: number; action: 'override' | 'skip' }[];
   empty_categories?: { id: number; action: 'delete' | 'keep' }[];
 }
@@ -538,6 +541,48 @@ function sameAssignmentIntent(left: Assignment | undefined, right: Assignment): 
   return left.status === right.status && normalizePath(left.category_path) === normalizePath(right.category_path);
 }
 
+function canApplyAssignment(assignment: Assignment): boolean {
+  return assignment.status === 'assigned' && !!normalizePath(assignment.category_path);
+}
+
+function getDefaultBookmarkDecision(assignment: Assignment): BookmarkDecisionAction {
+  return canApplyAssignment(assignment) ? 'apply' : 'discard';
+}
+
+function parseBookmarkDecisions(raw: unknown): BookmarkApplyDecision[] {
+  if (!Array.isArray(raw)) return [];
+  const map = new Map<number, BookmarkDecisionAction>();
+  for (const item of raw) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Record<string, unknown>;
+    const bookmarkId = Number(row.bookmark_id);
+    const action = row.action === 'apply' || row.action === 'discard' ? row.action : null;
+    if (!Number.isInteger(bookmarkId) || bookmarkId <= 0 || !action) continue;
+    map.set(bookmarkId, action);
+  }
+  return [...map.entries()].map(([bookmark_id, action]) => ({ bookmark_id, action }));
+}
+
+function resolveBookmarkDecisionMap(assignments: Assignment[], decisionsInput?: unknown): Map<number, BookmarkDecisionAction> {
+  const explicit = new Map(parseBookmarkDecisions(decisionsInput).map(item => [item.bookmark_id, item.action]));
+  const decisions = new Map<number, BookmarkDecisionAction>();
+  for (const assignment of assignments) {
+    const explicitAction = explicit.get(assignment.bookmark_id);
+    const defaultAction = getDefaultBookmarkDecision(assignment);
+    if (explicitAction === 'apply' && !canApplyAssignment(assignment)) {
+      decisions.set(assignment.bookmark_id, 'discard');
+      continue;
+    }
+    decisions.set(assignment.bookmark_id, explicitAction ?? defaultAction);
+  }
+  return decisions;
+}
+
+function selectAssignmentsForApply(assignments: Assignment[], decisionsInput?: unknown): Assignment[] {
+  const decisions = resolveBookmarkDecisionMap(assignments, decisionsInput);
+  return assignments.filter(assignment => decisions.get(assignment.bookmark_id) === 'apply' && canApplyAssignment(assignment));
+}
+
 function findNewerOverlappingPlanConflicts(
   db: Db,
   plan: PlanRow,
@@ -574,13 +619,15 @@ function findNewerOverlappingPlanConflicts(
 
 function validatePlanApplySafety(db: Db, plan: PlanRow, assignments: Assignment[]): ApplyValidationContext {
   const snapshot = requireSourceSnapshot(plan);
-  const currentStates = getBookmarkStates(db, snapshot.bookmark_states.map(item => item.bookmark_id));
+  const selectedIds = new Set(assignments.map(item => item.bookmark_id));
+  const selectedSnapshotStates = snapshot.bookmark_states.filter(item => selectedIds.has(item.bookmark_id));
+  const currentStates = getBookmarkStates(db, selectedSnapshotStates.map(item => item.bookmark_id));
 
-  if (currentStates.size !== snapshot.bookmark_states.length) {
+  if (currentStates.size !== selectedSnapshotStates.length) {
     throw new PlanError(409, 'plan is stale: bookmarks changed');
   }
 
-  for (const item of snapshot.bookmark_states) {
+  for (const item of selectedSnapshotStates) {
     const current = currentStates.get(item.bookmark_id);
     if (!current) throw new PlanError(409, 'plan is stale: bookmarks changed');
   }
@@ -613,7 +660,13 @@ function validatePlanApplySafety(db: Db, plan: PlanRow, assignments: Assignment[
   }
 
   ensureLiveTargetsAvailable(db, plan, assignments);
-  return { snapshot, currentStates };
+  return {
+    snapshot: {
+      ...snapshot,
+      bookmark_states: selectedSnapshotStates,
+    },
+    currentStates,
+  };
 }
 
 function buildConflictItem(
@@ -886,12 +939,14 @@ export function createBackupSnapshot(db: Db): string {
   return JSON.stringify({ categories, bookmark_categories, active_template_id: active?.id ?? null });
 }
 
-export function applyPlan(db: Db, planId: string): ApplyResult {
+export function applyPlan(db: Db, planId: string, decisionsInput?: unknown): ApplyResult {
   return db.transaction(() => {
     const plan = getPlan(db, planId);
     if (!plan || plan.status !== 'preview') throw new Error('plan can only be applied in preview status');
     const assignments = parseAssignments(plan.assignments);
-    const validation = validatePlanApplySafety(db, plan, assignments);
+    const selectedAssignments = selectAssignmentsForApply(assignments, decisionsInput);
+    if (selectedAssignments.length === 0) return { conflicts: [], empty_categories: [], applied_count: 0 };
+    const validation = validatePlanApplySafety(db, plan, selectedAssignments);
 
     // Snapshot BEFORE any mutations
     if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
@@ -902,8 +957,7 @@ export function applyPlan(db: Db, planId: string): ApplyResult {
       const delSnap = db.prepare('DELETE FROM template_snapshots WHERE template_id = ? AND bookmark_id = ?');
       const insSnap = db.prepare('INSERT INTO template_snapshots (template_id, bookmark_id, category_path) VALUES (?, ?, ?)');
       let applied = 0;
-      for (const a of assignments) {
-        if (a.status === 'needs_review') { delSnap.run(plan.template_id, a.bookmark_id); continue; }
+      for (const a of selectedAssignments) {
         const tp = normalizePath(a.category_path);
         if (!tp) continue;
         delSnap.run(plan.template_id, a.bookmark_id);
@@ -913,33 +967,20 @@ export function applyPlan(db: Db, planId: string): ApplyResult {
       return { conflicts: [], empty_categories: [], applied_count: applied };
     }
 
-    const lookup = ensureLiveTargetsAvailable(db, plan, assignments);
+    const lookup = ensureLiveTargetsAvailable(db, plan, selectedAssignments);
 
     const bookmarks = getBookmarkMap(db);
-    const softConflicts = collectSoftApplyConflicts(db, plan, assignments, validation, bookmarks);
+    const softConflicts = collectSoftApplyConflicts(db, plan, selectedAssignments, validation, bookmarks);
     const moveStmt = db.prepare('UPDATE bookmarks SET category_id = ?, updated_at = ? WHERE id = ?');
-    const nullStmt = db.prepare('UPDATE bookmarks SET category_id = NULL, updated_at = ? WHERE id = ?');
     const conflicts: ConflictItem[] = [];
     let applied = 0;
     const now = nowIso();
 
     const sourceCatIds = new Set<number>();
 
-    for (const a of assignments) {
+    for (const a of selectedAssignments) {
       const bm = bookmarks.get(a.bookmark_id);
       if (!bm) throw new PlanError(409, 'plan is stale: bookmarks changed');
-
-      if (a.status === 'needs_review') {
-        if (bm.category_id == null) continue;
-        const conflict = softConflicts.get(a.bookmark_id);
-        if (conflict) {
-          conflicts.push(conflict);
-          continue;
-        }
-        sourceCatIds.add(bm.category_id);
-        nullStmt.run(now, bm.id);
-        continue;
-      }
 
       const tp = normalizePath(a.category_path);
       if (!tp) continue;
@@ -979,7 +1020,12 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
     const plan = getPlan(db, planId);
     if (!plan || plan.status !== 'preview') throw new Error('plan can only be resolved in preview status');
     const assignments = parseAssignments(plan.assignments);
-    const validation = validatePlanApplySafety(db, plan, assignments);
+    const selectedAssignments = selectAssignmentsForApply(assignments, decisions.decisions);
+    if (selectedAssignments.length === 0) {
+      transitionStatus(db, planId, 'applied');
+      return { conflicts: [], empty_categories: [], applied_count: 0 };
+    }
+    const validation = validatePlanApplySafety(db, plan, selectedAssignments);
 
     if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
 
@@ -990,12 +1036,9 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
       const insSnap = db.prepare('INSERT INTO template_snapshots (template_id, bookmark_id, category_path) VALUES (?, ?, ?)');
       let applied = 0;
       const conflictMap = new Map((decisions.conflicts ?? []).map(c => [c.bookmark_id, c.action]));
-      for (const a of assignments) {
+      for (const a of selectedAssignments) {
         const action = conflictMap.get(a.bookmark_id);
-        if (action === 'skip' || a.status === 'needs_review') {
-          delSnap.run(plan.template_id, a.bookmark_id);
-          continue;
-        }
+        if (action === 'skip') continue;
         const tp = normalizePath(a.category_path);
         if (!tp) continue;
         delSnap.run(plan.template_id, a.bookmark_id);
@@ -1008,16 +1051,16 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
 
     const conflictMap = new Map((decisions.conflicts ?? []).map(c => [c.bookmark_id, c.action]));
     const emptyMap = new Map((decisions.empty_categories ?? []).map(e => [e.id, e.action]));
-    const lookup = ensureLiveTargetsAvailable(db, plan, assignments);
+    const lookup = ensureLiveTargetsAvailable(db, plan, selectedAssignments);
 
     const bookmarks = getBookmarkMap(db);
-    const softConflicts = collectSoftApplyConflicts(db, plan, assignments, validation, bookmarks);
+    const softConflicts = collectSoftApplyConflicts(db, plan, selectedAssignments, validation, bookmarks);
     const moveStmt = db.prepare('UPDATE bookmarks SET category_id = ?, updated_at = ? WHERE id = ?');
     const sourceCatIds = new Set<number>();
     let applied = 0;
     const now = nowIso();
 
-    for (const a of assignments) {
+    for (const a of selectedAssignments) {
       const bm = bookmarks.get(a.bookmark_id);
       if (!bm) throw new PlanError(409, 'plan is stale: bookmarks changed');
 
@@ -1026,13 +1069,6 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
         const action = conflictMap.get(a.bookmark_id);
         if (!action) throw new PlanError(409, 'plan conflicts changed; rerun apply');
         if (action !== 'override') continue;
-      }
-
-      if (a.status === 'needs_review') {
-        if (bm.category_id == null) continue;
-        sourceCatIds.add(bm.category_id);
-        db.prepare('UPDATE bookmarks SET category_id = NULL, updated_at = ? WHERE id = ?').run(now, bm.id);
-        continue;
       }
 
       const tp = normalizePath(a.category_path);

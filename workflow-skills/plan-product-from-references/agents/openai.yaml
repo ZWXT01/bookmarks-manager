@@ -1,8 +1,0 @@
-interface:
-  display_name: "Plan From References"
-  short_description: "Turn product goals and references into execution docs"
-  default_prompt: "Use $plan-product-from-references to turn this product idea and reference list into roadmap, issue, and agent-execution docs."
-
-policy:
-  allow_implicit_invocation: true
-

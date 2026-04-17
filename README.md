@@ -81,8 +81,6 @@ The current release gate for this repository is:
 - `npx tsx scripts/extension-roundtrip-validate.ts` for the browser extension popup round-trip
 - the real-provider AI acceptance recorded in `docs/planning/functional-hardening-and-ai-validation/10-ai-provider-h1-validation.md`
 
-The checked-in `e2e/` specs and `playwright.config.ts` remain historical assets and are not the active release gate.
-
 ## ⚙️ Environment Variables
 
 ### Basic Configuration

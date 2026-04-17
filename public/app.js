@@ -92,12 +92,19 @@ function bookmarkApp() {
     organizeProgress: { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 },
     organizePollTimer: null,
     organizeDiff: null,
+    organizeAssignments: [],
+    organizeAssignmentPage: 1,
+    organizeAssignmentTotalPages: 1,
+    organizeAssignmentPageSize: 20,
+    organizeAssignmentTotal: 0,
+    organizeAssignmentLoading: false,
     organizePreviewGuardActive: false,
     organizeConflicts: [],
     organizeEmptyCategories: [],
     organizeResolving: false,
     organizeAppliedCount: 0,
     organizeDiffExpanded: {},
+    organizeSelectionOverrides: {},
     organizeQueuedStart: null,
     pendingPlans: [],
     backups: [],
@@ -2481,6 +2488,103 @@ function bookmarkApp() {
       this.organizeResolving = false;
       this.organizeAppliedCount = 0;
       this.organizeDiffExpanded = {};
+      this.organizeSelectionOverrides = {};
+      this.resetOrganizeAssignmentsState();
+    },
+
+    resetOrganizeAssignmentsState() {
+      this.organizeAssignments = [];
+      this.organizeAssignmentPage = 1;
+      this.organizeAssignmentTotalPages = 1;
+      this.organizeAssignmentTotal = 0;
+      this.organizeAssignmentLoading = false;
+    },
+
+    canApplyOrganizeAssignment(assignment) {
+      return !!assignment &&
+        assignment.status === 'assigned' &&
+        assignment.category_path &&
+        String(assignment.category_path).trim() !== '';
+    },
+
+    getOrganizeDefaultAction(assignment) {
+      return this.canApplyOrganizeAssignment(assignment) ? 'apply' : 'discard';
+    },
+
+    getOrganizeSelectionAction(assignment) {
+      if (!assignment || !assignment.bookmark_id) return 'discard';
+      return this.organizeSelectionOverrides[assignment.bookmark_id] || this.getOrganizeDefaultAction(assignment);
+    },
+
+    setOrganizeSelectionAction(bookmarkId, action, assignment) {
+      if (!bookmarkId) return;
+      const nextAction = action === 'apply' && this.canApplyOrganizeAssignment(assignment) ? 'apply' : 'discard';
+      const defaultAction = this.getOrganizeDefaultAction(assignment);
+      const overrides = { ...(this.organizeSelectionOverrides || {}) };
+      if (nextAction === defaultAction) {
+        delete overrides[bookmarkId];
+      } else {
+        overrides[bookmarkId] = nextAction;
+      }
+      this.organizeSelectionOverrides = overrides;
+    },
+
+    markAllOrganizeSelections(action) {
+      const overrides = {};
+      const assignments = Array.isArray(this.organizePlan?.assignments) ? this.organizePlan.assignments : [];
+      for (const assignment of assignments) {
+        const nextAction = action === 'apply' && this.canApplyOrganizeAssignment(assignment) ? 'apply' : 'discard';
+        const defaultAction = this.getOrganizeDefaultAction(assignment);
+        if (nextAction !== defaultAction) {
+          overrides[assignment.bookmark_id] = nextAction;
+        }
+      }
+      this.organizeSelectionOverrides = overrides;
+    },
+
+    getOrganizeSelectedApplyCount() {
+      const assignments = Array.isArray(this.organizePlan?.assignments) ? this.organizePlan.assignments : [];
+      return assignments.reduce((count, assignment) => {
+        return count + (this.getOrganizeSelectionAction(assignment) === 'apply' ? 1 : 0);
+      }, 0);
+    },
+
+    getOrganizeSelectedDiscardCount() {
+      const assignments = Array.isArray(this.organizePlan?.assignments) ? this.organizePlan.assignments : [];
+      return assignments.reduce((count, assignment) => {
+        return count + (this.getOrganizeSelectionAction(assignment) === 'discard' ? 1 : 0);
+      }, 0);
+    },
+
+    collectOrganizeDecisionOverrides() {
+      return Object.entries(this.organizeSelectionOverrides || {})
+        .map(([bookmarkId, action]) => ({
+          bookmark_id: Number(bookmarkId),
+          action,
+        }))
+        .filter((item) => Number.isInteger(item.bookmark_id) && item.bookmark_id > 0 && (item.action === 'apply' || item.action === 'discard'));
+    },
+
+    async loadOrganizeAssignmentsPage(page = 1) {
+      if (!this.organizePlan?.id) {
+        this.resetOrganizeAssignmentsState();
+        return;
+      }
+
+      const targetPage = Math.max(1, parseInt(page, 10) || 1);
+      this.organizeAssignmentLoading = true;
+      try {
+        const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/assignments?page=' + targetPage + '&page_size=' + this.organizeAssignmentPageSize);
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data) return;
+        this.organizeAssignments = Array.isArray(data.assignments) ? data.assignments : [];
+        this.organizeAssignmentPage = data.page || 1;
+        this.organizeAssignmentTotalPages = data.totalPages || 1;
+        this.organizeAssignmentTotal = data.total || 0;
+      } catch {
+      } finally {
+        this.organizeAssignmentLoading = false;
+      }
     },
 
     getOrganizePreviewGuardTitle() {
@@ -2640,6 +2744,7 @@ function bookmarkApp() {
           return;
         }
         this.organizePlan = data;
+        this.organizeSelectionOverrides = {};
         this.organizeProgress = {
           batches_done: data.batches_done || 0,
           batches_total: data.batches_total || 0,
@@ -2651,8 +2756,14 @@ function bookmarkApp() {
         this.showAIOrganizeModal = true;
         this.showToast('已有进行中的整理计划', 'info');
         if (data.status === 'assigning') { this.organizePhase = 'assigning'; this.pollOrganizeProgress(); }
-        else if (data.status === 'preview') { this.organizePhase = 'preview'; }
-        else if (data.status === 'applied') { this.organizePhase = 'applied'; }
+        else if (data.status === 'preview') {
+          this.organizePhase = 'preview';
+          await this.loadOrganizeAssignmentsPage(1);
+        }
+        else if (data.status === 'applied') {
+          this.organizePhase = 'applied';
+          await this.loadOrganizeAssignmentsPage(1);
+        }
         else if (data.status === 'failed') this.organizePhase = 'failed';
         else if (data.status === 'error') this.organizePhase = 'error';
       } catch {
@@ -2672,6 +2783,7 @@ function bookmarkApp() {
           return false;
         }
         this.organizePlan = data;
+        this.organizeSelectionOverrides = {};
         this.organizeProgress = {
           batches_done: data.batches_done || 0,
           batches_total: data.batches_total || 0,
@@ -2682,6 +2794,7 @@ function bookmarkApp() {
         this.organizePhase = 'preview';
         this.organizePreviewGuardActive = true;
         this.showAIOrganizeModal = true;
+        await this.loadOrganizeAssignmentsPage(1);
         return true;
       } catch {
         this.showToast('恢复建议失败', 'error');
@@ -2728,9 +2841,11 @@ function bookmarkApp() {
           }
           if (data.status === 'preview') {
             this.organizePhase = 'preview';
+            await this.loadOrganizeAssignmentsPage(this.organizeAssignmentPage || 1);
           } else if (data.status === 'applied') {
             this.organizePhase = 'applied';
             this.organizePreviewGuardActive = false;
+            await this.loadOrganizeAssignmentsPage(this.organizeAssignmentPage || 1);
           } else if (data.status === 'assigning') {
             this.organizePhase = 'assigning';
             this.organizePreviewGuardActive = false;
@@ -2760,7 +2875,9 @@ function bookmarkApp() {
       if (!this.organizePlan?.id) return;
       try {
         const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/apply', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({})
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ decisions: this.collectOrganizeDecisionOverrides() })
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data?.success) {
@@ -2776,6 +2893,7 @@ function bookmarkApp() {
             await this.loadBookmarks();
             await this.loadCategories();
             await this.loadPendingPlans();
+            await this.loadOrganizePlan();
             if (this.organizeQueuedStart) {
               this.setOrganizeIdleState(true);
               await this.resumeQueuedOrganizeStart();
@@ -2791,13 +2909,14 @@ function bookmarkApp() {
 
     async resolveAndApply() {
       if (!this.organizePlan?.id) return;
+      const decisions = this.collectOrganizeDecisionOverrides();
       const conflicts = this.organizeConflicts.map(c => ({ bookmark_id: c.bookmark_id, action: c.action || 'skip' }));
       const emptyCats = this.organizeEmptyCategories.map(e => ({ id: e.id, action: e.action || 'keep' }));
       try {
         const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/apply/resolve', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ conflicts, empty_categories: emptyCats })
+          body: JSON.stringify({ decisions, conflicts, empty_categories: emptyCats })
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data?.success) {
@@ -2820,6 +2939,11 @@ function bookmarkApp() {
       } catch {
         this.showToast('应用失败', 'error');
       }
+    },
+
+    async applyAllOrganizePlan() {
+      this.markAllOrganizeSelections('apply');
+      await this.applyOrganizePlan();
     },
 
     async rollbackOrganize() {

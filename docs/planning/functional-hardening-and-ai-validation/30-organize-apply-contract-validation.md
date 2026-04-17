@@ -67,4 +67,4 @@
 
 - 本次验证未创建长期后台服务。
 - 定向 Vitest、全量 `npm test` 和 `npm run build` 均在当前工作区 clean rerun 完成。
-- 本次未修改用户原有的 `package.json`、`package-lock.json`、`src/index.ts` 及未跟踪的 `e2e/`、`playwright.config.ts`、`workflow-skills/`。
+- 本次未修改用户原有的 `package.json`、`package-lock.json`、`src/index.ts`。

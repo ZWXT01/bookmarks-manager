@@ -1298,186 +1298,328 @@
             </div>
         </div>
 
+        <style>
+            @media (max-width: 767px) {
+                [data-testid="organize-preview-desktop-table"] {
+                    display: none;
+                }
+            }
+
+            @media (min-width: 768px) {
+                [data-testid="organize-preview-mobile-list"] {
+                    display: none;
+                }
+            }
+        </style>
+
         <!-- AI Organize Modal -->
         <div x-cloak x-show="showAIOrganizeModal"
             data-testid="ai-organize-modal"
-            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            class="fixed inset-0 z-50 overflow-y-auto bg-black/50 p-4 sm:flex sm:items-center sm:justify-center"
             @click.self="closeOrganizeModal()">
-            <div class="w-full max-w-2xl rounded-lg bg-white p-4 shadow-xl max-h-[90vh] overflow-y-auto"
+            <div class="mx-auto flex w-full max-w-2xl flex-col overflow-hidden rounded-lg bg-white shadow-xl"
+                style="max-height: calc(100vh - 2rem);"
                 data-testid="ai-organize-panel">
-                <div class="flex items-center justify-between mb-3">
+                <div class="flex flex-shrink-0 items-center justify-between border-b px-4 py-3">
                     <h3 class="text-lg font-semibold">🤖 AI 整理</h3>
                     <button @click="closeOrganizeModal()"
                         data-testid="ai-organize-close"
                         class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                 </div>
+                <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4" data-testid="ai-organize-body">
 
-                <!-- Phase: idle - Scope selection -->
-                <template x-if="organizePhase === 'idle'">
-                    <div class="space-y-3" data-testid="organize-phase-idle">
-                        <p class="text-sm text-slate-500">AI 将基于当前分类模板，批量匹配书签到最合适的分类。</p>
-                        <template x-if="!activeTemplate">
-                            <div class="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">请先在左侧「分类模板」中选择并应用一个模板，AI 整理依赖模板中的分类结构。</div>
-                        </template>
-                        <div>
-                            <label class="text-xs text-slate-600">整理范围</label>
-                            <select x-model="organizeScope" class="w-full rounded border px-3 py-2 text-sm mt-1">
-                                <option value="all">全部书签</option>
-                                <option value="uncategorized">未分类书签</option>
-                                <option value="category">指定分类</option>
-                            </select>
-                        </div>
-                        <template x-if="organizeScope === 'category'">
+                    <!-- Phase: idle - Scope selection -->
+                    <template x-if="organizePhase === 'idle'">
+                        <div class="space-y-3" data-testid="organize-phase-idle">
+                            <p class="text-sm text-slate-500">AI 将基于当前分类模板，批量匹配书签到最合适的分类。</p>
+                            <template x-if="!activeTemplate">
+                                <div class="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-3 py-2">请先在左侧「分类模板」中选择并应用一个模板，AI 整理依赖模板中的分类结构。</div>
+                            </template>
                             <div>
-                                <label class="text-xs text-slate-600">选择分类</label>
-                                <select x-model="organizeScopeCategoryId" class="w-full rounded border px-3 py-2 text-sm mt-1">
-                                    <template x-for="cat in categories" :key="cat.id">
-                                        <option :value="cat.id" x-text="cat.name"></option>
-                                    </template>
+                                <label class="text-xs text-slate-600">整理范围</label>
+                                <select x-model="organizeScope" class="w-full rounded border px-3 py-2 text-sm mt-1">
+                                    <option value="all">全部书签</option>
+                                    <option value="uncategorized">未分类书签</option>
+                                    <option value="category">指定分类</option>
                                 </select>
                             </div>
-                        </template>
-                        <div class="flex justify-end gap-2">
-                            <button @click="closeOrganizeModal()"
-                                data-testid="organize-idle-cancel"
-                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
-                            <button @click="startOrganize()"
-                                data-testid="organize-start"
-                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">开始整理</button>
-                        </div>
-                    </div>
-                </template>
-
-                <!-- Phase: assigning - Progress -->
-                <template x-if="organizePhase === 'assigning'">
-                    <div class="space-y-4" data-testid="organize-phase-assigning">
-                        <div class="flex flex-col items-center gap-3">
-                            <div class="text-xs text-slate-400" data-testid="organize-phase-title">批量归类中</div>
-                            <div class="relative w-24 h-24">
-                                <svg class="w-24 h-24 transform -rotate-90">
-                                    <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
-                                    <circle cx="48" cy="48" r="40" stroke="#8b5cf6" stroke-width="8" fill="none"
-                                        stroke-linecap="round" :stroke-dasharray="251.2"
-                                        :stroke-dashoffset="251.2 - (organizeProgress.batches_total > 0 ? 251.2 * organizeProgress.batches_done / organizeProgress.batches_total : 0)" />
-                                </svg>
-                                <div class="absolute inset-0 flex items-center justify-center">
-                                    <span class="text-xl font-bold text-purple-600"
-                                        x-text="organizeProgress.batches_total > 0 ? Math.floor(organizeProgress.batches_done / organizeProgress.batches_total * 100) + '%' : '准备中...'"></span>
+                            <template x-if="organizeScope === 'category'">
+                                <div>
+                                    <label class="text-xs text-slate-600">选择分类</label>
+                                    <select x-model="organizeScopeCategoryId" class="w-full rounded border px-3 py-2 text-sm mt-1">
+                                        <template x-for="cat in categories" :key="cat.id">
+                                            <option :value="cat.id" x-text="cat.name"></option>
+                                        </template>
+                                    </select>
                                 </div>
-                            </div>
-                            <div class="text-center">
-                                <div class="text-sm font-medium text-slate-700"
-                                    data-testid="organize-progress-summary"
-                                    x-text="'批次 ' + organizeProgress.batches_done + ' / ' + organizeProgress.batches_total"></div>
-                                <div class="text-xs text-slate-400 mt-1">AI 正在批量归类书签...</div>
-                            </div>
-                        </div>
-                        <div class="flex justify-center gap-2 pt-2 border-t">
-                            <button @click="cancelOrganize()"
-                                data-testid="organize-assigning-cancel"
-                                class="flex items-center gap-1 rounded-lg border border-rose-200 text-rose-600 px-4 py-2 text-sm hover:bg-rose-50 transition">
-                                <span>✕</span> 取消
-                            </button>
-                            <a x-show="organizePlan?.job_id" :href="'/jobs/' + organizePlan?.job_id"
-                                data-testid="organize-open-job"
-                                class="flex items-center gap-1 rounded-lg border border-slate-200 text-slate-600 px-4 py-2 text-sm hover:bg-slate-50 transition">
-                                查看任务详情
-                            </a>
-                        </div>
-                    </div>
-                </template>
-
-                <!-- Phase: failed / error -->
-                <template x-if="organizePhase === 'failed' || organizePhase === 'error'">
-                    <div class="space-y-3" :data-testid="organizePhase === 'error' ? 'organize-phase-error' : 'organize-phase-failed'">
-                        <div class="flex flex-col items-center gap-2 py-4">
-                            <div class="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-2xl"
-                                x-text="organizePhase === 'error' ? '!' : '✕'"></div>
-                            <div class="text-sm font-medium text-rose-700"
-                                data-testid="organize-phase-title"
-                                x-text="organizePhase === 'error' ? '归类中断' : '归类失败'"></div>
-                            <div class="text-xs text-slate-500 text-center"
-                                data-testid="organize-phase-message"
-                                x-text="organizePlan?.message || (organizePhase === 'error' ? '整理任务已中断，请查看任务详情或在修复问题后重试' : '连续多个批次失败，请检查 AI 配置后重试')"></div>
-                        </div>
-                        <template x-if="organizePhase === 'failed' && organizeProgress.failed_batch_ids && organizeProgress.failed_batch_ids.length > 0">
-                            <div class="text-xs text-slate-400 text-center" data-testid="organize-failed-batches">
-                                失败批次: <span x-text="organizeProgress.failed_batch_ids.join(', ')"></span>
-                            </div>
-                        </template>
-                        <div class="flex justify-center gap-2 pt-2 border-t">
-                            <button @click="cancelOrganize()"
-                                :data-testid="organizePhase === 'error' ? 'organize-error-cancel' : 'organize-failed-cancel'"
-                                class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃</button>
-                            <button @click="retryOrganize()"
-                                :data-testid="organizePhase === 'error' ? 'organize-error-retry' : 'organize-failed-retry'"
-                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">重试</button>
-                        </div>
-                    </div>
-                </template>
-
-                <!-- Phase: completed (preview/applied) -->
-                <template x-if="organizePhase === 'preview' || organizePhase === 'applied'">
-                    <div class="space-y-4" :data-testid="organizePhase === 'applied' ? 'organize-phase-applied' : 'organize-phase-preview'">
-                        <template x-if="organizePhase === 'preview' && organizePreviewGuardActive">
-                            <div data-testid="organize-preview-guard"
-                                class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
-                                <div class="text-sm font-medium text-amber-800"
-                                    x-text="getOrganizePreviewGuardTitle()"></div>
-                                <div class="mt-1 text-xs leading-5 text-amber-700"
-                                    x-text="getOrganizePreviewGuardMessage()"></div>
-                            </div>
-                        </template>
-                        <div class="flex flex-col items-center gap-3">
-                            <div class="relative w-24 h-24">
-                                <svg class="w-24 h-24 transform -rotate-90">
-                                    <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
-                                    <circle cx="48" cy="48" r="40" stroke="#22c55e" stroke-width="8" fill="none"
-                                        stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="0" />
-                                </svg>
-                                <div class="absolute inset-0 flex items-center justify-center">
-                                    <span class="text-xl font-bold text-green-600">100%</span>
-                                </div>
-                            </div>
-                            <div class="text-center">
-                                <div class="text-sm font-medium text-green-700"
-                                    data-testid="organize-phase-title"
-                                    x-text="organizePhase === 'applied' ? '分类已应用' : '分类完成'"></div>
-                                <div class="text-xs text-slate-500 mt-1"
-                                    data-testid="organize-progress-summary"
-                                    x-text="'共处理 ' + organizeProgress.batches_done + ' / ' + organizeProgress.batches_total + ' 批次'"></div>
-                                <template x-if="organizeProgress.needs_review_count > 0">
-                                    <div class="text-xs text-amber-600 mt-1"
-                                        data-testid="organize-needs-review"
-                                        x-text="organizeProgress.needs_review_count + ' 个书签待审核'"></div>
-                                </template>
-                            </div>
-                        </div>
-                        <div class="flex justify-center gap-2 pt-2 border-t">
-                            <template x-if="organizePhase === 'preview'">
-                                <button @click="cancelOrganize()"
-                                    data-testid="organize-preview-discard"
-                                    class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃建议</button>
                             </template>
-                            <template x-if="organizePhase === 'preview'">
-                                <button @click="applyOrganizePlan()"
-                                    data-testid="organize-preview-apply"
-                                    class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">应用建议</button>
-                            </template>
-                            <template x-if="organizePhase === 'applied'">
+                            <div class="flex justify-end gap-2">
                                 <button @click="closeOrganizeModal()"
-                                    data-testid="organize-complete-close"
-                                    class="rounded border px-4 py-2 text-sm hover:bg-slate-50">关闭</button>
-                            </template>
-                            <a x-show="organizePlan?.job_id" :href="'/jobs/' + organizePlan?.job_id"
-                                data-testid="organize-open-job"
-                                class="flex items-center gap-1 rounded-lg border border-slate-200 text-slate-600 px-4 py-2 text-sm hover:bg-slate-50 transition">
-                                查看任务详情
-                            </a>
+                                    data-testid="organize-idle-cancel"
+                                    class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                                <button @click="startOrganize()"
+                                    data-testid="organize-start"
+                                    class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">开始整理</button>
+                            </div>
                         </div>
-                    </div>
-                </template>
+                    </template>
 
+                    <!-- Phase: assigning - Progress -->
+                    <template x-if="organizePhase === 'assigning'">
+                        <div class="space-y-4" data-testid="organize-phase-assigning">
+                            <div class="flex flex-col items-center gap-3">
+                                <div class="text-xs text-slate-400" data-testid="organize-phase-title">批量归类中</div>
+                                <div class="relative w-24 h-24">
+                                    <svg class="w-24 h-24 transform -rotate-90">
+                                        <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
+                                        <circle cx="48" cy="48" r="40" stroke="#8b5cf6" stroke-width="8" fill="none"
+                                            stroke-linecap="round" :stroke-dasharray="251.2"
+                                            :stroke-dashoffset="251.2 - (organizeProgress.batches_total > 0 ? 251.2 * organizeProgress.batches_done / organizeProgress.batches_total : 0)" />
+                                    </svg>
+                                    <div class="absolute inset-0 flex items-center justify-center">
+                                        <span class="text-xl font-bold text-purple-600"
+                                            x-text="organizeProgress.batches_total > 0 ? Math.floor(organizeProgress.batches_done / organizeProgress.batches_total * 100) + '%' : '准备中...'"></span>
+                                    </div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-sm font-medium text-slate-700"
+                                        data-testid="organize-progress-summary"
+                                        x-text="'批次 ' + organizeProgress.batches_done + ' / ' + organizeProgress.batches_total"></div>
+                                    <div class="text-xs text-slate-400 mt-1">AI 正在批量归类书签...</div>
+                                </div>
+                            </div>
+                            <div class="flex justify-center gap-2 pt-2 border-t">
+                                <button @click="cancelOrganize()"
+                                    data-testid="organize-assigning-cancel"
+                                    class="flex items-center gap-1 rounded-lg border border-rose-200 text-rose-600 px-4 py-2 text-sm hover:bg-rose-50 transition">
+                                    <span>✕</span> 取消
+                                </button>
+                                <a x-show="organizePlan?.job_id" :href="'/jobs/' + organizePlan?.job_id"
+                                    data-testid="organize-open-job"
+                                    class="flex items-center gap-1 rounded-lg border border-slate-200 text-slate-600 px-4 py-2 text-sm hover:bg-slate-50 transition">
+                                    查看任务详情
+                                </a>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Phase: failed / error -->
+                    <template x-if="organizePhase === 'failed' || organizePhase === 'error'">
+                        <div class="space-y-3" :data-testid="organizePhase === 'error' ? 'organize-phase-error' : 'organize-phase-failed'">
+                            <div class="flex flex-col items-center gap-2 py-4">
+                                <div class="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-2xl"
+                                    x-text="organizePhase === 'error' ? '!' : '✕'"></div>
+                                <div class="text-sm font-medium text-rose-700"
+                                    data-testid="organize-phase-title"
+                                    x-text="organizePhase === 'error' ? '归类中断' : '归类失败'"></div>
+                                <div class="text-xs text-slate-500 text-center"
+                                    data-testid="organize-phase-message"
+                                    x-text="organizePlan?.message || (organizePhase === 'error' ? '整理任务已中断，请查看任务详情或在修复问题后重试' : '连续多个批次失败，请检查 AI 配置后重试')"></div>
+                            </div>
+                            <template x-if="organizePhase === 'failed' && organizeProgress.failed_batch_ids && organizeProgress.failed_batch_ids.length > 0">
+                                <div class="text-xs text-slate-400 text-center" data-testid="organize-failed-batches">
+                                    失败批次: <span x-text="organizeProgress.failed_batch_ids.join(', ')"></span>
+                                </div>
+                            </template>
+                            <div class="flex justify-center gap-2 pt-2 border-t">
+                                <button @click="cancelOrganize()"
+                                    :data-testid="organizePhase === 'error' ? 'organize-error-cancel' : 'organize-failed-cancel'"
+                                    class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃</button>
+                                <button @click="retryOrganize()"
+                                    :data-testid="organizePhase === 'error' ? 'organize-error-retry' : 'organize-failed-retry'"
+                                    class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">重试</button>
+                            </div>
+                        </div>
+                    </template>
+
+                    <!-- Phase: completed (preview/applied) -->
+                    <template x-if="organizePhase === 'preview' || organizePhase === 'applied'">
+                        <div class="space-y-4" :data-testid="organizePhase === 'applied' ? 'organize-phase-applied' : 'organize-phase-preview'">
+                            <template x-if="organizePhase === 'preview' && organizePreviewGuardActive">
+                                <div data-testid="organize-preview-guard"
+                                    class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                                    <div class="text-sm font-medium text-amber-800"
+                                        x-text="getOrganizePreviewGuardTitle()"></div>
+                                    <div class="mt-1 text-xs leading-5 text-amber-700"
+                                        x-text="getOrganizePreviewGuardMessage()"></div>
+                                </div>
+                            </template>
+                            <div class="flex flex-col items-center gap-3">
+                                <div class="relative w-24 h-24">
+                                    <svg class="w-24 h-24 transform -rotate-90">
+                                        <circle cx="48" cy="48" r="40" stroke="#e2e8f0" stroke-width="8" fill="none" />
+                                        <circle cx="48" cy="48" r="40" stroke="#22c55e" stroke-width="8" fill="none"
+                                            stroke-linecap="round" stroke-dasharray="251.2" stroke-dashoffset="0" />
+                                    </svg>
+                                    <div class="absolute inset-0 flex items-center justify-center">
+                                        <span class="text-xl font-bold text-green-600">100%</span>
+                                    </div>
+                                </div>
+                                <div class="text-center">
+                                    <div class="text-sm font-medium text-green-700"
+                                        data-testid="organize-phase-title"
+                                        x-text="organizePhase === 'applied' ? '分类已应用' : '分类完成'"></div>
+                                    <div class="text-xs text-slate-500 mt-1"
+                                        data-testid="organize-progress-summary"
+                                        x-text="'共处理 ' + organizeProgress.batches_done + ' / ' + organizeProgress.batches_total + ' 批次'"></div>
+                                    <template x-if="organizeProgress.needs_review_count > 0">
+                                        <div class="text-xs text-amber-600 mt-1"
+                                            data-testid="organize-needs-review"
+                                            x-text="organizeProgress.needs_review_count + ' 个书签待审核'"></div>
+                                    </template>
+                                </div>
+                            </div>
+                            <template x-if="organizePhase === 'preview'">
+                                <div class="rounded-lg border border-slate-200 overflow-hidden" data-testid="organize-preview-list">
+                                    <div class="flex flex-col gap-3 border-b bg-slate-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
+                                        <div>
+                                            <div class="text-sm font-medium text-slate-700">逐条处理建议</div>
+                                            <div class="mt-1 text-xs text-slate-500">
+                                                共 <span x-text="organizePlan?.assignments?.length || organizeAssignmentTotal"></span> 条，
+                                                应用 <span class="font-medium text-slate-700" x-text="getOrganizeSelectedApplyCount()"></span> 条，
+                                                放弃 <span class="font-medium text-slate-700" x-text="getOrganizeSelectedDiscardCount()"></span> 条
+                                            </div>
+                                        </div>
+                                        <div class="flex items-center gap-2">
+                                            <button @click="applyAllOrganizePlan()"
+                                                data-testid="organize-preview-apply-all"
+                                                class="rounded border px-3 py-1.5 text-sm hover:bg-white">全部应用</button>
+                                        </div>
+                                    </div>
+                                    <div class="overflow-auto" style="max-height: min(320px, 45vh);">
+                                        <div data-testid="organize-preview-mobile-list" class="space-y-3 p-3">
+                                            <template x-if="organizeAssignmentLoading">
+                                                <div class="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-slate-400">加载中...</div>
+                                            </template>
+                                            <template x-if="!organizeAssignmentLoading && organizeAssignments.length === 0">
+                                                <div class="rounded-lg border border-dashed px-3 py-8 text-center text-sm text-slate-400">暂无分类建议数据</div>
+                                            </template>
+                                            <template x-for="assignment in organizeAssignments" :key="'mobile-' + assignment.bookmark_id">
+                                                <article class="rounded-lg border p-3 shadow-sm"
+                                                    :class="getOrganizeSelectionAction(assignment) === 'discard' ? 'border-slate-200 bg-slate-50' : 'border-emerald-100 bg-white'">
+                                                    <div class="text-sm font-medium leading-6 text-slate-700 break-words" x-text="assignment.title"></div>
+                                                    <div class="mt-1 text-xs leading-5 text-slate-400 break-all" x-text="assignment.url || '—'"></div>
+                                                    <div class="mt-3 grid grid-cols-[72px_1fr] gap-x-3 gap-y-2 text-xs">
+                                                        <div class="font-medium text-slate-500">当前分类</div>
+                                                        <div class="text-slate-600 break-words" x-text="assignment.current_category || '未分类'"></div>
+                                                        <div class="font-medium text-slate-500">建议分类</div>
+                                                        <div>
+                                                            <template x-if="assignment.category_path">
+                                                                <span class="inline-flex rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700 break-words" x-text="assignment.category_path"></span>
+                                                            </template>
+                                                            <template x-if="!assignment.category_path">
+                                                                <span class="text-amber-600">未匹配到分类，默认放弃</span>
+                                                            </template>
+                                                        </div>
+                                                    </div>
+                                                    <div class="mt-3 grid grid-cols-2 gap-2">
+                                                        <button @click="setOrganizeSelectionAction(assignment.bookmark_id, 'apply', assignment)"
+                                                            :disabled="!canApplyOrganizeAssignment(assignment)"
+                                                            :class="getOrganizeSelectionAction(assignment) === 'apply' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-600'"
+                                                            class="rounded border px-3 py-2 text-xs disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400">应用</button>
+                                                        <button @click="setOrganizeSelectionAction(assignment.bookmark_id, 'discard', assignment)"
+                                                            :class="getOrganizeSelectionAction(assignment) === 'discard' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-600'"
+                                                            class="rounded border px-3 py-2 text-xs">放弃</button>
+                                                    </div>
+                                                </article>
+                                            </template>
+                                        </div>
+                                        <div data-testid="organize-preview-desktop-table">
+                                            <table class="w-full min-w-[720px] table-fixed">
+                                                <thead class="sticky top-0 bg-white">
+                                                    <tr class="text-left text-xs font-semibold text-slate-600">
+                                                        <th class="w-[34%] px-3 py-2">书签</th>
+                                                        <th class="w-[18%] px-3 py-2">当前分类</th>
+                                                        <th class="w-[22%] px-3 py-2">建议分类</th>
+                                                        <th class="w-[26%] px-3 py-2">处理</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y">
+                                                    <template x-if="organizeAssignmentLoading">
+                                                        <tr>
+                                                            <td colspan="4" class="px-3 py-8 text-center text-sm text-slate-400">加载中...</td>
+                                                        </tr>
+                                                    </template>
+                                                    <template x-if="!organizeAssignmentLoading && organizeAssignments.length === 0">
+                                                        <tr>
+                                                            <td colspan="4" class="px-3 py-8 text-center text-sm text-slate-400">暂无分类建议数据</td>
+                                                        </tr>
+                                                    </template>
+                                                    <template x-for="assignment in organizeAssignments" :key="'desktop-' + assignment.bookmark_id">
+                                                        <tr :class="getOrganizeSelectionAction(assignment) === 'discard' ? 'bg-slate-50' : ''">
+                                                            <td class="px-3 py-3 align-top">
+                                                                <div class="text-sm text-slate-700 truncate" x-text="assignment.title"></div>
+                                                                <div class="mt-1 text-xs text-slate-400 truncate" x-text="assignment.url || '—'"></div>
+                                                            </td>
+                                                            <td class="px-3 py-3 align-top">
+                                                                <span class="text-xs text-slate-500" x-text="assignment.current_category || '未分类'"></span>
+                                                            </td>
+                                                            <td class="px-3 py-3 align-top">
+                                                                <template x-if="assignment.category_path">
+                                                                    <span class="inline-flex rounded bg-blue-100 px-2 py-0.5 text-xs text-blue-700" x-text="assignment.category_path"></span>
+                                                                </template>
+                                                                <template x-if="!assignment.category_path">
+                                                                    <span class="text-xs text-amber-600">未匹配到分类，默认放弃</span>
+                                                                </template>
+                                                            </td>
+                                                            <td class="px-3 py-3 align-top">
+                                                                <div class="flex items-center gap-2">
+                                                                    <button @click="setOrganizeSelectionAction(assignment.bookmark_id, 'apply', assignment)"
+                                                                        :disabled="!canApplyOrganizeAssignment(assignment)"
+                                                                        :class="getOrganizeSelectionAction(assignment) === 'apply' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-600'"
+                                                                        class="rounded border px-3 py-1 text-xs disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400">应用</button>
+                                                                    <button @click="setOrganizeSelectionAction(assignment.bookmark_id, 'discard', assignment)"
+                                                                        :class="getOrganizeSelectionAction(assignment) === 'discard' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-600'"
+                                                                        class="rounded border px-3 py-1 text-xs">放弃</button>
+                                                                </div>
+                                                            </td>
+                                                        </tr>
+                                                    </template>
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-center justify-between border-t bg-slate-50 px-4 py-3 text-xs text-slate-500"
+                                        x-show="organizeAssignmentTotalPages > 1">
+                                        <div>第 <span x-text="organizeAssignmentPage"></span> / <span x-text="organizeAssignmentTotalPages"></span> 页</div>
+                                        <div class="flex items-center gap-2">
+                                            <button @click="loadOrganizeAssignmentsPage(organizeAssignmentPage - 1)"
+                                                :disabled="organizeAssignmentPage <= 1"
+                                                data-testid="organize-preview-prev-page"
+                                                class="rounded border bg-white px-3 py-1 text-sm text-slate-600 disabled:cursor-not-allowed disabled:text-slate-300">上一页</button>
+                                            <button @click="loadOrganizeAssignmentsPage(organizeAssignmentPage + 1)"
+                                                :disabled="organizeAssignmentPage >= organizeAssignmentTotalPages"
+                                                data-testid="organize-preview-next-page"
+                                                class="rounded border bg-white px-3 py-1 text-sm text-slate-600 disabled:cursor-not-allowed disabled:text-slate-300">下一页</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </template>
+                            <div class="flex justify-center gap-2 pt-2 border-t">
+                                <template x-if="organizePhase === 'preview'">
+                                    <button @click="cancelOrganize()"
+                                        data-testid="organize-preview-discard"
+                                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃建议</button>
+                                </template>
+                                <template x-if="organizePhase === 'preview'">
+                                    <button @click="applyOrganizePlan()"
+                                        data-testid="organize-preview-apply"
+                                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">应用已选</button>
+                                </template>
+                                <template x-if="organizePhase === 'applied'">
+                                    <button @click="closeOrganizeModal()"
+                                        data-testid="organize-complete-close"
+                                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">关闭</button>
+                                </template>
+                                <a x-show="organizePlan?.job_id" :href="'/jobs/' + organizePlan?.job_id"
+                                    data-testid="organize-open-job"
+                                    class="flex items-center gap-1 rounded-lg border border-slate-200 text-slate-600 px-4 py-2 text-sm hover:bg-slate-50 transition">
+                                    查看任务详情
+                                </a>
+                            </div>
+                        </div>
+                    </template>
+                </div>
             </div>
         </div>
         <div x-cloak x-show="showImportProgressModal" data-testid="import-progress-modal"

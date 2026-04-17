@@ -81,8 +81,6 @@ npm start
 - `npx tsx scripts/extension-roundtrip-validate.ts` 扩展 popup round-trip 验收
 - 记录在 `docs/planning/functional-hardening-and-ai-validation/10-ai-provider-h1-validation.md` 的真实 provider AI 验收
 
-仓库内已有的 `e2e/` spec 和 `playwright.config.ts` 仍然只是历史资产，不属于当前 release gate。
-
 ## ⚙️ 环境变量
 
 ### 基础配置

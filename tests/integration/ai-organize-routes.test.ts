@@ -181,6 +181,9 @@ describe('integration: ai organize route contracts', () => {
             status: 'needs_review',
             title: 'Bookmark 25',
             url: 'https://organize-25.example.test',
+            current_category: null,
+            can_apply: false,
+            default_action: 'discard',
         });
 
         const plan = getPlan(appCtx.db, planId);
@@ -370,6 +373,60 @@ describe('integration: ai organize route contracts', () => {
         expect(getCategoryByPath(ctx.db, '学习资源/文档')).toBeTruthy();
         expect(getBookmarkCategoryId(ctx, movingBookmarkId)).toBe(sourceCategory!.id);
         expect(getBookmarkCategoryId(ctx, stableBookmarkId)).toBe(occupiedCategory!.id);
+    });
+
+    it('applies only selected bookmark suggestions and leaves unmatched suggestions discarded by default', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        const template = activateAiTestTemplate(ctx.db);
+        const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
+        const targetCategory = getCategoryByPath(ctx.db, '技术开发/前端');
+
+        expect(sourceCategory).toBeTruthy();
+        expect(targetCategory).toBeTruthy();
+
+        const [selectedBookmarkId, discardedBookmarkId, unmatchedBookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Selected Bookmark', url: 'https://selected.example.test', categoryId: sourceCategory!.id },
+            { title: 'Discarded Bookmark', url: 'https://discarded.example.test', categoryId: sourceCategory!.id },
+            { title: 'Unmatched Bookmark', url: 'https://unmatched.example.test', categoryId: sourceCategory!.id },
+        ]);
+
+        const plan = seedPlan(ctx.db, {
+            status: 'preview',
+            template_id: template.id,
+            created_at: new Date(Date.now() - 60_000).toISOString(),
+            assignments: [
+                { bookmark_id: selectedBookmarkId, category_path: '技术开发/前端', status: 'assigned' },
+                { bookmark_id: discardedBookmarkId, category_path: '技术开发/前端', status: 'assigned' },
+                { bookmark_id: unmatchedBookmarkId, category_path: '', status: 'needs_review' },
+            ],
+        });
+
+        const applyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${plan.id}/apply`,
+            headers: authHeaders,
+            payload: {
+                decisions: [
+                    { bookmark_id: discardedBookmarkId, action: 'discard' },
+                ],
+            },
+        });
+
+        expect(applyResponse.statusCode).toBe(200);
+        expect(applyResponse.json()).toEqual({
+            success: true,
+            needs_confirm: false,
+            template_name: template.name,
+            conflicts: [],
+            empty_categories: [],
+            applied_count: 1,
+        });
+        expect(getPlan(ctx.db, plan.id)?.status).toBe('applied');
+        expect(getBookmarkCategoryId(ctx, selectedBookmarkId)).toBe(targetCategory!.id);
+        expect(getBookmarkCategoryId(ctx, discardedBookmarkId)).toBe(sourceCategory!.id);
+        expect(getBookmarkCategoryId(ctx, unmatchedBookmarkId)).toBe(sourceCategory!.id);
     });
 
     it('covers apply conflict detection and resolve override flow', async () => {

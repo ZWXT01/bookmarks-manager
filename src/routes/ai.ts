@@ -22,6 +22,12 @@ interface ModelsProbeResult {
     errorMessage: string | null;
 }
 
+type OrganizeAssignmentRow = {
+    bookmark_id: number;
+    category_path: string;
+    status: string;
+};
+
 function getAIConfig(getSetting: (key: string) => string | null) {
     const baseUrl = (getSetting('ai_base_url') ?? '').trim();
     const apiKey = (getSetting('ai_api_key') ?? '').trim();
@@ -84,6 +90,54 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         if (rawValue === undefined || rawValue === null) return getDefaultBatchSize();
         if (typeof rawValue === 'string' && rawValue.trim() === '') return getDefaultBatchSize();
         return parseAiBatchSize(rawValue);
+    }
+
+    function buildCategoryPathMap() {
+        const rows = db.prepare(`
+            SELECT c.id, c.name, p.name AS parent_name
+            FROM categories c
+            LEFT JOIN categories p ON p.id = c.parent_id
+        `).all() as Array<{ id: number; name: string; parent_name: string | null }>;
+        const map = new Map<number, string>();
+        for (const row of rows) {
+            map.set(row.id, row.parent_name ? `${row.parent_name}/${row.name}` : row.name);
+        }
+        return map;
+    }
+
+    function enrichOrganizeAssignments(rows: OrganizeAssignmentRow[]) {
+        const bookmarkIds = [...new Set(rows.map((row) => row.bookmark_id).filter((id) => Number.isInteger(id) && id > 0))];
+        const bookmarks = new Map<number, { title: string; url: string; category_id: number | null }>();
+        if (bookmarkIds.length > 0) {
+            const bookmarkRows = db.prepare(`
+                SELECT id, title, url, category_id
+                FROM bookmarks
+                WHERE id IN (${bookmarkIds.map(() => '?').join(',')})
+            `).all(...bookmarkIds) as Array<{ id: number; title: string; url: string; category_id: number | null }>;
+            for (const row of bookmarkRows) {
+                bookmarks.set(row.id, {
+                    title: row.title,
+                    url: row.url,
+                    category_id: row.category_id ?? null,
+                });
+            }
+        }
+
+        const categoryPathMap = buildCategoryPathMap();
+        return rows.map((row) => {
+            const bookmark = bookmarks.get(row.bookmark_id);
+            const canApply = row.status === 'assigned' && typeof row.category_path === 'string' && row.category_path.trim() !== '';
+            return {
+                bookmark_id: row.bookmark_id,
+                category_path: row.category_path,
+                status: row.status,
+                title: bookmark?.title ?? '[已删除的书签]',
+                url: bookmark?.url ?? '',
+                current_category: bookmark?.category_id != null ? (categoryPathMap.get(bookmark.category_id) ?? null) : null,
+                can_apply: canApply,
+                default_action: canApply ? 'apply' : 'discard',
+            };
+        });
     }
 
     function getPlanJobMessage(jobId: string | null) {
@@ -517,27 +571,13 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             const plan = getPlan(db, planId);
             if (!plan) return reply.code(404).send({ error: 'Plan 不存在' });
 
-            const all: { bookmark_id: number; category_path: string; status: string }[] = plan.assignments ? JSON.parse(plan.assignments) : [];
+            const all: OrganizeAssignmentRow[] = plan.assignments ? JSON.parse(plan.assignments) : [];
             const total = all.length;
             const totalPages = Math.max(1, Math.ceil(total / pageSize));
             const pageClamped = Math.min(page, totalPages);
             const offset = (pageClamped - 1) * pageSize;
             const slice = all.slice(offset, offset + pageSize);
-
-            const bmIds = slice.map(a => a.bookmark_id);
-            const bmMap = new Map<number, { title: string; url: string }>();
-            if (bmIds.length) {
-                const rows = db.prepare(`SELECT id, title, url FROM bookmarks WHERE id IN (${bmIds.map(() => '?').join(',')})`).all(...bmIds) as { id: number; title: string; url: string }[];
-                for (const r of rows) bmMap.set(r.id, { title: r.title, url: r.url });
-            }
-
-            const assignments = slice.map(a => ({
-                bookmark_id: a.bookmark_id,
-                category_path: a.category_path,
-                status: a.status,
-                title: bmMap.get(a.bookmark_id)?.title ?? '[已删除的书签]',
-                url: bmMap.get(a.bookmark_id)?.url ?? '',
-            }));
+            const assignments = enrichOrganizeAssignments(slice);
 
             return reply.send({ assignments, total, page: pageClamped, totalPages, pageSize });
         } catch (e: any) {
@@ -548,9 +588,10 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
     // POST /api/ai/organize/:planId/apply - 原子应用（空分类检测）
     app.post('/api/ai/organize/:planId/apply', async (req: FastifyRequest, reply: FastifyReply) => {
         const { planId } = req.params as { planId: string };
+        const body: any = req.body || {};
         try {
             const { applyPlan, getPlan, transitionStatus } = await import('../ai-organize-plan');
-            const result = applyPlan(db, planId);
+            const result = applyPlan(db, planId, body.decisions);
             const needsConfirm = result.conflicts.length > 0 || result.empty_categories.length > 0;
             if (!needsConfirm) transitionStatus(db, planId, 'applied');
             let template_name: string | null = null;
@@ -573,6 +614,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         try {
             const { resolveAndApply } = await import('../ai-organize-plan');
             const result = resolveAndApply(db, planId, {
+                decisions: body.decisions,
                 conflicts: body.conflicts,
                 empty_categories: body.empty_categories,
             });

@@ -66,4 +66,4 @@
 ## 5. 环境与清理
 
 - 本次浏览器验收使用 headless Chrome 与 `createTestApp()` 临时环境，脚本结束后已清理临时目录与会话环境。
-- 本次未修改用户原有的 `package.json`、`package-lock.json`、`src/index.ts`，以及未跟踪的 `e2e/`、`playwright.config.ts`、`workflow-skills/`。
+- 本次未修改用户原有的 `package.json`、`package-lock.json`、`src/index.ts`。
