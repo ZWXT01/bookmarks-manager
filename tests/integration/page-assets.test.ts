@@ -378,16 +378,21 @@ describe('integration: page assets', () => {
 
         expect(snapshotsResponse.statusCode).toBe(200);
         expect(snapshotsResponse.body).toContain('data-testid="snapshots-page"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-stats-card"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-filter-bar"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-search-input"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-date-filter"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-clear-filter"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-list-header"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshots-select-all"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshots-batch-delete"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-list"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshots-empty-state"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-group-header"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-row"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-checkbox"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-title"');
+        expect(snapshotsResponse.body).toContain('data-testid="snapshot-item-actions"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-view-link"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-download-link"');
         expect(snapshotsResponse.body).toContain('data-testid="snapshot-delete-button"');

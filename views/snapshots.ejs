@@ -21,12 +21,20 @@
 </head>
 
 <body class="app-shell snapshots-page" data-testid="snapshots-page">
+    <%
+        const linkedSnapshotCount = snapshots.filter((snapshot) => Number(snapshot.bookmark_id)).length;
+        const capturedDayCount = new Set(
+            snapshots
+                .map((snapshot) => String(snapshot.created_at || '').slice(0, 10))
+                .filter(Boolean)
+        ).size;
+    %>
     <header class="page-topbar glass-header">
         <div class="page-topbar__inner">
             <div class="page-topbar__meta">
                 <div class="page-kicker">Snapshot center</div>
                 <div class="page-heading">📸 快照管理</div>
-                <div class="page-subheading">浏览、筛选、下载与清理浏览器保存的页面快照。</div>
+                <div class="page-subheading">浏览、筛选、下载与清理浏览器保存的页面快照；保留现有查看 / 下载 / 删除与批量删除契约。</div>
             </div>
             <div class="page-actions">
                 <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
@@ -36,94 +44,158 @@
     </header>
 
     <div class="page-shell page-content">
-        <!-- Stats Cards -->
-        <div class="stats-grid">
-            <div class="card stat-card">
-                <div class="text-sm text-slate-500">快照总数</div>
-                <div class="text-2xl font-bold text-blue-600 mt-1" id="stats-total">
-                    <%= pagination.total %>
+        <section class="panel-card panel-card--compact snapshot-overview-card">
+            <div class="panel-header">
+                <div>
+                    <div class="panel-title">快照概览</div>
+                    <p class="panel-description">聚合查看归档规模、已关联书签数量与捕获天数，方便快速判断当前快照库状态。</p>
+                </div>
+                <div class="settings-badge-row" aria-hidden="true">
+                    <span class="status-badge status-badge--info">即时筛选</span>
+                    <span class="status-badge status-badge--muted">明 / 暗色兼容</span>
+                    <span class="status-badge status-badge--muted">查看 / 下载合同保留</span>
                 </div>
             </div>
-            <div class="card stat-card">
-                <div class="text-sm text-slate-500">总存储空间</div>
-                <div class="text-2xl font-bold text-purple-600 mt-1" id="stats-size">
-                    <%= totalSizeMB %> MB
+
+            <div class="snapshots-overview-grid">
+                <article class="jobs-summary-card snapshot-summary-card" data-testid="snapshot-stats-card">
+                    <div class="snapshot-summary-card__icon snapshot-summary-card__icon--blue" aria-hidden="true">📦</div>
+                    <div class="min-w-0">
+                        <div class="jobs-summary-card__label">快照总数</div>
+                        <div class="jobs-summary-card__value" id="stats-total"><%= pagination.total %></div>
+                        <div class="jobs-summary-card__meta">包含已关联书签与仅存档快照，支持后续本地筛选。</div>
+                    </div>
+                </article>
+                <article class="jobs-summary-card snapshot-summary-card" data-testid="snapshot-stats-card">
+                    <div class="snapshot-summary-card__icon snapshot-summary-card__icon--purple" aria-hidden="true">💾</div>
+                    <div class="min-w-0">
+                        <div class="jobs-summary-card__label">总存储空间</div>
+                        <div class="jobs-summary-card__value" id="stats-size"><%= totalSizeMB %> MB</div>
+                        <div class="jobs-summary-card__meta">按当前快照文件总量估算，删除后会自动同步刷新。</div>
+                    </div>
+                </article>
+                <article class="jobs-summary-card snapshot-summary-card" data-testid="snapshot-stats-card">
+                    <div class="snapshot-summary-card__icon snapshot-summary-card__icon--teal" aria-hidden="true">🔖</div>
+                    <div class="min-w-0">
+                        <div class="jobs-summary-card__label">已关联书签</div>
+                        <div class="jobs-summary-card__value" id="stats-linked"><%= linkedSnapshotCount %></div>
+                        <div class="jobs-summary-card__meta">可直接看到来源书签标题与分类，方便从归档回查原始收藏。</div>
+                    </div>
+                </article>
+                <article class="jobs-summary-card snapshot-summary-card" data-testid="snapshot-stats-card">
+                    <div class="snapshot-summary-card__icon snapshot-summary-card__icon--amber" aria-hidden="true">🗓️</div>
+                    <div class="min-w-0">
+                        <div class="jobs-summary-card__label">捕获天数</div>
+                        <div class="jobs-summary-card__value" id="stats-days"><%= capturedDayCount %></div>
+                        <div class="jobs-summary-card__meta">按日期分组浏览，适合快速清理同一天批量保存的页面。</div>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="panel-card panel-card--compact" data-testid="snapshot-filter-bar">
+            <div class="panel-header snapshots-filter-header">
+                <div>
+                    <div class="panel-title">筛选与批量操作</div>
+                    <p class="panel-description">搜索标题或 URL，叠加日期快速收窄范围；勾选当前结果后即可批量清理。</p>
+                </div>
+                <div class="panel-actions">
+                    <span class="status-badge status-badge--muted" id="filter-status-badge">本地即时筛选</span>
                 </div>
             </div>
-        </div>
 
-        <!-- Search and Filter - AJAX无刷新 -->
-        <div class="card panel-card panel-card--compact">
-            <div class="flex flex-wrap items-center gap-3">
-                <input type="text" id="search-input" data-testid="snapshot-search-input" placeholder="搜索标题或URL..."
-                    class="flex-1 min-w-[200px] rounded-lg border px-3 py-2 text-sm" />
-                <input type="date" id="date-filter" data-testid="snapshot-date-filter" class="rounded-lg border px-3 py-2 text-sm" title="筛选日期" />
-                <button type="button" id="clear-filter-btn" data-testid="snapshot-clear-filter" class="btn-secondary btn-sm">清除</button>
-                <button type="button" onclick="location.reload()" class="btn-primary btn-sm">🔄 刷新</button>
+            <div class="snapshots-filter-grid">
+                <label class="form-field" for="search-input">
+                    <span class="form-label">搜索标题或 URL</span>
+                    <input type="text" id="search-input" data-testid="snapshot-search-input" placeholder="例如：文档、文章、example.com"
+                        class="form-control" autocomplete="off" />
+                </label>
+                <label class="form-field" for="date-filter">
+                    <span class="form-label">按归档日期筛选</span>
+                    <input type="date" id="date-filter" data-testid="snapshot-date-filter" class="form-control" title="筛选日期" />
+                </label>
+                <div class="snapshots-filter-actions">
+                    <button type="button" id="clear-filter-btn" data-testid="snapshot-clear-filter" class="btn-secondary">清除筛选</button>
+                    <button type="button" id="refresh-page-btn" class="btn-primary">刷新页面</button>
+                </div>
             </div>
-        </div>
 
-        <!-- Batch Actions -->
-        <div class="flex items-center justify-between mb-4">
-            <div class="flex items-center gap-2">
-                <input type="checkbox" id="select-all" data-testid="snapshots-select-all" class="rounded" />
-                <label for="select-all" class="text-sm text-slate-600">全选</label>
-                <button id="batch-delete-btn" data-testid="snapshots-batch-delete" disabled
-                    class="ml-4 rounded border border-rose-300 px-3 py-1.5 text-sm text-rose-600 hover:bg-rose-50 disabled:opacity-50 disabled:cursor-not-allowed">
-                    批量删除 (<span id="selected-count">0</span>)
-                </button>
+            <div class="surface-muted snapshots-selection-bar" data-testid="snapshot-list-header" aria-live="polite">
+                <div class="snapshots-selection-group">
+                    <label for="select-all" class="snapshots-select-all-control">
+                        <input type="checkbox" id="select-all" data-testid="snapshots-select-all" />
+                        <span>全选当前结果</span>
+                    </label>
+                    <button id="batch-delete-btn" data-testid="snapshots-batch-delete" disabled class="btn-danger btn-sm">
+                        批量删除 (<span id="selected-count">0</span>)
+                    </button>
+                </div>
+                <div class="snapshots-summary-meta">
+                    <span class="status-badge status-badge--muted">当前显示 <span id="showing-count">0</span> 条</span>
+                    <span class="status-badge status-badge--muted" id="selection-hint-badge">勾选后可进行批量删除</span>
+                </div>
             </div>
-            <div class="text-sm text-slate-500">
-                显示 <span id="showing-count">0</span> 条
+        </section>
+
+        <section class="panel-card snapshots-list-card">
+            <div class="panel-header snapshots-list-card__header">
+                <div>
+                    <div class="panel-title">按日期分组的归档时间线</div>
+                    <p class="panel-description">保留查看、下载、单条删除和批量删除流程，同时补充书签来源与分类上下文。</p>
+                </div>
+                <div class="panel-actions">
+                    <span class="status-badge status-badge--muted">日期分组</span>
+                    <span class="status-badge status-badge--muted">移动端换行操作</span>
+                </div>
             </div>
-        </div>
 
-        <!-- Snapshot List - 按日期分组 -->
-        <div id="snapshot-list" data-testid="snapshot-list" class="space-y-4">
-            <!-- 动态加载 -->
-        </div>
+            <div id="snapshot-list" data-testid="snapshot-list" class="snapshots-group-stack">
+                <!-- 动态加载 -->
+            </div>
 
-        <!-- Empty State -->
-        <div id="empty-state" data-testid="snapshots-empty-state" class="hidden empty-state">
-            <p class="text-lg">暂无快照</p>
-            <p class="text-sm mt-2">使用浏览器扩展保存网页快照</p>
+            <div id="empty-state" data-testid="snapshots-empty-state" class="hidden empty-state snapshots-empty-state">
+                <div class="snapshots-empty-state__icon" aria-hidden="true">🗂️</div>
+                <p id="empty-state-title" class="snapshots-empty-state__title">暂无快照</p>
+                <p id="empty-state-copy" class="snapshots-empty-state__copy">使用浏览器扩展保存网页快照，或清除当前筛选查看其他记录。</p>
+            </div>
+        </section>
+    </div>
+
+    <div id="deleteModal" data-testid="snapshot-delete-modal" class="app-dialog-overlay hidden" aria-hidden="true">
+        <div id="deleteModalPanel" class="app-dialog-panel snapshot-modal-panel" data-testid="snapshot-delete-panel" role="dialog" aria-modal="true"
+            aria-labelledby="snapshot-delete-title">
+            <div class="app-dialog-title" id="snapshot-delete-title">确认删除快照</div>
+            <div class="app-dialog-message snapshot-modal-note">确定要删除快照 “<span id="deleteTitle"></span>” 吗？删除后无法恢复。</div>
+            <div class="snapshot-modal-actions">
+                <button id="cancelDeleteBtn" data-testid="snapshot-delete-cancel" class="btn-secondary btn-sm">取消</button>
+                <button id="confirmDeleteBtn" data-testid="snapshot-delete-confirm" class="btn-danger btn-sm">删除</button>
+            </div>
         </div>
     </div>
 
-    <!-- Delete Confirmation Modal -->
-    <div id="deleteModal" data-testid="snapshot-delete-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
-        <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl" data-testid="snapshot-delete-panel">
-            <h3 class="text-lg font-semibold">确认删除</h3>
-            <p class="mt-2 text-sm text-slate-600">确定要删除快照 "<span id="deleteTitle"></span>" 吗？此操作不可撤销。</p>
-            <div class="mt-4 flex justify-end gap-2">
-                <button id="cancelDeleteBtn" data-testid="snapshot-delete-cancel" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
-                <button id="confirmDeleteBtn" data-testid="snapshot-delete-confirm"
-                    class="rounded bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">删除</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Batch Delete Confirmation Modal -->
-    <div id="batchDeleteModal" data-testid="snapshot-batch-delete-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/50">
-        <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl" data-testid="snapshot-batch-delete-panel">
-            <h3 class="text-lg font-semibold">批量删除</h3>
-            <p class="mt-2 text-sm text-slate-600">确定要删除选中的 <span id="batchDeleteCount"></span> 个快照吗？此操作不可撤销。</p>
-            <div class="mt-4 flex justify-end gap-2">
-                <button id="cancelBatchDeleteBtn" data-testid="snapshot-batch-delete-cancel" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
-                <button id="confirmBatchDeleteBtn" data-testid="snapshot-batch-delete-confirm"
-                    class="rounded bg-rose-600 px-4 py-2 text-sm font-medium text-white hover:bg-rose-700">删除</button>
+    <div id="batchDeleteModal" data-testid="snapshot-batch-delete-modal" class="app-dialog-overlay hidden" aria-hidden="true">
+        <div id="batchDeleteModalPanel" class="app-dialog-panel snapshot-modal-panel" data-testid="snapshot-batch-delete-panel" role="dialog" aria-modal="true"
+            aria-labelledby="snapshot-batch-delete-title">
+            <div class="app-dialog-title" id="snapshot-batch-delete-title">批量删除快照</div>
+            <div class="app-dialog-message snapshot-modal-note">确定要删除选中的 <span id="batchDeleteCount"></span> 个快照吗？此操作不可撤销。</div>
+            <div class="snapshot-modal-actions">
+                <button id="cancelBatchDeleteBtn" data-testid="snapshot-batch-delete-cancel" class="btn-secondary btn-sm">取消</button>
+                <button id="confirmBatchDeleteBtn" data-testid="snapshot-batch-delete-confirm" class="btn-danger btn-sm">删除</button>
             </div>
         </div>
     </div>
 
     <script>
         const apiToken = '<%= apiToken %>';
-        const allSnapshots =  <%- JSON.stringify(snapshots) %>;
+        const allSnapshots = <%- JSON.stringify(snapshots) %>;
         let deleteId = null;
         const selectedIds = new Set();
         let filteredSnapshots = [...allSnapshots];
+        const modalFocusRestore = {
+            deleteModal: null,
+            batchDeleteModal: null,
+        };
 
-        // 日期格式化
         function formatDate(dateStr) {
             const d = new Date(dateStr);
             return d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
@@ -139,40 +211,116 @@
             return d.toISOString().slice(0, 10);
         }
 
-        // 过滤和渲染
+        function formatFileSize(bytes) {
+            const size = Number(bytes) || 0;
+            if (size >= 1024 * 1024) {
+                return (size / 1024 / 1024).toFixed(2) + ' MB';
+            }
+            return (size / 1024).toFixed(1) + ' KB';
+        }
+
+        function getRelativeDayLabel(dateKey) {
+            const today = getDateKey(new Date().toISOString());
+            if (dateKey === today) return '今天';
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            if (dateKey === getDateKey(yesterday.toISOString())) return '昨天';
+            return '归档日';
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str == null ? '' : String(str);
+            return div.innerHTML;
+        }
+
+        function updateFilterSummary() {
+            const query = document.getElementById('search-input').value.trim();
+            const dateFilter = document.getElementById('date-filter').value;
+            const statusBadge = document.getElementById('filter-status-badge');
+            const parts = [];
+
+            if (query) parts.push('关键词：' + query);
+            if (dateFilter) parts.push('日期：' + dateFilter);
+
+            if (parts.length) {
+                statusBadge.textContent = '筛选中 · ' + parts.join(' · ');
+                statusBadge.className = 'status-badge status-badge--info';
+            } else {
+                statusBadge.textContent = '本地即时筛选';
+                statusBadge.className = 'status-badge status-badge--muted';
+            }
+        }
+
+        function updateEmptyStateCopy() {
+            const query = document.getElementById('search-input').value.trim();
+            const dateFilter = document.getElementById('date-filter').value;
+            const title = document.getElementById('empty-state-title');
+            const copy = document.getElementById('empty-state-copy');
+
+            if (query || dateFilter) {
+                title.textContent = '暂无匹配快照';
+                copy.textContent = '试试清除关键词或日期筛选，查看其他日期分组中的归档记录。';
+            } else {
+                title.textContent = '暂无快照';
+                copy.textContent = '使用浏览器扩展保存网页快照，或清除当前筛选查看其他记录。';
+            }
+        }
+
+        function updateSelectAllState() {
+            const allCheckboxes = Array.from(document.querySelectorAll('.snapshot-checkbox'));
+            const checkedCount = allCheckboxes.filter((checkbox) => checkbox.checked).length;
+            const selectAll = document.getElementById('select-all');
+
+            selectAll.checked = allCheckboxes.length > 0 && checkedCount === allCheckboxes.length;
+            selectAll.indeterminate = checkedCount > 0 && checkedCount < allCheckboxes.length;
+        }
+
+        function updateSelectionState() {
+            document.getElementById('selected-count').textContent = selectedIds.size;
+            document.getElementById('batch-delete-btn').disabled = selectedIds.size === 0;
+            document.getElementById('selection-hint-badge').textContent = selectedIds.size > 0
+                ? '已选择 ' + selectedIds.size + ' 条，确认后会永久删除'
+                : '勾选后可进行批量删除';
+            updateSelectAllState();
+        }
+
+        function updateStats() {
+            const totalBytes = allSnapshots.reduce((sum, snapshot) => sum + (Number(snapshot.file_size) || 0), 0);
+            const linkedCount = allSnapshots.filter((snapshot) => Number(snapshot.bookmark_id)).length;
+            const dateCount = new Set(allSnapshots.map((snapshot) => getDateKey(snapshot.created_at))).size;
+
+            document.getElementById('stats-total').textContent = allSnapshots.length;
+            document.getElementById('stats-size').textContent = (totalBytes / 1024 / 1024).toFixed(2) + ' MB';
+            document.getElementById('stats-linked').textContent = linkedCount;
+            document.getElementById('stats-days').textContent = dateCount;
+        }
+
         function filterAndRender() {
             const query = document.getElementById('search-input').value.toLowerCase().trim();
             const dateFilter = document.getElementById('date-filter').value;
 
-            filteredSnapshots = allSnapshots.filter(s => {
-                // 搜索过滤
-                if (query) {
-                    const matchTitle = s.title.toLowerCase().includes(query);
-                    const matchUrl = s.url.toLowerCase().includes(query);
-                    if (!matchTitle && !matchUrl) return false;
-                }
-                // 日期过滤
-                if (dateFilter) {
-                    const snapshotDate = getDateKey(s.created_at);
-                    if (snapshotDate !== dateFilter) return false;
-                }
+            filteredSnapshots = allSnapshots.filter((snapshot) => {
+                const title = String(snapshot.title || '').toLowerCase();
+                const url = String(snapshot.url || '').toLowerCase();
+
+                if (query && !title.includes(query) && !url.includes(query)) return false;
+                if (dateFilter && getDateKey(snapshot.created_at) !== dateFilter) return false;
                 return true;
             });
 
+            updateFilterSummary();
             renderSnapshots();
         }
 
-        // 按日期分组渲染
         function renderSnapshots() {
             const container = document.getElementById('snapshot-list');
             const emptyState = document.getElementById('empty-state');
 
             document.getElementById('showing-count').textContent = filteredSnapshots.length;
-
-            // 清除选择
             selectedIds.clear();
-            updateSelectedCount();
-            document.getElementById('select-all').checked = false;
+            updateSelectionState();
+            updateEmptyStateCopy();
 
             if (filteredSnapshots.length === 0) {
                 container.innerHTML = '';
@@ -182,179 +330,224 @@
 
             emptyState.classList.add('hidden');
 
-            // 按日期分组
             const groups = {};
-            filteredSnapshots.forEach(s => {
-                const dateKey = getDateKey(s.created_at);
+            filteredSnapshots.forEach((snapshot) => {
+                const dateKey = getDateKey(snapshot.created_at);
                 if (!groups[dateKey]) groups[dateKey] = [];
-                groups[dateKey].push(s);
+                groups[dateKey].push(snapshot);
             });
 
-            // 按日期排序（最新在前）
             const sortedDates = Object.keys(groups).sort((a, b) => b.localeCompare(a));
 
             let html = '';
-            sortedDates.forEach(dateKey => {
+            sortedDates.forEach((dateKey) => {
                 const snapshots = groups[dateKey];
                 const dateDisplay = formatDate(snapshots[0].created_at);
 
                 html += `
-                <div class="rounded-lg border bg-white shadow-sm overflow-hidden">
-                    <div class="bg-slate-50 px-4 py-2 border-b">
-                        <span class="font-medium text-sm">${dateDisplay}</span>
-                        <span class="text-xs text-slate-500 ml-2">${snapshots.length} 个快照</span>
+                <section class="snapshot-group" data-group-date="${dateKey}">
+                    <div class="surface-muted snapshot-group__header" data-testid="snapshot-group-header">
+                        <div>
+                            <div class="snapshot-group__title">${dateDisplay}</div>
+                            <div class="snapshot-group__meta">${getRelativeDayLabel(dateKey)} · ${snapshots.length} 个快照</div>
+                        </div>
+                        <span class="status-badge status-badge--muted">${snapshots.length} 条</span>
                     </div>
-                    <div class="divide-y">
+                    <div class="snapshot-group__items">
                 `;
 
-                snapshots.forEach(s => {
-                    const time = new Date(s.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                snapshots.forEach((snapshot) => {
+                    const time = new Date(snapshot.created_at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+                    const bookmarkBadge = snapshot.bookmark_title
+                        ? `<span class="status-badge status-badge--info">🔖 ${escapeHtml(snapshot.bookmark_title)}</span>`
+                        : '<span class="status-badge status-badge--muted">未关联书签</span>';
+                    const categoryBadge = snapshot.bookmark_category
+                        ? `<span class="status-badge status-badge--muted">📂 ${escapeHtml(snapshot.bookmark_category)}</span>`
+                        : '';
+
                     html += `
-                    <div class="flex items-center p-3 hover:bg-slate-50 snapshot-item" data-testid="snapshot-row" data-id="${s.id}">
-                        <input type="checkbox" data-testid="snapshot-checkbox" class="snapshot-checkbox mr-3" value="${s.id}" />
-                        <div class="flex-1 min-w-0">
-                            <div class="font-medium text-sm truncate" data-testid="snapshot-title" title="${escapeHtml(s.title)}">${escapeHtml(s.title)}</div>
-                            <div class="text-xs text-slate-500 truncate mt-0.5" title="${escapeHtml(s.url)}">${escapeHtml(s.url)}</div>
-                            <div class="flex items-center gap-3 mt-1 text-xs text-slate-400">
-                                <span>⏰ ${time}</span>
-                                <span>📦 ${(s.file_size / 1024).toFixed(1)} KB</span>
+                    <article class="snapshot-row" data-testid="snapshot-row" data-id="${snapshot.id}">
+                        <div class="snapshot-row__selection">
+                            <input type="checkbox" data-testid="snapshot-checkbox" class="snapshot-checkbox" value="${snapshot.id}" aria-label="选择快照 ${escapeHtml(snapshot.title)}" />
+                        </div>
+                        <div class="snapshot-row__body">
+                            <div class="snapshot-row__headline">
+                                <div class="min-w-0">
+                                    <div class="snapshot-row__title" data-testid="snapshot-title" title="${escapeHtml(snapshot.title)}">${escapeHtml(snapshot.title)}</div>
+                                    <div class="snapshot-row__url" title="${escapeHtml(snapshot.url)}">${escapeHtml(snapshot.url)}</div>
+                                </div>
+                                <div class="snapshot-row__actions" data-testid="snapshot-item-actions">
+                                    <a href="/snapshots/${snapshot.filename}" target="_blank" data-testid="snapshot-view-link" class="btn-secondary btn-sm">查看</a>
+                                    <a href="/snapshots/${snapshot.filename}" download="${escapeHtml(snapshot.title)}.html" data-testid="snapshot-download-link" class="btn-secondary btn-sm">下载</a>
+                                    <button class="delete-btn btn-danger btn-sm" data-testid="snapshot-delete-button" data-id="${snapshot.id}" data-title="${escapeHtml(snapshot.title)}">删除</button>
+                                </div>
+                            </div>
+                            <div class="snapshot-row__meta">
+                                <span class="status-badge status-badge--muted">⏰ ${time}</span>
+                                <span class="status-badge status-badge--muted">📦 ${formatFileSize(snapshot.file_size)}</span>
+                                <span class="status-badge status-badge--muted">🕒 ${formatDateTime(snapshot.created_at)}</span>
+                                ${bookmarkBadge}
+                                ${categoryBadge}
                             </div>
                         </div>
-                        <div class="flex items-center gap-2 ml-4">
-                            <a href="/snapshots/${s.filename}" target="_blank" data-testid="snapshot-view-link"
-                                class="rounded border px-3 py-1.5 text-xs hover:bg-slate-50">查看</a>
-                            <a href="/snapshots/${s.filename}" download="${escapeHtml(s.title)}.html" data-testid="snapshot-download-link"
-                                class="rounded border px-3 py-1.5 text-xs hover:bg-slate-50">下载</a>
-                            <button class="delete-btn rounded border border-rose-300 px-3 py-1.5 text-xs text-rose-600 hover:bg-rose-50"
-                                data-testid="snapshot-delete-button"
-                                data-id="${s.id}" data-title="${escapeHtml(s.title)}">删除</button>
-                        </div>
-                    </div>
+                    </article>
                     `;
                 });
 
-                html += `</div></div>`;
+                html += '</div></section>';
             });
 
             container.innerHTML = html;
-            bindEvents();
+            bindSnapshotRowEvents();
         }
 
-        function escapeHtml(str) {
-            const div = document.createElement('div');
-            div.textContent = str;
-            return div.innerHTML;
+        function rememberFocus(modalId) {
+            modalFocusRestore[modalId] = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         }
 
-        function updateSelectedCount() {
-            document.getElementById('selected-count').textContent = selectedIds.size;
-            document.getElementById('batch-delete-btn').disabled = selectedIds.size === 0;
+        function restoreFocus(modalId) {
+            const previous = modalFocusRestore[modalId];
+            if (previous && typeof previous.focus === 'function') previous.focus();
+            modalFocusRestore[modalId] = null;
         }
 
-        function bindEvents() {
-            // Checkbox events
-            document.querySelectorAll('.snapshot-checkbox').forEach(cb => {
-                cb.addEventListener('change', function () {
+        function openModal(modalId, panelId, focusId) {
+            const modal = document.getElementById(modalId);
+            const panel = document.getElementById(panelId);
+            rememberFocus(modalId);
+            modal.classList.remove('hidden');
+            modal.setAttribute('aria-hidden', 'false');
+            requestAnimationFrame(() => {
+                modal.classList.add('is-open');
+                panel.classList.add('is-open');
+                const focusTarget = document.getElementById(focusId);
+                if (focusTarget && typeof focusTarget.focus === 'function') focusTarget.focus();
+            });
+        }
+
+        function closeModal(modalId, panelId) {
+            const modal = document.getElementById(modalId);
+            const panel = document.getElementById(panelId);
+            modal.classList.remove('is-open');
+            panel.classList.remove('is-open');
+            modal.setAttribute('aria-hidden', 'true');
+            window.setTimeout(() => {
+                modal.classList.add('hidden');
+                restoreFocus(modalId);
+            }, 180);
+        }
+
+        function closeDeleteModal() {
+            deleteId = null;
+            closeModal('deleteModal', 'deleteModalPanel');
+        }
+
+        function closeBatchDeleteModal() {
+            closeModal('batchDeleteModal', 'batchDeleteModalPanel');
+        }
+
+        function bindSnapshotRowEvents() {
+            document.querySelectorAll('.snapshot-checkbox').forEach((checkbox) => {
+                checkbox.addEventListener('change', function () {
                     if (this.checked) {
                         selectedIds.add(this.value);
                     } else {
                         selectedIds.delete(this.value);
                     }
-                    updateSelectedCount();
-
-                    const allCheckboxes = document.querySelectorAll('.snapshot-checkbox');
-                    const allChecked = Array.from(allCheckboxes).every(c => c.checked);
-                    document.getElementById('select-all').checked = allChecked && allCheckboxes.length > 0;
+                    updateSelectionState();
                 });
             });
 
-            // Delete buttons
-            document.querySelectorAll('.delete-btn').forEach(btn => {
-                btn.addEventListener('click', function () {
+            document.querySelectorAll('.delete-btn').forEach((button) => {
+                button.addEventListener('click', function () {
                     deleteId = this.dataset.id;
-                    document.getElementById('deleteTitle').textContent = this.dataset.title;
-                    document.getElementById('deleteModal').classList.remove('hidden');
-                    document.getElementById('deleteModal').classList.add('flex');
+                    document.getElementById('deleteTitle').textContent = this.dataset.title || '';
+                    openModal('deleteModal', 'deleteModalPanel', 'cancelDeleteBtn');
                 });
             });
         }
 
-        // 初始化
         document.addEventListener('DOMContentLoaded', function () {
             renderSnapshots();
+            updateStats();
+            updateFilterSummary();
 
-            // 搜索 - 实时过滤
             let searchTimeout;
             document.getElementById('search-input').addEventListener('input', function () {
                 clearTimeout(searchTimeout);
-                searchTimeout = setTimeout(filterAndRender, 300);
+                searchTimeout = setTimeout(filterAndRender, 240);
             });
 
-            // 日期筛选
             document.getElementById('date-filter').addEventListener('change', filterAndRender);
 
-            // 清除按钮
             document.getElementById('clear-filter-btn').addEventListener('click', function () {
                 document.getElementById('search-input').value = '';
                 document.getElementById('date-filter').value = '';
                 filterAndRender();
             });
 
-            // Select all
-            document.getElementById('select-all').addEventListener('change', function () {
-                document.querySelectorAll('.snapshot-checkbox').forEach(cb => {
-                    cb.checked = this.checked;
-                    if (this.checked) {
-                        selectedIds.add(cb.value);
-                    } else {
-                        selectedIds.delete(cb.value);
-                    }
-                });
-                updateSelectedCount();
+            document.getElementById('refresh-page-btn').addEventListener('click', function () {
+                location.reload();
             });
 
-            // Single delete
+            document.getElementById('select-all').addEventListener('change', function () {
+                document.querySelectorAll('.snapshot-checkbox').forEach((checkbox) => {
+                    checkbox.checked = this.checked;
+                    if (this.checked) {
+                        selectedIds.add(checkbox.value);
+                    } else {
+                        selectedIds.delete(checkbox.value);
+                    }
+                });
+                updateSelectionState();
+            });
+
             document.getElementById('cancelDeleteBtn').addEventListener('click', closeDeleteModal);
             document.getElementById('confirmDeleteBtn').addEventListener('click', async function () {
                 if (!deleteId) return;
+                const button = this;
+                button.disabled = true;
+                button.textContent = '删除中...';
+
                 try {
-                    const res = await fetch('/api/snapshots/' + deleteId, {
+                    const response = await fetch('/api/snapshots/' + deleteId, {
                         method: 'DELETE',
                         headers: { 'Authorization': 'Bearer ' + apiToken }
                     });
-                    if (res.ok) {
-                        // 从数组中移除
-                        const idx = allSnapshots.findIndex(s => String(s.id) === String(deleteId));
-                        if (idx !== -1) allSnapshots.splice(idx, 1);
+
+                    if (response.ok) {
+                        const index = allSnapshots.findIndex((snapshot) => String(snapshot.id) === String(deleteId));
+                        if (index !== -1) allSnapshots.splice(index, 1);
                         filterAndRender();
                         updateStats();
                     } else {
-                        const data = await res.json();
+                        const data = await response.json();
                         await AppDialog.alert(data.error || '删除失败');
                     }
-                } catch (e) {
-                    await AppDialog.alert('删除失败: ' + e.message);
+                } catch (error) {
+                    await AppDialog.alert('删除失败: ' + error.message);
                 }
+
+                button.disabled = false;
+                button.textContent = '删除';
                 closeDeleteModal();
             });
 
-            // Batch delete
             document.getElementById('batch-delete-btn').addEventListener('click', function () {
                 if (selectedIds.size === 0) return;
                 document.getElementById('batchDeleteCount').textContent = selectedIds.size;
-                document.getElementById('batchDeleteModal').classList.remove('hidden');
-                document.getElementById('batchDeleteModal').classList.add('flex');
+                openModal('batchDeleteModal', 'batchDeleteModalPanel', 'cancelBatchDeleteBtn');
             });
 
             document.getElementById('cancelBatchDeleteBtn').addEventListener('click', closeBatchDeleteModal);
             document.getElementById('confirmBatchDeleteBtn').addEventListener('click', async function () {
                 if (selectedIds.size === 0) return;
-                const btn = this;
-                btn.disabled = true;
-                btn.textContent = '删除中...';
+                const button = this;
+                button.disabled = true;
+                button.textContent = '删除中...';
 
                 try {
-                    const res = await fetch('/api/snapshots/batch-delete', {
+                    const response = await fetch('/api/snapshots/batch-delete', {
                         method: 'POST',
                         headers: {
                             'Content-Type': 'application/json',
@@ -362,67 +555,59 @@
                         },
                         body: JSON.stringify({ ids: Array.from(selectedIds) })
                     });
-                    const data = await res.json();
-                    if (res.ok && data.success) {
-                        // 从数组中移除
-                        selectedIds.forEach(id => {
-                            const idx = allSnapshots.findIndex(s => String(s.id) === String(id));
-                            if (idx !== -1) allSnapshots.splice(idx, 1);
+                    const data = await response.json();
+
+                    if (response.ok && data.success) {
+                        selectedIds.forEach((id) => {
+                            const index = allSnapshots.findIndex((snapshot) => String(snapshot.id) === String(id));
+                            if (index !== -1) allSnapshots.splice(index, 1);
                         });
                         selectedIds.clear();
                         filterAndRender();
-                        document.getElementById('stats-total').textContent = allSnapshots.length;
+                        updateStats();
                     } else {
                         await AppDialog.alert(data.error || '批量删除失败');
                     }
-                } catch (e) {
-                    await AppDialog.alert('批量删除失败: ' + e.message);
+                } catch (error) {
+                    await AppDialog.alert('批量删除失败: ' + error.message);
                 }
-                btn.disabled = false;
-                btn.textContent = '删除';
+
+                button.disabled = false;
+                button.textContent = '删除';
                 closeBatchDeleteModal();
             });
 
-            // Modal close handlers
-            ['deleteModal', 'batchDeleteModal'].forEach(id => {
-                document.getElementById(id).addEventListener('click', function (e) {
-                    if (e.target === this) {
-                        this.classList.add('hidden');
-                        this.classList.remove('flex');
+            ['deleteModal', 'batchDeleteModal'].forEach((modalId) => {
+                const modal = document.getElementById(modalId);
+                modal.addEventListener('click', function (event) {
+                    if (event.target !== this) return;
+                    if (modalId === 'deleteModal') {
+                        closeDeleteModal();
+                    } else {
+                        closeBatchDeleteModal();
+                    }
+                });
+                modal.addEventListener('keydown', function (event) {
+                    if (event.key !== 'Escape') return;
+                    event.preventDefault();
+                    if (modalId === 'deleteModal') {
+                        closeDeleteModal();
+                    } else {
+                        closeBatchDeleteModal();
                     }
                 });
             });
         });
 
-        function closeDeleteModal() {
-            deleteId = null;
-            document.getElementById('deleteModal').classList.add('hidden');
-            document.getElementById('deleteModal').classList.remove('flex');
-        }
-
-        function closeBatchDeleteModal() {
-            document.getElementById('batchDeleteModal').classList.add('hidden');
-            document.getElementById('batchDeleteModal').classList.remove('flex');
-        }
-
-        // 动态更新统计
-        function updateStats() {
-            document.getElementById('stats-total').textContent = allSnapshots.length;
-            const totalBytes = allSnapshots.reduce((sum, s) => sum + (s.file_size || 0), 0);
-            const totalMB = (totalBytes / 1024 / 1024).toFixed(2);
-            document.getElementById('stats-size').textContent = totalMB + ' MB';
-        }
-
-        // 主题切换
         (function () {
-            const btn = document.getElementById('theme-toggle');
-            if (!btn) return;
+            const button = document.getElementById('theme-toggle');
+            if (!button) return;
             const updateIcon = () => {
                 const theme = document.documentElement.getAttribute('data-theme');
-                btn.textContent = theme === 'dark' ? '☀️' : '🌙';
+                button.textContent = theme === 'dark' ? '☀️' : '🌙';
             };
             updateIcon();
-            btn.addEventListener('click', () => {
+            button.addEventListener('click', () => {
                 const current = document.documentElement.getAttribute('data-theme');
                 const next = current === 'dark' ? 'light' : 'dark';
                 document.documentElement.setAttribute('data-theme', next);

@@ -279,11 +279,12 @@
 - title：快照页统一改造
 - wave：`W1`
 - issue_ref：[执行任务板 - UIR-DEV-050](./03-execution-board.md)
-- commit_refs：待执行
+- commit_refs：`[UIR-DEV-050][dev] redesign snapshots page`
 - commit_message_examples：`[UIR-DEV-050][dev] redesign snapshots page`
 - gemini_review_required：是；聚焦统计卡、筛选条、列表项与删除确认
 - last_updated_at：2026-04-17
-- delivery_gate：`open`
+- local_validation：`npx vitest run tests/integration/page-assets.test.ts`、`npx tsx scripts/snapshot-browse-download-browser-validate.ts` passed
+- delivery_gate：`in_testing`
 
 ### 3.1 计划引入内容
 
@@ -297,7 +298,23 @@
 
 | area | object_type | object_name | actual_change | user_visible_impact | notes |
 |---|---|---|---|---|---|
-| uiux | snapshots | list and filter shell | 待执行 | 快照筛选与管理更直观 |  |
+| frontend | template | snapshots workspace shell | 已将快照页重组为“概览卡 + 筛选与批量操作 + 分组时间线”三段式布局，并补充书签关联与捕获天数上下文 | 首屏层级更清晰，快照库规模与筛选入口更易扫视 | 保留 `/snapshots` 页面入口与现有 `data-testid` 契约 |
+| frontend | interaction | grouped snapshot rows and empty state | 已重做按日期分组的时间线行卡、动作区与空态文案，新增书签标题 / 分类 badge、体积 / 时间信息与移动端换行动作布局 | 单条信息更完整，查看 / 下载 / 删除入口更稳定，移动端可读性更好 | 不改 `/snapshots/:filename`、下载属性与过滤逻辑语义 |
+| frontend | dialog | delete / batch delete modal shell | 已将单条 / 批量删除确认统一到共享 dialog shell，并补充 `Escape` 关闭、焦点恢复与删除中按钮态 | 删除确认视觉与反馈更统一，误操作风险更低 | 不改 `/api/snapshots/:id` 与 `/api/snapshots/batch-delete` 语义 |
+| test | integration | snapshots selectors | 已增补 `snapshot-stats-card`、`snapshot-filter-bar`、`snapshot-list-header`、`snapshot-group-header`、`snapshot-item-actions` 断言 | 快照页 UI 契约回归更稳 | 浏览器回放脚本保持兼容并已本地通过 |
+
+### 3.2A Gemini 审阅结论
+
+- 审阅会话：`Gemini session a0742ee4-d76b-4a24-91cc-ec76e8d03a57`
+- 采用：
+  - 复用共享 `panel-card`、`form-control`、`btn-*`、`empty-state` 与 dialog shell，避免再造一套快照页样式；
+  - 将页面重组为概览、筛选 / 批量操作、按日期分组列表三层结构，并补充书签来源 / 分类上下文；
+  - 保持原生 JS 逻辑主体不变，仅重写 `renderSnapshots` 生成的新壳体并补少量状态 / 模态辅助函数；
+  - 只增补 `data-testid`，不删除既有快照页回归选择器。
+- 裁剪：
+  - 未引入新的前端框架或把快照页改写为 Alpine 状态机；
+  - 未折叠单条操作为更多菜单，仍保留直达查看 / 下载 / 删除按钮；
+  - 未改 `/api/snapshots*`、文件访问、theme 持久化或删除业务语义。
 
 ### 3.3 关联回归用例
 
