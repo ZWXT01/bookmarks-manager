@@ -24,7 +24,7 @@
   data-total="<%= job.total %>" data-plan-id="<%= typeof organizePlanId !== 'undefined' && organizePlanId ? organizePlanId : '' %>">
   <%
     const isLegacyAiTask = job.type === 'ai_classify' || job.type === 'ai_simplify';
-    const jobIcon = job.type === 'ai_organize' ? '🤖' : isLegacyAiTask ? '🗂️' : '🔍';
+    const jobIcon = job.type === 'ai_organize' ? '🤖' : isLegacyAiTask ? '🗂️' : job.type === 'import' ? '📥' : '🔍';
     const jobLabel =
       job.type === 'ai_organize' ? 'AI 整理任务'
       : isLegacyAiTask ? '历史 AI 任务（已下线）'
@@ -38,7 +38,44 @@
     const jobBarClass =
       job.type === 'ai_organize' ? 'bg-gradient-to-r from-blue-500 to-blue-700'
       : isLegacyAiTask ? 'bg-gradient-to-r from-amber-500 to-amber-700'
+      : job.type === 'import' ? 'bg-gradient-to-r from-emerald-500 to-emerald-700'
       : 'bg-gradient-to-r from-slate-700 to-slate-900';
+    const jobStatusLabel =
+      job.status === 'running' ? '运行中'
+      : job.status === 'pending' ? '等待中'
+      : job.status === 'queued' ? '排队中'
+      : job.status === 'done' ? '已完成'
+      : job.status === 'failed' ? '失败'
+      : job.status === 'canceled' || job.status === 'cancelled' ? '已取消'
+      : job.status;
+    const jobStatusClass =
+      job.status === 'running' || job.status === 'pending' || job.status === 'queued' ? 'status-badge--info'
+      : job.status === 'done' ? 'status-badge--success'
+      : job.status === 'failed' ? 'status-badge--danger'
+      : 'status-badge--muted';
+    const jobProgressPercent = job.total > 0 ? Math.min(100, Math.floor((job.processed / job.total) * 100)) : 0;
+    const jobIconBadgeClass =
+      job.type === 'ai_organize' ? 'job-icon-badge--ai'
+      : isLegacyAiTask ? 'job-icon-badge--legacy'
+      : job.type === 'import' ? 'job-icon-badge--import'
+      : 'job-icon-badge--check';
+
+    function getPlanStatusLabel(status) {
+      if (status === 'preview') return '待应用';
+      if (status === 'applied') return '已应用';
+      if (status === 'assigning') return '分配中';
+      if (status === 'failed') return '失败';
+      if (status === 'error') return '错误';
+      if (status === 'canceled' || status === 'cancelled') return '已取消';
+      return status || '未知';
+    }
+
+    function getPlanStatusClass(status) {
+      if (status === 'preview' || status === 'assigning') return 'status-badge--info';
+      if (status === 'applied') return 'status-badge--success';
+      if (status === 'failed' || status === 'error') return 'status-badge--danger';
+      return 'status-badge--muted';
+    }
   %>
   <header class="page-topbar glass-header">
     <div class="page-topbar__inner">
@@ -56,215 +93,228 @@
   </header>
 
   <div class="page-shell page-content">
-    <div class="card panel-card">
-      <div class="flex items-center justify-between">
-        <div>
-          <div class="flex items-center gap-2">
-            <span class="text-lg"><%= jobIcon %></span>
-            <span class="text-sm font-semibold text-slate-700"><%= jobLabel %></span>
-            <span id="job-status" data-testid="job-status"
-              class="status-badge <%= job.status === 'running' ? 'status-badge--info' : job.status === 'done' ? 'status-badge--success' : job.status === 'failed' ? 'status-badge--danger' : 'status-badge--muted' %>">
-              <%= job.status==='running' ? '运行中' : job.status==='done' ? '已完成' : job.status==='failed' ? '失败' :
-                job.status==='canceled' ? '已取消' : job.status %>
-            </span>
-          </div>
-          <div class="mt-1 text-xs text-slate-500 whitespace-pre-wrap break-words max-w-2xl" id="job-message" data-testid="job-message">
-            <%= job.message || '' %>
+    <section class="panel-card job-hero-card">
+      <div class="panel-header job-hero-header">
+        <div class="job-title-group">
+          <span class="job-icon-badge <%= jobIconBadgeClass %>" aria-hidden="true"><%= jobIcon %></span>
+          <div class="job-hero-text">
+            <div class="panel-title">
+              <span><%= jobLabel %></span>
+              <span id="job-status" data-testid="job-status" class="status-badge <%= jobStatusClass %>"><%= jobStatusLabel %></span>
+            </div>
+            <p class="job-hero-subtitle">任务详情保留既有 `/jobs*` 契约、取消动作与 SSE / 轮询语义，只重构信息层级、状态可见性与移动端阅读体验。</p>
           </div>
         </div>
-        <div class="text-right text-xs text-slate-500">
-          <div>创建：<%= new Date(job.created_at).toLocaleString('zh-CN') %>
-          </div>
-          <div>更新：<span id="job-updated" data-testid="job-updated">
-              <%= new Date(job.updated_at).toLocaleString('zh-CN') %>
-            </span></div>
-          <% if ((isLegacyAiTask || job.type === 'ai_organize') && job.extra) { try { const
-            extra=JSON.parse(job.extra); if (extra.tokenEstimate) { %>
-            <div class="mt-1 text-emerald-600">
-              预估Token: ~<%= extra.tokenEstimate.estimatedTotalTokens.toLocaleString() %>
-            </div>
-            <% } } catch(e) {} } %>
+        <div class="panel-actions job-hero-actions">
+          <% if (job.status==='running' || job.status==='pending' || job.status==='queued') { %>
+            <button id="cancel-job-btn" data-testid="cancel-job-btn" class="btn-danger btn-sm">取消任务</button>
+          <% } %>
         </div>
       </div>
 
-      <div class="mt-4">
-        <div class="h-3 w-full overflow-hidden rounded-full bg-slate-100">
-          <div id="job-bar" data-testid="job-bar" class="h-3 <%= jobBarClass %> transition-all duration-300" style="width: 0%"></div>
-        </div>
-        <div id="current-item" data-testid="job-current-item" class="mt-2 text-xs text-slate-600 italic opacity-0 transition-opacity"></div>
-        <div class="mt-2 flex items-center justify-between">
-          <div class="text-xs text-slate-600" data-testid="job-progress-summary">
-            <span id="job-progress" data-testid="job-progress">
-              <%= job.processed %>
-            </span>/<span id="job-total" data-testid="job-total">
-              <%= job.total %>
-            </span>
-            <span class="ml-3"><%= jobSuccessLabel %>：<span id="job-inserted" data-testid="job-inserted"><%= job.inserted %></span></span>
-            <span class="ml-3">跳过：<span id="job-skipped" data-testid="job-skipped">
-                <%= job.skipped %>
-              </span></span>
-            <span class="ml-3">失败：<span id="job-failed" data-testid="job-failed">
-                <%= job.failed %>
-              </span></span>
+      <div class="surface-muted job-message-card">
+        <div class="job-message-card__label">任务消息</div>
+        <div id="job-message" data-testid="job-message" class="job-message-card__value"><%= job.message || '' %></div>
+      </div>
+
+      <div class="job-summary-grid" data-testid="job-summary-grid">
+        <article class="job-summary-card">
+          <div class="job-summary-card__label">任务 ID</div>
+          <div class="job-summary-card__value job-summary-card__value--code"><%= job.id %></div>
+          <div class="job-summary-card__meta">详情页、失败分页与任务事件都继续基于同一 job 资源加载。</div>
+        </article>
+        <article class="job-summary-card">
+          <div class="job-summary-card__label">创建时间</div>
+          <div class="job-summary-card__value"><%= new Date(job.created_at).toLocaleString('zh-CN') %></div>
+          <div class="job-summary-card__meta">任务类型：<span class="font-medium text-slate-700"><%= job.type %></span></div>
+        </article>
+        <article class="job-summary-card">
+          <div class="job-summary-card__label">最近更新时间</div>
+          <div class="job-summary-card__value"><span id="job-updated" data-testid="job-updated"><%= new Date(job.updated_at).toLocaleString('zh-CN') %></span></div>
+          <div class="job-summary-card__meta">完成后页面会自动回载，以显示最新失败表与整理计划状态。</div>
+        </article>
+        <article class="job-summary-card">
+          <div class="job-summary-card__label">当前进度</div>
+          <div class="job-summary-card__value"><span id="job-progress-percent" data-testid="job-progress-percent"><%= jobProgressPercent %>%</span></div>
+          <div class="job-summary-card__meta">适用于导入、检查与 AI organize 的统一进度反馈。</div>
+        </article>
+      </div>
+
+      <div class="surface-muted job-progress-card">
+        <div class="job-progress-card__top">
+          <div>
+            <div class="job-progress-card__label">执行进度</div>
+            <div class="job-progress-card__description">SSE 连接异常时会自动回退到轮询，避免任务状态看起来“卡住”。</div>
           </div>
-          <% if (job.status==='running' || job.status==='pending' ) { %>
-            <button id="cancel-job-btn" data-testid="cancel-job-btn"
-              class="btn-danger btn-sm">取消任务</button>
-            <% } %>
+          <% if ((isLegacyAiTask || job.type === 'ai_organize') && job.extra) { try { const extra = JSON.parse(job.extra); if (extra.tokenEstimate) { %>
+            <span class="status-badge status-badge--success">预估 Token ~<%= extra.tokenEstimate.estimatedTotalTokens.toLocaleString() %></span>
+          <% } } catch(e) {} } %>
+        </div>
+        <div class="job-progress-track">
+          <div id="job-bar" data-testid="job-bar" class="job-progress-fill <%= jobBarClass %> transition-all duration-300" style="width: <%= jobProgressPercent %>%"></div>
+        </div>
+        <div id="current-item" data-testid="job-current-item" class="job-current-item <%= job.message && job.message.includes('检查') ? '' : 'opacity-0' %>"><%= job.message && job.message.includes('检查') ? job.message : '' %></div>
+        <div class="job-metric-pills" data-testid="job-progress-summary">
+          <span class="job-metric-pill"><span>进度</span><strong><span id="job-progress" data-testid="job-progress"><%= job.processed %></span>/<span id="job-total" data-testid="job-total"><%= job.total %></span></strong></span>
+          <span class="job-metric-pill job-metric-pill--success"><span><%= jobSuccessLabel %></span><strong><span id="job-inserted" data-testid="job-inserted"><%= job.inserted %></span></strong></span>
+          <span class="job-metric-pill job-metric-pill--warning"><span>跳过</span><strong><span id="job-skipped" data-testid="job-skipped"><%= job.skipped %></span></strong></span>
+          <span class="job-metric-pill job-metric-pill--danger"><span>失败</span><strong><span id="job-failed" data-testid="job-failed"><%= job.failed %></span></strong></span>
         </div>
       </div>
-    </div>
+    </section>
 
     <% if (job.type === 'ai_organize' && organizePlanStatus === 'preview' && organizeDiff) { %>
-    <div class="mt-4 rounded-lg border bg-white p-4 shadow-sm" id="plan-action-block">
-      <div class="flex items-center justify-between mb-3">
-        <div class="text-sm font-semibold text-slate-700">整理计划预览</div>
-        <span id="plan-status-badge" class="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700">待应用</span>
-      </div>
-      <% if (organizePlanTemplateName) { %>
-        <div class="text-xs text-slate-500 mb-3">将应用于模板：<span class="font-medium text-slate-700"><%= organizePlanTemplateName %></span></div>
-      <% } %>
-      <div class="grid grid-cols-3 gap-2 text-center text-xs mb-3">
-        <div class="bg-blue-50 rounded p-2">
-          <div class="text-lg font-bold text-blue-600"><%= organizeDiff.summary.move_count %></div>
-          <div class="text-slate-500">移动书签</div>
+      <section class="panel-card job-section-card" id="plan-action-block">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">
+              <span aria-hidden="true">🧠</span>
+              <span>整理计划预览</span>
+            </div>
+            <p class="panel-description">支持逐条选择应用或放弃；完成本次计划前，不能开始下一次整理。</p>
+          </div>
+          <span id="plan-status-badge" class="status-badge <%= getPlanStatusClass('preview') %>"><%= getPlanStatusLabel('preview') %></span>
         </div>
-        <div class="bg-amber-50 rounded p-2">
-          <div class="text-lg font-bold text-amber-600"><%= organizeDiff.summary.empty_count %></div>
-          <div class="text-slate-500">空分类</div>
-        </div>
-        <div class="bg-purple-50 rounded p-2">
-          <div class="text-lg font-bold text-purple-600"><%= organizeDiff.summary.needs_review %></div>
-          <div class="text-slate-500">待审核</div>
-        </div>
-      </div>
-      <div class="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-        支持逐条选择应用或放弃。已匹配分类的书签默认应用，未匹配到分类的书签默认放弃；完成本次计划前，不能开始下一次整理。
-      </div>
-      <div id="plan-actions" class="flex justify-end gap-2 pt-3 border-t">
-        <button id="discard-plan-btn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃</button>
-        <button id="apply-all-plan-btn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">全部应用</button>
-        <button id="apply-plan-btn" class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">应用已选</button>
-      </div>
-      <!-- Conflict resolution (hidden by default, shown after apply returns conflicts) -->
-      <div id="plan-resolve" class="hidden mt-3 pt-3 border-t space-y-3">
-        <div class="text-sm font-medium text-slate-700">冲突解决</div>
         <% if (organizePlanTemplateName) { %>
-          <div class="text-xs text-slate-500">将应用于模板：<span class="font-medium text-slate-700"><%= organizePlanTemplateName %></span></div>
+          <div class="job-summary-card__meta">将应用于模板：<span class="font-medium text-slate-700"><%= organizePlanTemplateName %></span></div>
         <% } %>
-        <div id="resolve-conflicts" class="hidden">
-          <div class="text-xs text-slate-500 mb-2">以下书签存在冲突，请选择处理方式：</div>
-          <div id="resolve-conflicts-list" class="max-h-48 overflow-y-auto border rounded divide-y"></div>
+        <div class="job-plan-grid" data-testid="organize-plan-summary">
+          <article class="job-summary-card">
+            <div class="job-summary-card__label">移动书签</div>
+            <div class="job-summary-card__value"><%= organizeDiff.summary.move_count %></div>
+            <div class="job-summary-card__meta">按当前预览计划完成归类移动。</div>
+          </article>
+          <article class="job-summary-card">
+            <div class="job-summary-card__label">空分类</div>
+            <div class="job-summary-card__value"><%= organizeDiff.summary.empty_count %></div>
+            <div class="job-summary-card__meta">应用后可能需要确认保留或删除。</div>
+          </article>
+          <article class="job-summary-card">
+            <div class="job-summary-card__label">待审核</div>
+            <div class="job-summary-card__value"><%= organizeDiff.summary.needs_review %></div>
+            <div class="job-summary-card__meta">未匹配项默认放弃，可逐条切换。</div>
+          </article>
         </div>
-        <div id="resolve-empty" class="hidden">
-          <div class="text-xs text-slate-500 mb-2">以下分类将变为空分类：</div>
-          <div id="resolve-empty-list" class="max-h-32 overflow-y-auto border rounded divide-y"></div>
+        <div class="surface-muted job-plan-note">
+          已匹配分类的书签默认应用，未匹配到分类的书签默认放弃；若应用时发生冲突，会进入人工确认步骤。
         </div>
-        <div class="flex justify-end gap-2">
-          <button id="resolve-back-btn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">返回</button>
-          <button id="resolve-confirm-btn" class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">确认并应用</button>
+        <div id="plan-actions" class="job-toolbar">
+          <button id="discard-plan-btn" class="btn-secondary btn-sm">放弃</button>
+          <button id="apply-all-plan-btn" class="btn-secondary btn-sm">全部应用</button>
+          <button id="apply-plan-btn" class="btn-primary btn-sm">应用已选</button>
         </div>
-      </div>
-      <!-- Applied success state -->
-      <div id="plan-applied" class="hidden mt-3 pt-3 border-t">
-        <div class="flex flex-col items-center gap-2 py-3">
-          <div class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-xl">✓</div>
-          <div class="text-sm font-medium text-green-700">整理已应用</div>
-          <div id="plan-applied-msg" class="text-xs text-slate-500"></div>
+        <div id="plan-resolve" class="hidden mt-4 border-t pt-4 space-y-3">
+          <div class="text-sm font-medium text-slate-700">冲突解决</div>
+          <% if (organizePlanTemplateName) { %>
+            <div class="job-summary-card__meta">将应用于模板：<span class="font-medium text-slate-700"><%= organizePlanTemplateName %></span></div>
+          <% } %>
+          <div id="resolve-conflicts" class="hidden">
+            <div class="text-xs text-slate-500 mb-2">以下书签存在冲突，请选择处理方式：</div>
+            <div id="resolve-conflicts-list" class="job-resolve-list custom-scrollbar max-h-48 overflow-y-auto"></div>
+          </div>
+          <div id="resolve-empty" class="hidden">
+            <div class="text-xs text-slate-500 mb-2">以下分类将变为空分类：</div>
+            <div id="resolve-empty-list" class="job-resolve-list custom-scrollbar max-h-32 overflow-y-auto"></div>
+          </div>
+          <div class="job-toolbar job-toolbar--compact">
+            <button id="resolve-back-btn" class="btn-secondary btn-sm">返回</button>
+            <button id="resolve-confirm-btn" class="btn-primary btn-sm">确认并应用</button>
+          </div>
         </div>
-      </div>
-      <!-- Canceled state -->
-      <div id="plan-canceled" class="hidden mt-3 pt-3 border-t">
-        <div class="flex flex-col items-center gap-2 py-3">
-          <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-xl">✕</div>
-          <div class="text-sm font-medium text-slate-500">已取消</div>
+        <div id="plan-applied" class="hidden mt-4 border-t pt-4">
+          <div class="flex flex-col items-center gap-2 py-3">
+            <div class="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center text-xl">✓</div>
+            <div class="text-sm font-medium text-green-700">整理已应用</div>
+            <div id="plan-applied-msg" class="text-xs text-slate-500"></div>
+          </div>
         </div>
-      </div>
-    </div>
+        <div id="plan-canceled" class="hidden mt-4 border-t pt-4">
+          <div class="flex flex-col items-center gap-2 py-3">
+            <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-xl">✕</div>
+            <div class="text-sm font-medium text-slate-500">已取消</div>
+          </div>
+        </div>
+      </section>
     <% } %>
 
     <% if (job.failed > 0) { %>
-    <div class="mt-4 rounded-lg border bg-white p-3 shadow-sm">
-      <div class="flex items-center justify-between">
-        <div class="text-sm font-semibold text-slate-700">
-          失败项（共 <span id="failure-total">
-            <%= typeof failureTotal==='number' ? failureTotal : failures.length %>
-          </span> 条）
+      <section class="panel-card job-section-card job-table-card">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">失败项（共 <span id="failure-total"><%= typeof failureTotal==='number' ? failureTotal : failures.length %></span> 条）</div>
+            <p class="panel-description">失败明细保留既有 AJAX 分页与页大小切换语义，方便快速筛查输入与错误原因。</p>
+          </div>
+          <label class="form-field job-inline-select">
+            <span class="form-label">每页</span>
+            <select id="fail-page-size" data-testid="failure-page-size" class="form-control">
+              <option value="20" <%=failPageSize===20 ? 'selected' : '' %>>20</option>
+              <option value="50" <%=failPageSize===50 ? 'selected' : '' %>>50</option>
+              <option value="100" <%=failPageSize===100 ? 'selected' : '' %>>100</option>
+            </select>
+          </label>
         </div>
-        <div class="flex items-center gap-2">
-          <label class="text-xs text-slate-500">每页</label>
-          <select id="fail-page-size" data-testid="failure-page-size" class="rounded border px-2 py-1 text-sm">
-            <option value="20" <%=failPageSize===20 ? 'selected' : '' %>>20</option>
-            <option value="50" <%=failPageSize===50 ? 'selected' : '' %>>50</option>
-            <option value="100" <%=failPageSize===100 ? 'selected' : '' %>>100</option>
-          </select>
+        <div class="table-shell" data-testid="failure-table">
+          <div class="table-scroll custom-scrollbar">
+            <table class="w-full table-fixed">
+              <thead>
+                <tr>
+                  <th class="w-[45%] px-3 py-2 text-left text-xs font-semibold text-slate-600">输入</th>
+                  <th class="w-[55%] px-3 py-2 text-left text-xs font-semibold text-slate-600">原因</th>
+                </tr>
+              </thead>
+              <tbody id="failures" data-testid="failure-list" class="divide-y">
+                <% if (!failures.length) { %>
+                  <tr><td colspan="2" class="px-3 py-6 text-center text-sm text-slate-500">暂无</td></tr>
+                <% } %>
+                <% failures.forEach(function(f) { %>
+                  <tr class="failure-row" data-testid="failure-row">
+                    <td class="px-3 py-2 text-sm text-slate-700" data-testid="failure-input">
+                      <div class="truncate" title="<%= f.input %>"><%= f.input %></div>
+                    </td>
+                    <td class="px-3 py-2 text-sm text-rose-700" data-testid="failure-reason">
+                      <div class="custom-scrollbar whitespace-pre-wrap break-words max-h-28 overflow-y-auto"><%= f.reason %></div>
+                    </td>
+                  </tr>
+                <% }); %>
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
-      <div class="mt-3 overflow-hidden rounded-lg border" data-testid="failure-table">
-        <table class="w-full table-fixed">
-          <thead class="bg-slate-50">
-            <tr>
-              <th class="w-[55%] px-3 py-2 text-left text-xs font-semibold text-slate-600">输入</th>
-              <th class="w-[45%] px-3 py-2 text-left text-xs font-semibold text-slate-600">原因</th>
-            </tr>
-          </thead>
-          <tbody id="failures" data-testid="failure-list" class="divide-y">
-            <% if (!failures.length) { %>
-              <tr><td colspan="2" class="px-3 py-6 text-center text-sm text-slate-500">暂无</td></tr>
-            <% } %>
-            <% failures.forEach(function(f) { %>
-              <tr class="failure-row" data-testid="failure-row">
-                <td class="px-3 py-2 text-sm text-slate-700" data-testid="failure-input">
-                  <div class="truncate" title="<%= f.input %>"><%= f.input %></div>
-                </td>
-                <td class="px-3 py-2 text-sm text-rose-700" data-testid="failure-reason">
-                  <div class="whitespace-pre-wrap break-words max-h-24 overflow-y-auto"><%= f.reason %></div>
-                </td>
-              </tr>
-            <% }); %>
-          </tbody>
-        </table>
-      </div>
-      <div id="fail-pager" data-testid="failure-pager" class="mt-3 flex items-center justify-between <%= failTotalPages > 1 ? '' : 'hidden' %>">
-        <div class="text-xs text-slate-500">第 <span id="fail-current-page" data-testid="failure-current-page"><%= failPage %></span>/<span id="fail-total-pages" data-testid="failure-total-pages"><%= failTotalPages %></span> 页</div>
-        <div class="flex items-center gap-2">
-          <button id="fail-prev-btn" data-testid="failure-prev-btn" class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50 disabled:text-slate-400 disabled:pointer-events-none" <%=failPage<=1 ? 'disabled' : '' %>>上一页</button>
-          <button id="fail-next-btn" data-testid="failure-next-btn" class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50 disabled:text-slate-400 disabled:pointer-events-none" <%=failPage>=failTotalPages ? 'disabled' : '' %>>下一页</button>
+        <div id="fail-pager" data-testid="failure-pager" class="job-pager <%= failTotalPages > 1 ? '' : 'hidden' %>">
+          <div class="text-xs text-slate-500">第 <span id="fail-current-page" data-testid="failure-current-page"><%= failPage %></span>/<span id="fail-total-pages" data-testid="failure-total-pages"><%= failTotalPages %></span> 页</div>
+          <div class="flex items-center gap-2">
+            <button id="fail-prev-btn" data-testid="failure-prev-btn" class="btn-secondary btn-sm" <%=failPage<=1 ? 'disabled' : '' %>>上一页</button>
+            <button id="fail-next-btn" data-testid="failure-next-btn" class="btn-secondary btn-sm" <%=failPage>=failTotalPages ? 'disabled' : '' %>>下一页</button>
+          </div>
         </div>
-      </div>
-      <div class="mt-3 text-xs text-slate-500">失败项会实时更新并以动画形式显示。任务结束后可刷新页面查看完整列表。</div>
-    </div>
+        <div class="form-hint">失败项会实时更新；任务结束后刷新页面可查看完整列表。</div>
+      </section>
     <% } %>
 
     <% if (isLegacyAiTask) { %>
-      <div class="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-4 shadow-sm">
-        <div class="text-sm font-semibold text-amber-800">历史遗留 AI 任务</div>
-        <p class="mt-2 text-sm leading-6 text-amber-700">
-          当前版本已不再提供旧的 AI 分类建议列表 / AI 精简建议应用界面。该任务仅保留为历史记录，用于查看执行状态。
-        </p>
-        <p class="mt-2 text-sm leading-6 text-amber-700">
-          现行 AI 能力以「AI 批量分类」和「AI 整理计划」为准；若需恢复旧流程，请以 backlog 项为准而不是直接依赖此页面。
-        </p>
-      </div>
+      <section class="panel-card job-warning-card">
+        <div class="job-warning-card__title">历史遗留 AI 任务</div>
+        <p class="job-warning-card__text">当前版本已不再提供旧的 AI 分类建议列表 / AI 精简建议应用界面。该任务仅保留为历史记录，用于查看执行状态。</p>
+        <p class="job-warning-card__text">现行 AI 能力以「AI 批量分类」和「AI 整理计划」为准；若需恢复旧流程，请以 backlog 项为准而不是直接依赖此页面。</p>
+      </section>
     <% } %>
 
     <% if (job.type === 'ai_organize' && typeof organizeAssignments !== 'undefined') { %>
-      <div class="mt-4 rounded-lg border bg-white p-3 shadow-sm">
-        <div class="flex items-center justify-between">
-          <div class="text-sm font-semibold text-slate-700">
-            分类建议（共 <span><%= organizeAssignmentTotal %></span> 条）
+      <section class="panel-card job-section-card job-table-card">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">分类建议（共 <span><%= organizeAssignmentTotal %></span> 条）</div>
+            <p class="panel-description">这里保留 preview / applied / assigning / failed 等 organize 详情状态，并继续支持逐页查看。</p>
           </div>
           <% if (organizePlanStatus) { %>
-            <span class="text-xs px-2 py-0.5 rounded <%= organizePlanStatus === 'applied' ? 'bg-green-100 text-green-700' : organizePlanStatus === 'preview' ? 'bg-blue-100 text-blue-700' : organizePlanStatus === 'assigning' ? 'bg-purple-100 text-purple-700' : organizePlanStatus === 'failed' || organizePlanStatus === 'error' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600' %>">
-              Plan: <%= organizePlanStatus === 'applied' ? '已应用' : organizePlanStatus === 'preview' ? '待审核' : organizePlanStatus === 'assigning' ? '分配中' : organizePlanStatus === 'failed' ? '失败' : organizePlanStatus === 'error' ? '错误' : organizePlanStatus %>
-            </span>
+            <span class="status-badge <%= getPlanStatusClass(organizePlanStatus) %>">Plan: <%= getPlanStatusLabel(organizePlanStatus) %></span>
           <% } %>
         </div>
 
-        <div class="mt-2 overflow-hidden rounded-lg border">
-          <div class="max-h-[400px] overflow-y-auto">
+        <div class="table-shell">
+          <div class="table-scroll custom-scrollbar max-h-[400px] overflow-y-auto">
             <table class="w-full table-fixed">
-              <thead class="bg-slate-50 sticky top-0">
+              <thead class="sticky top-0">
                 <tr>
                   <th class="w-[34%] px-3 py-2 text-left text-xs font-semibold text-slate-600">书签</th>
                   <th class="w-[18%] px-3 py-2 text-left text-xs font-semibold text-slate-600">当前分类</th>
@@ -289,24 +339,24 @@
                       </td>
                       <td class="px-3 py-2">
                         <% if (a.category_path) { %>
-                          <span class="inline-block rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs"><%= a.category_path %></span>
+                          <span class="status-badge status-badge--info"><%= a.category_path %></span>
                         <% } else { %>
                           <span class="text-xs text-amber-600">未匹配到分类，默认放弃</span>
                         <% } %>
                       </td>
                       <td class="px-3 py-2">
                         <% if (organizePlanStatus === 'preview') { %>
-                          <div class="flex items-center gap-2">
-                            <button class="assign-action-btn rounded border px-3 py-1 text-xs <%= a.default_action === 'apply' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-600' %>"
+                          <div class="assign-action-group">
+                            <button class="assign-action-btn <%= a.default_action === 'apply' ? 'assign-action-btn--apply-active' : '' %>"
                               data-bookmark-id="<%= a.bookmark_id %>" data-action="apply" data-category-path="<%= a.category_path || '' %>" data-status="<%= a.status %>" <%=a.can_apply ? '' : 'disabled' %>>应用</button>
-                            <button class="assign-action-btn rounded border px-3 py-1 text-xs <%= a.default_action === 'discard' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-600' %>"
+                            <button class="assign-action-btn <%= a.default_action === 'discard' ? 'assign-action-btn--discard-active' : '' %>"
                               data-bookmark-id="<%= a.bookmark_id %>" data-action="discard" data-category-path="<%= a.category_path || '' %>" data-status="<%= a.status %>">放弃</button>
                           </div>
                         <% } else { %>
                           <% if (a.status === 'assigned') { %>
-                            <span class="text-xs text-green-600">已分配</span>
+                            <span class="status-badge status-badge--success">已分配</span>
                           <% } else { %>
-                            <span class="text-xs text-amber-600">待审核</span>
+                            <span class="status-badge status-badge--muted">待审核</span>
                           <% } %>
                         <% } %>
                       </td>
@@ -317,23 +367,25 @@
             </table>
           </div>
         </div>
-        <div id="assign-pager" class="mt-3 flex items-center justify-between <%= organizeAssignmentTotalPages > 1 ? '' : 'hidden' %>">
+        <div id="assign-pager" class="job-pager <%= organizeAssignmentTotalPages > 1 ? '' : 'hidden' %>">
           <div class="text-xs text-slate-500">第 <span id="assign-current-page"><%= organizeAssignmentPage %></span>/<span id="assign-total-pages"><%= organizeAssignmentTotalPages %></span> 页</div>
           <div class="flex items-center gap-2">
-            <button id="assign-prev-btn" class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50 disabled:text-slate-400 disabled:pointer-events-none" <%=organizeAssignmentPage<=1 ? 'disabled' : '' %>>上一页</button>
-            <button id="assign-next-btn" class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50 disabled:text-slate-400 disabled:pointer-events-none" <%=organizeAssignmentPage>=organizeAssignmentTotalPages ? 'disabled' : '' %>>下一页</button>
+            <button id="assign-prev-btn" class="btn-secondary btn-sm" <%=organizeAssignmentPage<=1 ? 'disabled' : '' %>>上一页</button>
+            <button id="assign-next-btn" class="btn-secondary btn-sm" <%=organizeAssignmentPage>=organizeAssignmentTotalPages ? 'disabled' : '' %>>下一页</button>
           </div>
         </div>
-      </div>
+      </section>
     <% } %>
-
   </div>
 
   <script>
     function updateBar(processed, total) {
       var pct = 0;
       if (total > 0) pct = Math.min(100, Math.floor((processed / total) * 100));
-      document.getElementById('job-bar').style.width = pct + '%';
+      var bar = document.getElementById('job-bar');
+      if (bar) bar.style.width = pct + '%';
+      var pctEl = document.getElementById('job-progress-percent');
+      if (pctEl) pctEl.textContent = pct + '%';
     }
 
     function showCurrentItem(message) {
@@ -344,6 +396,33 @@
       } else {
         el.style.opacity = '0';
       }
+    }
+
+    function getJobStatusMeta(status) {
+      if (status === 'running') return { label: '运行中', tone: 'status-badge--info' };
+      if (status === 'pending') return { label: '等待中', tone: 'status-badge--info' };
+      if (status === 'queued') return { label: '排队中', tone: 'status-badge--info' };
+      if (status === 'done') return { label: '已完成', tone: 'status-badge--success' };
+      if (status === 'failed') return { label: '失败', tone: 'status-badge--danger' };
+      if (status === 'canceled' || status === 'cancelled') return { label: '已取消', tone: 'status-badge--muted' };
+      return { label: status || '未知', tone: 'status-badge--muted' };
+    }
+
+    function applyStatusBadge(el, status) {
+      if (!el) return;
+      var meta = getJobStatusMeta(status);
+      el.textContent = meta.label;
+      el.className = 'status-badge ' + meta.tone;
+    }
+
+    function getPlanStatusMeta(status) {
+      if (status === 'preview') return { label: '待应用', tone: 'status-badge--info' };
+      if (status === 'assigning') return { label: '分配中', tone: 'status-badge--info' };
+      if (status === 'applied') return { label: '已应用', tone: 'status-badge--success' };
+      if (status === 'failed') return { label: '失败', tone: 'status-badge--danger' };
+      if (status === 'error') return { label: '错误', tone: 'status-badge--danger' };
+      if (status === 'canceled' || status === 'cancelled') return { label: '已取消', tone: 'status-badge--muted' };
+      return { label: status || '未知', tone: 'status-badge--muted' };
     }
 
     var jobId = document.body.dataset.jobId;
@@ -448,7 +527,7 @@
     function updateJobUI(job) {
       var statusEl = document.getElementById('job-status');
       currentJobStatus = job.status;
-      if (statusEl) statusEl.textContent = job.status === 'running' ? '运行中' : job.status === 'done' ? '已完成' : job.status === 'failed' ? '失败' : job.status === 'canceled' ? '已取消' : job.status;
+      applyStatusBadge(statusEl, job.status);
 
       var msgEl = document.getElementById('job-message');
       if (msgEl) msgEl.textContent = job.message || '';
@@ -547,7 +626,7 @@
             data.failures.forEach(function (f) {
               html += '<tr class="failure-row" data-testid="failure-row">';
               html += '<td class="px-3 py-2 text-sm text-slate-700" data-testid="failure-input"><div class="truncate" title="' + escapeHtml(f.input) + '">' + escapeHtml(f.input) + '</div></td>';
-              html += '<td class="px-3 py-2 text-sm text-rose-700" data-testid="failure-reason"><div class="whitespace-pre-wrap break-words max-h-24 overflow-y-auto">' + escapeHtml(f.reason) + '</div></td>';
+              html += '<td class="px-3 py-2 text-sm text-rose-700" data-testid="failure-reason"><div class="custom-scrollbar whitespace-pre-wrap break-words max-h-28 overflow-y-auto">' + escapeHtml(f.reason) + '</div></td>';
               html += '</tr>';
             });
           }
@@ -622,16 +701,9 @@
       planStatus = status || planStatus;
       var badge = document.getElementById('plan-status-badge');
       if (badge) {
-        if (planStatus === 'applied') {
-          badge.textContent = '已应用';
-          badge.className = 'text-xs px-2 py-0.5 rounded bg-green-100 text-green-700';
-        } else if (planStatus === 'canceled') {
-          badge.textContent = '已取消';
-          badge.className = 'text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600';
-        } else {
-          badge.textContent = '待应用';
-          badge.className = 'text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700';
-        }
+        var meta = getPlanStatusMeta(planStatus);
+        badge.textContent = meta.label;
+        badge.className = 'status-badge ' + meta.tone;
       }
       var heading = document.getElementById('assign-action-heading');
       if (heading) heading.textContent = planStatus === 'preview' ? '处理' : '状态';
@@ -678,20 +750,20 @@
               html += '<span class="text-xs text-slate-500">' + escapeHtml(a.current_category || '未分类') + '</span>';
               html += '</td><td class="px-3 py-2">';
               if (a.category_path) {
-                html += '<span class="inline-block rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs">' + escapeHtml(a.category_path) + '</span>';
+                html += '<span class="status-badge status-badge--info">' + escapeHtml(a.category_path) + '</span>';
               } else {
                 html += '<span class="text-xs text-amber-600">未匹配到分类，默认放弃</span>';
               }
               html += '</td><td class="px-3 py-2">';
               if (planStatus === 'preview') {
-                html += '<div class="flex items-center gap-2">';
-                html += '<button class="assign-action-btn rounded border px-3 py-1 text-xs ' + (selectedAction === 'apply' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-600') + '"' +
+                html += '<div class="assign-action-group">';
+                html += '<button class="assign-action-btn' + (selectedAction === 'apply' ? ' assign-action-btn--apply-active' : '') + '"' +
                   ' data-bookmark-id="' + a.bookmark_id + '" data-action="apply" data-category-path="' + escapeHtml(a.category_path || '') + '" data-status="' + escapeHtml(a.status || '') + '"' + (a.can_apply ? '' : ' disabled') + '>应用</button>';
-                html += '<button class="assign-action-btn rounded border px-3 py-1 text-xs ' + (selectedAction === 'discard' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-600') + '"' +
+                html += '<button class="assign-action-btn' + (selectedAction === 'discard' ? ' assign-action-btn--discard-active' : '') + '"' +
                   ' data-bookmark-id="' + a.bookmark_id + '" data-action="discard" data-category-path="' + escapeHtml(a.category_path || '') + '" data-status="' + escapeHtml(a.status || '') + '">放弃</button>';
                 html += '</div>';
               } else {
-                html += a.status === 'assigned' ? '<span class="text-xs text-green-600">已分配</span>' : '<span class="text-xs text-amber-600">待审核</span>';
+                html += a.status === 'assigned' ? '<span class="status-badge status-badge--success">已分配</span>' : '<span class="status-badge status-badge--muted">待审核</span>';
               }
               html += '</td></tr>';
             });
@@ -876,7 +948,7 @@
                 '<div class="text-sm truncate">' + escapeHtml(c.title || c.url || '#' + c.bookmark_id) + '</div>' +
                 '<div class="text-xs text-slate-500 mt-1">' + escapeHtml(formatConflictReason(c)) + '</div>' +
               '</div>' +
-              '<select data-conflict-idx="' + i + '" class="conflict-select rounded border px-2 py-1 text-xs">' +
+              '<select data-conflict-idx="' + i + '" class="conflict-select form-control job-inline-select">' +
               '<option value="skip"' + (c.action === 'skip' ? ' selected' : '') + '>跳过</option>' +
               '<option value="override"' + (c.action === 'override' ? ' selected' : '') + '>覆盖</option></select></div>';
           }).join('');
@@ -892,7 +964,7 @@
           eList.innerHTML = planEmptyCategories.map(function (e, i) {
             return '<div class="px-3 py-2 flex items-center gap-2">' +
               '<span class="text-sm flex-1">' + escapeHtml(e.name) + '</span>' +
-              '<select data-empty-idx="' + i + '" class="empty-select rounded border px-2 py-1 text-xs">' +
+              '<select data-empty-idx="' + i + '" class="empty-select form-control job-inline-select">' +
               '<option value="keep">保留</option><option value="delete">删除</option></select></div>';
           }).join('');
           eList.querySelectorAll('.empty-select').forEach(function (sel) {

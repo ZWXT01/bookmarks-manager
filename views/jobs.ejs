@@ -21,12 +21,64 @@
 </head>
 
 <body class="app-shell jobs-page" data-testid="jobs-page">
+  <%
+    const activeStatuses = ['running', 'pending', 'queued'];
+    const runningCount = jobs.filter((j) => activeStatuses.includes(j.status)).length;
+    const finishedCount = jobs.filter((j) => j.status === 'done').length;
+    const alertCount = jobs.filter((j) => ['failed', 'canceled', 'cancelled'].includes(j.status)).length;
+
+    function getJobStatusLabel(status) {
+      if (status === 'running') return '运行中';
+      if (status === 'pending') return '等待中';
+      if (status === 'queued') return '排队中';
+      if (status === 'done') return '已完成';
+      if (status === 'failed') return '失败';
+      if (status === 'canceled' || status === 'cancelled') return '已取消';
+      return status || '未知';
+    }
+
+    function getJobStatusTone(status) {
+      if (status === 'running' || status === 'pending' || status === 'queued') return 'status-badge--info';
+      if (status === 'done') return 'status-badge--success';
+      if (status === 'failed') return 'status-badge--danger';
+      return 'status-badge--muted';
+    }
+
+    function getJobTypeLabel(type) {
+      if (type === 'import') return '导入任务';
+      if (type === 'ai_organize') return 'AI 整理';
+      if (type === 'ai_classify') return '历史 AI 分类';
+      if (type === 'ai_simplify') return '历史 AI 精简';
+      return '检查任务';
+    }
+
+    function getJobTypeIcon(type) {
+      if (type === 'import') return '📥';
+      if (type === 'ai_organize') return '🤖';
+      if (type === 'ai_classify' || type === 'ai_simplify') return '🗂️';
+      return '🔍';
+    }
+
+    function getJobProgressPercent(row) {
+      const totalValue = Number(row.total) || 0;
+      const processedValue = Number(row.processed) || 0;
+      if (totalValue <= 0) return 0;
+      return Math.min(100, Math.floor((processedValue / totalValue) * 100));
+    }
+
+    function getJobProgressClass(status) {
+      if (status === 'done') return 'jobs-inline-progress__fill jobs-inline-progress__fill--success';
+      if (status === 'failed') return 'jobs-inline-progress__fill jobs-inline-progress__fill--danger';
+      if (status === 'canceled' || status === 'cancelled') return 'jobs-inline-progress__fill jobs-inline-progress__fill--muted';
+      return 'jobs-inline-progress__fill jobs-inline-progress__fill--info';
+    }
+  %>
   <header class="page-topbar glass-header">
     <div class="page-topbar__inner">
       <div class="page-topbar__meta">
         <div class="page-kicker">Jobs center</div>
         <div class="page-heading">📋 任务列表</div>
-        <div class="page-subheading">导入 / 检查任务历史（共 <%= total %> 条）。</div>
+        <div class="page-subheading">导入、检查与 AI 整理等后台任务会在这里汇总展示；保留既有分页、详情入口与清理契约。</div>
       </div>
       <div class="page-actions">
         <button id="theme-toggle" class="btn-secondary btn-sm" aria-label="切换主题">🌙</button>
@@ -38,88 +90,145 @@
   </header>
 
   <div class="page-shell page-content">
-    <div class="card panel-card table-shell overflow-hidden">
-      <div class="table-scroll">
-      <table class="w-full table-fixed" data-testid="jobs-table">
-        <thead class="bg-slate-50">
-          <tr>
-            <th class="w-[22%] px-3 py-2 text-left text-xs font-semibold text-slate-600">任务ID</th>
-            <th class="w-[10%] px-3 py-2 text-left text-xs font-semibold text-slate-600">类型</th>
-            <th class="w-[12%] px-3 py-2 text-left text-xs font-semibold text-slate-600">状态</th>
-            <th class="w-[30%] px-3 py-2 text-left text-xs font-semibold text-slate-600">消息</th>
-            <th class="w-[16%] px-3 py-2 text-left text-xs font-semibold text-slate-600">进度</th>
-            <th class="w-[10%] px-3 py-2 text-left text-xs font-semibold text-slate-600">更新时间</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y" data-testid="jobs-table-body">
-          <% if (!jobs.length) { %>
-            <tr>
-              <td colspan="6" class="px-3 py-8 text-center text-sm text-slate-500" data-testid="jobs-empty-state">暂无任务</td>
-            </tr>
-            <% } %>
-
-              <% jobs.forEach(function(j) { %>
-                <tr class="hover:bg-slate-50" data-testid="jobs-row" data-job-id="<%= j.id %>">
-                  <td class="px-3 py-3 align-top text-sm">
-                    <a class="font-medium text-slate-900 hover:underline" href="/jobs/<%= j.id %>" data-testid="jobs-row-link">
-                      <%= j.id %>
-                    </a>
-                  </td>
-                  <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="type">
-                    <%= j.type %>
-                  </td>
-                  <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="status">
-                    <%= j.status %>
-                  </td>
-                  <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="message">
-                    <div class="truncate">
-                      <%= j.message || '' %>
-                    </div>
-                  </td>
-                  <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="progress">
-                    <div><span data-col="processed">
-                        <%= j.processed %>
-                      </span> / <span data-col="total">
-                        <%= j.total %>
-                      </span></div>
-                    <div class="text-xs text-slate-500">成功 <span data-col="inserted">
-                        <%= j.inserted %>
-                      </span> · 跳过 <span data-col="skipped">
-                        <%= j.skipped %>
-                      </span> · 失败 <span data-col="failed">
-                        <%= j.failed %>
-                      </span></div>
-                  </td>
-                  <td class="px-3 py-3 align-top text-xs text-slate-500" data-col="updated_at">
-                    <%= new Date(j.updated_at).toLocaleString('zh-CN') %>
-                  </td>
-                </tr>
-                <% }); %>
-        </tbody>
-      </table>
-      </div>
-
-      <div class="table-footer border-t bg-white px-3 py-3">
-        <div class="flex items-center justify-between">
-          <div class="text-xs text-slate-500">第 <%= page %>/<%= totalPages %> 页</div>
-          <div class="flex items-center gap-2">
-            <% if (page> 1) { %>
-              <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50"
-                href="<%= pageUrlPrefix %><%= page - 1 %>">上一页</a>
-              <% } else { %>
-                <span class="rounded-lg border px-3 py-1 text-sm text-slate-400">上一页</span>
-                <% } %>
-
-                  <% if (page < totalPages) { %>
-                    <a class="rounded-lg border px-3 py-1 text-sm hover:bg-slate-50"
-                      href="<%= pageUrlPrefix %><%= page + 1 %>">下一页</a>
-                    <% } else { %>
-                      <span class="rounded-lg border px-3 py-1 text-sm text-slate-400">下一页</span>
-                      <% } %>
-          </div>
+    <section class="panel-card panel-card--compact jobs-overview-card" data-testid="jobs-overview-card">
+      <div class="panel-header">
+        <div>
+          <div class="panel-title">任务中心概览</div>
+          <p class="panel-description">当前页保留原有 `/jobs` / `/api/jobs` 数据来源，只增强状态识别、进度扫视与移动端阅读体验。</p>
+        </div>
+        <div class="settings-badge-row">
+          <span class="status-badge status-badge--info">轮询兼容</span>
+          <span class="status-badge status-badge--muted">每页 <%= pageSize %> 条</span>
         </div>
       </div>
-    </div>
+
+      <div class="jobs-overview-grid">
+        <article class="jobs-summary-card">
+          <div class="jobs-summary-card__label">总任务数</div>
+          <div id="jobs-total-count" class="jobs-summary-card__value"><%= total %></div>
+          <div class="jobs-summary-card__meta">所有任务记录总数，当前位于第 <%= page %> / <%= totalPages %> 页。</div>
+        </article>
+        <article class="jobs-summary-card">
+          <div class="jobs-summary-card__label">当前页进行中</div>
+          <div id="jobs-running-count" class="jobs-summary-card__value"><%= runningCount %></div>
+          <div class="jobs-summary-card__meta">包含运行中、等待中与排队中的任务。</div>
+        </article>
+        <article class="jobs-summary-card">
+          <div class="jobs-summary-card__label">当前页已完成</div>
+          <div id="jobs-finished-count" class="jobs-summary-card__value"><%= finishedCount %></div>
+          <div class="jobs-summary-card__meta">成功完成的任务会继续保留详情入口与失败记录引用。</div>
+        </article>
+        <article class="jobs-summary-card">
+          <div class="jobs-summary-card__label">当前页异常 / 取消</div>
+          <div id="jobs-alert-count" class="jobs-summary-card__value"><%= alertCount %></div>
+          <div class="jobs-summary-card__meta">便于快速定位失败或已取消任务，再进入详情页排查。</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="panel-card table-shell jobs-list-card">
+      <div class="panel-header jobs-table-card__header">
+        <div>
+          <div class="panel-title">任务队列</div>
+          <p class="panel-description">状态徽章、微型进度条与更新时间保持同步刷新；点击任务 ID 可查看详情、失败分页与 AI organize 计划状态。</p>
+        </div>
+        <div class="jobs-table-card__meta">
+          <span class="status-badge status-badge--muted">共 <%= total %> 条记录</span>
+        </div>
+      </div>
+
+      <div class="table-scroll custom-scrollbar">
+        <table class="w-full table-fixed jobs-table" data-testid="jobs-table">
+          <thead>
+            <tr>
+              <th class="w-[22%] px-3 py-2 text-left text-xs font-semibold text-slate-600">任务 ID</th>
+              <th class="w-[16%] px-3 py-2 text-left text-xs font-semibold text-slate-600">类型</th>
+              <th class="w-[12%] px-3 py-2 text-left text-xs font-semibold text-slate-600">状态</th>
+              <th class="w-[22%] px-3 py-2 text-left text-xs font-semibold text-slate-600">消息</th>
+              <th class="w-[18%] px-3 py-2 text-left text-xs font-semibold text-slate-600">进度</th>
+              <th class="w-[10%] px-3 py-2 text-left text-xs font-semibold text-slate-600">更新时间</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y" data-testid="jobs-table-body">
+            <% if (!jobs.length) { %>
+              <tr>
+                <td colspan="6" class="px-3 py-0 text-center text-sm text-slate-500" data-testid="jobs-empty-state">
+                  <div class="empty-state jobs-empty-state">
+                    <div class="text-2xl" aria-hidden="true">🗂️</div>
+                    <div class="font-semibold text-slate-700">暂无任务</div>
+                    <div class="text-xs text-slate-500">导入、检查、整理和历史任务会在这里集中展示，方便统一追踪。</div>
+                  </div>
+                </td>
+              </tr>
+            <% } %>
+
+            <% jobs.forEach(function(j) { %>
+              <tr class="jobs-row hover:bg-slate-50" data-testid="jobs-row" data-job-id="<%= j.id %>">
+                <td class="px-3 py-3 align-top text-sm">
+                  <a class="jobs-row-link" href="/jobs/<%= j.id %>" data-testid="jobs-row-link">
+                    <span class="jobs-row-link__id"><%= j.id %></span>
+                    <span class="jobs-row-link__meta">查看实时进度、失败明细与任务详情</span>
+                  </a>
+                </td>
+                <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="type">
+                  <div class="jobs-row-type">
+                    <span class="jobs-row-type__icon" aria-hidden="true"><%= getJobTypeIcon(j.type) %></span>
+                    <div class="min-w-0">
+                      <div data-col="type-label"><%= getJobTypeLabel(j.type) %></div>
+                      <div class="jobs-row-type__meta" data-col="type-meta"><%= j.type %></div>
+                    </div>
+                  </div>
+                </td>
+                <td class="px-3 py-3 align-top jobs-status-col" data-col="status">
+                  <span data-testid="jobs-row-status-badge" class="status-badge <%= getJobStatusTone(j.status) %>"><%= getJobStatusLabel(j.status) %></span>
+                </td>
+                <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="message">
+                  <div class="jobs-row-message">
+                    <div class="jobs-row-message__text"><%= j.message || '' %></div>
+                  </div>
+                </td>
+                <td class="px-3 py-3 align-top text-sm text-slate-700" data-col="progress">
+                  <div class="jobs-progress-stats">
+                    <span>处理 <strong><span data-col="processed"><%= j.processed %></span> / <span data-col="total"><%= j.total %></span></strong></span>
+                  </div>
+                  <div class="jobs-inline-progress" data-testid="jobs-row-progress">
+                    <div class="jobs-inline-progress__track">
+                      <div data-testid="jobs-row-progress-bar" class="<%= getJobProgressClass(j.status) %>" style="width: <%= getJobProgressPercent(j) %>%"></div>
+                    </div>
+                  </div>
+                  <div class="jobs-progress-stats jobs-progress-stats--muted">
+                    <span>成功 <strong data-col="inserted"><%= j.inserted %></strong></span>
+                    <span>跳过 <strong data-col="skipped"><%= j.skipped %></strong></span>
+                    <span>失败 <strong data-col="failed"><%= j.failed %></strong></span>
+                  </div>
+                </td>
+                <td class="px-3 py-3 align-top text-xs text-slate-500 jobs-time-col" data-col="updated_at">
+                  <div class="jobs-row-time__value"><%= new Date(j.updated_at).toLocaleString('zh-CN') %></div>
+                  <div class="jobs-row-type__meta">最近更新</div>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="table-footer jobs-table-footer border-t bg-white px-3 py-3">
+        <div class="text-xs text-slate-500">第 <%= page %> / <%= totalPages %> 页</div>
+        <div class="flex items-center gap-2">
+          <% if (page > 1) { %>
+            <a class="btn-secondary btn-sm" href="<%= pageUrlPrefix %><%= page - 1 %>">上一页</a>
+          <% } else { %>
+            <span class="btn-secondary btn-sm pointer-events-none opacity-50">上一页</span>
+          <% } %>
+
+          <% if (page < totalPages) { %>
+            <a class="btn-secondary btn-sm" href="<%= pageUrlPrefix %><%= page + 1 %>">下一页</a>
+          <% } else { %>
+            <span class="btn-secondary btn-sm pointer-events-none opacity-50">下一页</span>
+          <% } %>
+        </div>
+      </div>
+    </section>
   </div>
 
   <script>
@@ -141,6 +250,82 @@
         }
       }
 
+      function getJobStatusMeta(status) {
+        if (status === 'running') return { label: '运行中', tone: 'status-badge--info' };
+        if (status === 'pending') return { label: '等待中', tone: 'status-badge--info' };
+        if (status === 'queued') return { label: '排队中', tone: 'status-badge--info' };
+        if (status === 'done') return { label: '已完成', tone: 'status-badge--success' };
+        if (status === 'failed') return { label: '失败', tone: 'status-badge--danger' };
+        if (status === 'canceled' || status === 'cancelled') return { label: '已取消', tone: 'status-badge--muted' };
+        return { label: status || '未知', tone: 'status-badge--muted' };
+      }
+
+      function getJobTypeMeta(type) {
+        if (type === 'import') return { label: '导入任务', icon: '📥' };
+        if (type === 'ai_organize') return { label: 'AI 整理', icon: '🤖' };
+        if (type === 'ai_classify') return { label: '历史 AI 分类', icon: '🗂️' };
+        if (type === 'ai_simplify') return { label: '历史 AI 精简', icon: '🗂️' };
+        return { label: '检查任务', icon: '🔍' };
+      }
+
+      function getProgressPercent(processed, total) {
+        if (Number(total) <= 0) return 0;
+        return Math.min(100, Math.floor((Number(processed) / Number(total)) * 100));
+      }
+
+      function getProgressClass(status) {
+        if (status === 'done') return 'jobs-inline-progress__fill jobs-inline-progress__fill--success';
+        if (status === 'failed') return 'jobs-inline-progress__fill jobs-inline-progress__fill--danger';
+        if (status === 'canceled' || status === 'cancelled') return 'jobs-inline-progress__fill jobs-inline-progress__fill--muted';
+        return 'jobs-inline-progress__fill jobs-inline-progress__fill--info';
+      }
+
+      function updateSummaryCards(jobs, totalCount) {
+        var activeCount = 0;
+        var finishedCount = 0;
+        var alertCount = 0;
+        jobs.forEach(function (job) {
+          if (job.status === 'running' || job.status === 'pending' || job.status === 'queued') activeCount += 1;
+          if (job.status === 'done') finishedCount += 1;
+          if (job.status === 'failed' || job.status === 'canceled' || job.status === 'cancelled') alertCount += 1;
+        });
+        setText(document.getElementById('jobs-total-count'), String(typeof totalCount === 'number' ? totalCount : jobs.length));
+        setText(document.getElementById('jobs-running-count'), String(activeCount));
+        setText(document.getElementById('jobs-finished-count'), String(finishedCount));
+        setText(document.getElementById('jobs-alert-count'), String(alertCount));
+      }
+
+      function applyRowDecorations(row, job) {
+        var typeMeta = getJobTypeMeta(job.type);
+        var typeLabel = row.querySelector('[data-col="type-label"]');
+        var typeMetaEl = row.querySelector('[data-col="type-meta"]');
+        var typeIconEl = row.querySelector('.jobs-row-type__icon');
+        if (typeLabel) typeLabel.textContent = typeMeta.label;
+        if (typeMetaEl) typeMetaEl.textContent = job.type || '';
+        if (typeIconEl) typeIconEl.textContent = typeMeta.icon;
+
+        var statusMeta = getJobStatusMeta(job.status);
+        var statusBadge = row.querySelector('[data-testid="jobs-row-status-badge"]');
+        if (statusBadge) {
+          statusBadge.textContent = statusMeta.label;
+          statusBadge.className = 'status-badge ' + statusMeta.tone;
+        }
+
+        setText(row.querySelector('[data-col="message"] .jobs-row-message__text'), job.message || '');
+        setText(row.querySelector('[data-col="processed"]'), String(job.processed));
+        setText(row.querySelector('[data-col="total"]'), String(job.total));
+        setText(row.querySelector('[data-col="inserted"]'), String(job.inserted));
+        setText(row.querySelector('[data-col="skipped"]'), String(job.skipped));
+        setText(row.querySelector('[data-col="failed"]'), String(job.failed));
+        setText(row.querySelector('[data-col="updated_at"] .jobs-row-time__value'), formatTime(job.updated_at));
+
+        var progressBar = row.querySelector('[data-testid="jobs-row-progress-bar"]');
+        if (progressBar) {
+          progressBar.style.width = getProgressPercent(job.processed, job.total) + '%';
+          progressBar.className = getProgressClass(job.status);
+        }
+      }
+
       async function tick() {
         if (running) return;
         if (document.hidden) return;
@@ -150,19 +335,12 @@
           if (!res.ok) return;
           var data = await res.json();
           var jobs = (data && Array.isArray(data.jobs)) ? data.jobs : [];
+          updateSummaryCards(jobs, data && typeof data.total === 'number' ? data.total : jobs.length);
           for (var i = 0; i < jobs.length; i++) {
             var j = jobs[i];
             var row = document.querySelector('tr[data-job-id="' + j.id + '"]');
             if (!row) continue;
-            setText(row.querySelector('[data-col="type"]'), j.type);
-            setText(row.querySelector('[data-col="status"]'), j.status);
-            setText(row.querySelector('[data-col="message"] .truncate'), j.message || '');
-            setText(row.querySelector('[data-col="processed"]'), String(j.processed));
-            setText(row.querySelector('[data-col="total"]'), String(j.total));
-            setText(row.querySelector('[data-col="inserted"]'), String(j.inserted));
-            setText(row.querySelector('[data-col="skipped"]'), String(j.skipped));
-            setText(row.querySelector('[data-col="failed"]'), String(j.failed));
-            setText(row.querySelector('[data-col="updated_at"]'), formatTime(j.updated_at));
+            applyRowDecorations(row, j);
           }
         } catch {
         } finally {
@@ -174,7 +352,6 @@
       if (timer && typeof timer.unref === 'function') timer.unref();
       tick();
 
-      // 清理已完成任务
       document.getElementById('clear-completed-btn').addEventListener('click', async function () {
         if (!await AppDialog.confirm('确定要清理所有已完成的任务吗？')) return;
         try {
@@ -191,7 +368,6 @@
         }
       });
 
-      // 清空全部任务
       document.getElementById('clear-all-btn').addEventListener('click', async function () {
         if (!await AppDialog.confirm('确定要清空所有任务记录吗？此操作不可恢复！')) return;
         try {
@@ -208,7 +384,6 @@
         }
       });
 
-      // 主题切换
       const btn = document.getElementById('theme-toggle');
       const updateIcon = () => {
         const theme = document.documentElement.getAttribute('data-theme');

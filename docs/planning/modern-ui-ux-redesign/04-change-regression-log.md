@@ -130,7 +130,7 @@
 - commit_message_examples：`[UIR-DEV-020][dev] modernize login page shell`
 - gemini_review_required：是；聚焦首屏层级、表单反馈、错误态与暗色兼容
 - last_updated_at：2026-04-17
-- local_validation：`npx vitest run tests/integration/page-assets.test.ts` passed
+- local_validation：`npx vitest run tests/integration/page-assets.test.ts`、`npx tsx scripts/job-cancel-failures-browser-validate.ts`、`npx tsx scripts/jobs-snapshots-browser-validate.ts` passed
 - delivery_gate：`in_testing`
 
 ### 3.1 计划引入内容
@@ -228,11 +228,12 @@
 - title：任务列表与详情页统一改造
 - wave：`W1`
 - issue_ref：[执行任务板 - UIR-DEV-040](./03-execution-board.md)
-- commit_refs：待执行
+- commit_refs：`[UIR-DEV-040][dev] redesign jobs center pages`
 - commit_message_examples：`[UIR-DEV-040][dev] redesign jobs center pages`
 - gemini_review_required：是；聚焦状态标签、进度区、失败表和详情层级
 - last_updated_at：2026-04-17
-- delivery_gate：`open`
+- local_validation：`npx vitest run tests/integration/page-assets.test.ts` passed
+- delivery_gate：`in_testing`
 
 ### 3.1 计划引入内容
 
@@ -246,7 +247,21 @@
 
 | area | object_type | object_name | actual_change | user_visible_impact | notes |
 |---|---|---|---|---|---|
-| uiux | jobs | list and detail shell | 待执行 | 任务状态与详情更可读 |  |
+| frontend | template | jobs list shell | 已新增任务概览卡、状态徽章、类型图标、微型进度条与更稳定的表格壳体 | 任务列表更易扫视，运行中 / 完成 / 异常任务能快速区分 | 保留 `/jobs`、`/api/jobs`、清理动作与既有选择器 |
+| frontend | template | job detail shell | 已将详情页重组为任务头卡、摘要卡、进度带、失败表与 organize 详情块的统一设计系统布局 | 详情层级更清晰，取消任务、失败分页与 organize 计划更自然 | 不改 SSE / 轮询 / 取消 / 分页语义 |
+| frontend | stylesheet | jobs detail ui classes | 已补充 jobs / job detail 专用样式：概览卡、进度条、状态徽章、表格容器、warning 卡与 assignment 按钮态 | 桌面端与移动端阅读路径更连贯 | 复用共享 `panel-card` / `status-badge` / `form-control` 体系 |
+| test | integration | page assets selectors | 已增补任务列表概览卡、行状态 / 进度选择器，以及详情摘要进度百分比选择器断言 | UI 契约回归更稳，便于后续 browser / MCP 回放 | 仅增补断言，不移除旧 selector |
+
+### 3.2A Gemini 审阅结论
+
+- 审阅会话：`Gemini session 037ce0a0-630b-466b-b9a3-4cb45f312475`
+- 采用：
+  - 任务列表新增概览卡、状态徽章与微型进度条，保留原有分页和详情入口；
+  - 任务详情改为头卡 + 摘要卡 + 进度带 + 失败表 / organize 详情块的统一布局；
+  - organize 预览与失败分页尽量复用现有 `status-badge`、`btn-*`、`form-control` 设计系统类，避免大规模重写脚本。
+- 裁剪：
+  - 未改 `/jobs*`、`/api/jobs*`、SSE / 轮询 / 取消任务 / failure pagination / organize 业务状态机；
+  - 未删除或重命名任何现有 `data-testid`，只增补 `jobs-overview-card`、`jobs-row-status-badge`、`jobs-row-progress-bar`、`job-summary-grid`、`job-progress-percent`。
 
 ### 3.3 关联回归用例
 

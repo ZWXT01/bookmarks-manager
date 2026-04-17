@@ -305,6 +305,8 @@ describe('integration: page assets', () => {
         expect(jobResponse.body).toContain('data-testid="job-status"');
         expect(jobResponse.body).toContain('data-testid="job-message"');
         expect(jobResponse.body).toContain('data-testid="job-updated"');
+        expect(jobResponse.body).toContain('data-testid="job-summary-grid"');
+        expect(jobResponse.body).toContain('data-testid="job-progress-percent"');
         expect(jobResponse.body).toContain('data-testid="job-bar"');
         expect(jobResponse.body).toContain('data-testid="job-current-item"');
         expect(jobResponse.body).toContain('data-testid="job-progress-summary"');
@@ -340,6 +342,7 @@ describe('integration: page assets', () => {
         expect(emptyJobsResponse.body).toContain('data-testid="jobs-page"');
         expect(emptyJobsResponse.body).toContain('data-testid="jobs-clear-completed"');
         expect(emptyJobsResponse.body).toContain('data-testid="jobs-clear-all"');
+        expect(emptyJobsResponse.body).toContain('data-testid="jobs-overview-card"');
         expect(emptyJobsResponse.body).toContain('data-testid="jobs-table"');
         expect(emptyJobsResponse.body).toContain('data-testid="jobs-table-body"');
         expect(emptyJobsResponse.body).toContain('data-testid="jobs-empty-state"');
@@ -364,6 +367,8 @@ describe('integration: page assets', () => {
         expect(jobsResponse.statusCode).toBe(200);
         expect(jobsResponse.body).toContain('data-testid="jobs-row"');
         expect(jobsResponse.body).toContain('data-testid="jobs-row-link"');
+        expect(jobsResponse.body).toContain('data-testid="jobs-row-status-badge"');
+        expect(jobsResponse.body).toContain('data-testid="jobs-row-progress-bar"');
 
         const snapshotsResponse = await ctx.app.inject({
             method: 'GET',
