@@ -149,6 +149,7 @@ function bookmarkApp() {
     _categoryTabsDragStartX: 0,
     _categoryTabsDragStartScrollLeft: 0,
     _suppressCategoryTabsClick: false,
+    isMobileViewport: typeof window !== 'undefined' ? window.innerWidth < 768 : false,
 
     get presetTemplates() { return this.templates.filter(t => t.type === 'preset'); },
     get customTemplates() { return this.templates.filter(t => t.type === 'custom'); },
@@ -171,6 +172,7 @@ function bookmarkApp() {
 
     async init() {
       this.initTheme();
+      this.initResponsiveUi();
       await this.loadCategories();
       await this.loadBookmarks();
       await this.loadSettings();
@@ -202,6 +204,50 @@ function bookmarkApp() {
         this.theme = 'dark';
         document.documentElement.setAttribute('data-theme', 'dark');
         localStorage.setItem('theme', 'dark');
+      }
+    },
+
+    initResponsiveUi() {
+      if (typeof window === 'undefined') return;
+
+      this.updateResponsiveUi(true);
+
+      if (this._resizeHandlerBound) return;
+      this._resizeHandlerBound = true;
+      window.addEventListener('resize', () => this.updateResponsiveUi(), { passive: true });
+    },
+
+    updateResponsiveUi(force = false) {
+      if (typeof window === 'undefined') return;
+
+      const nextIsMobile = window.innerWidth < 768;
+      const changed = this.isMobileViewport !== nextIsMobile;
+      this.isMobileViewport = nextIsMobile;
+
+      if (!nextIsMobile) {
+        this.showMobileSidebar = false;
+      }
+
+      if (!force && !changed) return;
+
+      const mobileViewMode = localStorage.getItem('mobileViewMode');
+      const desktopViewMode = localStorage.getItem('viewMode');
+      this.viewMode = nextIsMobile
+        ? (mobileViewMode || 'card')
+        : (desktopViewMode || 'table');
+    },
+
+    persistViewModePreference() {
+      if (this.isMobileViewport) {
+        localStorage.setItem('mobileViewMode', this.viewMode);
+        return;
+      }
+      localStorage.setItem('viewMode', this.viewMode);
+    },
+
+    closeMobileSidebar() {
+      if (this.isMobileViewport) {
+        this.showMobileSidebar = false;
       }
     },
 
@@ -449,7 +495,7 @@ function bookmarkApp() {
 
     toggleViewMode() {
       this.viewMode = this.viewMode === 'table' ? 'card' : 'table';
-      localStorage.setItem('viewMode', this.viewMode);
+      this.persistViewModePreference();
     },
 
     async confirmMoveOneBookmark() {
@@ -894,6 +940,7 @@ function bookmarkApp() {
     },
 
     openCategoryManager() {
+      this.closeMobileSidebar();
       this.showCategoryManager = true;
       this.categoryManagerSearch = '';
       // Focus management: auto-focus search input when modal opens
@@ -913,6 +960,7 @@ function bookmarkApp() {
     },
 
     openAddBookmarkModal() {
+      this.closeMobileSidebar();
       this.showAddBookmarkModal = true;
     },
 
@@ -1069,6 +1117,7 @@ function bookmarkApp() {
     },
 
     openBackupModal() {
+      this.closeMobileSidebar();
       this.showBackupModal = true;
       this.loadBackups();
     },
@@ -1480,6 +1529,7 @@ function bookmarkApp() {
     },
 
     openCreateCategoryModal(parentId = null) {
+      this.closeMobileSidebar();
       this.createCategoryParentId = parentId;
       this.createCategoryName = '';
       this.createCategoryIcon = '';
@@ -1761,12 +1811,14 @@ function bookmarkApp() {
         this.showToast('请先勾选要检查的书签', 'error');
         return;
       }
+      this.closeMobileSidebar();
       this.checkOptions.scope = 'selected';
       this.showCheckModal = true;
     },
 
     openCheckModal() {
       this.ensureSelectionContext();
+      this.closeMobileSidebar();
       this.showCheckModal = true;
     },
 
@@ -2620,6 +2672,7 @@ function bookmarkApp() {
         this.showToast('请先在设置页配置 AI（Base URL、API Key、Model）', 'error');
         return;
       }
+      this.closeMobileSidebar();
       this.organizeScope = 'all';
       this.organizeScopeCategoryId = '';
       this.organizeQueuedStart = null;
@@ -2643,12 +2696,14 @@ function bookmarkApp() {
     },
 
     openExportModal() {
+      this.closeMobileSidebar();
       this.exportScope = 'all';
       this.exportFormat = 'html';
       this.showExportModal = true;
     },
 
     openExportSelectedCategories() {
+      this.closeMobileSidebar();
       this.exportScope = 'selected';
       this.exportFormat = 'html';
       this.showExportModal = true;

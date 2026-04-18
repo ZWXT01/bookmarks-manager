@@ -107,12 +107,12 @@
                  x-transition:leave-start="opacity-100"
                  x-transition:leave-end="opacity-0"
                  @click="showMobileSidebar = false"
-                 class="lg:hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-30"></div>
+                 class="mobile-sidebar-overlay lg:hidden fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-30"></div>
 
             <div class="flex flex-col lg:flex-row gap-4 flex-1 min-h-0 min-w-0">
                 <!-- Sidebar -->
-                <aside :class="showMobileSidebar ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
-                       class="fixed lg:static inset-y-0 left-0 w-72 bg-slate-50 lg:bg-transparent z-40 lg:z-auto transition-transform duration-300 ease-in-out
+                <aside :class="showMobileSidebar ? 'is-open' : ''"
+                       class="mobile-sidebar-drawer fixed lg:static inset-y-0 left-0 w-72 bg-slate-50 lg:bg-transparent z-40 lg:z-auto transition-transform duration-300 ease-in-out
                               flex flex-col gap-4 p-4 lg:p-0 border-r lg:border-r-0 lg:max-h-[calc(100vh-100px)] overflow-y-auto custom-scrollbar">
                     
                     <!-- UI Redesign: Sidebar contains only Tools, Templates and Quick Actions now -->
@@ -374,22 +374,24 @@
                     </div>
 
                     <!-- Search & Filters -->
-                    <div class="rounded-lg border bg-white p-3 shadow-sm mb-4">
-                        <div class="flex flex-wrap items-center gap-2">
+                    <div class="rounded-lg border bg-white p-3 shadow-sm mb-4 bookmark-toolbar-card">
+                        <div class="flex flex-wrap items-center gap-2 bookmark-toolbar-row">
                             <input type="text" x-model="searchKeyword" @input="debouncedSearch()"
                                 @keyup.enter="searchBookmarks()" placeholder="搜索书签..."
                                 data-testid="bookmark-search-input"
-                                class="flex-1 min-w-[200px] rounded border px-3 py-2 text-sm">
-                            <button @click="searchBookmarks()"
-                                data-testid="bookmark-search-submit"
-                                class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800 flex-shrink-0">搜索</button>
-                            <button @click="showAdvancedSearch = !showAdvancedSearch"
-                                data-testid="advanced-search-toggle"
-                                class="rounded border px-3 py-2 text-sm hover:bg-slate-50 flex-shrink-0">
-                                <span x-text="showAdvancedSearch ? '收起 ▲' : '筛选 ▼'"></span>
-                            </button>
-                            <button @click="toggleViewMode()" data-testid="bookmark-view-toggle" class="rounded border px-3 py-2 text-sm hover:bg-slate-50 flex-shrink-0"
-                                x-text="viewMode === 'table' ? '🗂️ 卡片' : '📋 表格'"></button>
+                                class="flex-1 min-w-[200px] rounded border px-3 py-2 text-sm bookmark-toolbar-input">
+                            <div class="bookmark-toolbar-actions">
+                                <button @click="searchBookmarks()"
+                                    data-testid="bookmark-search-submit"
+                                    class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800 flex-shrink-0">搜索</button>
+                                <button @click="showAdvancedSearch = !showAdvancedSearch"
+                                    data-testid="advanced-search-toggle"
+                                    class="rounded border px-3 py-2 text-sm hover:bg-slate-50 flex-shrink-0">
+                                    <span x-text="showAdvancedSearch ? '收起 ▲' : '筛选 ▼'"></span>
+                                </button>
+                                <button @click="toggleViewMode()" data-testid="bookmark-view-toggle" class="rounded border px-3 py-2 text-sm hover:bg-slate-50 flex-shrink-0"
+                                    x-text="viewMode === 'table' ? '🗂️ 卡片' : '📋 表格'"></button>
+                            </div>
                         </div>
 
                         <!-- Advanced Search -->
@@ -439,8 +441,8 @@
                     </div>
 
                     <!-- Batch Actions & Pagination -->
-                    <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
-                        <div class="flex items-center gap-2 flex-wrap">
+                    <div class="flex flex-wrap items-center justify-between gap-2 mb-4 bookmark-batch-bar">
+                        <div class="flex items-center gap-2 flex-wrap bookmark-selection-group">
                             <span class="text-sm text-slate-500">
                                 共 <span x-text="total"></span> 条，已选 <span x-text="selectedBookmarks.length"></span> 条
                             </span>
@@ -472,7 +474,7 @@
                                 </div>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2 flex-shrink-0">
+                        <div class="flex items-center gap-2 flex-shrink-0 bookmark-pagination-group">
                             <span class="text-xs text-slate-500 flex-shrink-0">第 <span x-text="page"></span>/<span
                                     x-text="totalPages"></span>
                                 页</span>
@@ -486,7 +488,7 @@
                     <!-- Bookmark List Area -->
                     <div class="flex-1 overflow-y-auto min-h-0">
                         <!-- Table View -->
-                        <div x-show="viewMode === 'table'" class="rounded-lg border bg-white shadow-sm overflow-x-auto overflow-y-hidden">
+                        <div x-show="viewMode === 'table'" class="rounded-lg border bg-white shadow-sm overflow-x-auto overflow-y-hidden bookmark-table-shell">
                             <table class="w-full min-w-[720px]">
                                 <thead class="bg-slate-50">
                                     <tr>
@@ -602,9 +604,9 @@
                         </div>
 
                         <!-- Card View -->
-                        <div x-show="viewMode === 'card'" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                        <div x-show="viewMode === 'card'" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 bookmark-card-grid">
                             <template x-for="bookmark in displayBookmarks" :key="bookmark.id">
-                                <div class="rounded-lg border bg-white p-4 shadow-sm hover:shadow-md transition-shadow">
+                                <div class="rounded-lg border bg-white p-4 shadow-sm hover:shadow-md transition-shadow bookmark-card-item">
                                     <div class="flex items-start gap-2">
                                         <input type="checkbox" :value="String(bookmark.id)" x-model="selectedBookmarks"
                                             class="mt-1">
