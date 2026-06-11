@@ -76,18 +76,23 @@ describe('ai-organize-plan', () => {
       expect(getPlan(db, old.id)!.status).toBe('error');
     });
 
-    it('should NOT clean up preview plan even if old', () => {
+    it('should block new plans while a preview plan is waiting for apply or discard', () => {
       const old = createPlan(db, 'all');
       transitionStatus(db, old.id, 'preview');
       const past = new Date(Date.now() - 7_200_001).toISOString();
       db.prepare('UPDATE ai_organize_plans SET created_at = ? WHERE id = ?').run(past, old.id);
 
-      // Preview plans are not checked by createPlan's timeout cleanup (only 'assigning' status)
-      // So this should succeed and create a new plan
-      const fresh = createPlan(db, 'all');
-      expect(fresh.id).not.toBe(old.id);
-      // Old plan should remain in preview status (not cleaned up)
+      expect(() => createPlan(db, 'all')).toThrow('pending plan already exists');
       expect(getPlan(db, old.id)!.status).toBe('preview');
+    });
+
+    it('should block new plans while a failed plan has not been discarded', () => {
+      const failed = createPlan(db, 'all');
+      transitionStatus(db, failed.id, 'canceled');
+      updatePlan(db, failed.id, { status: 'failed', phase: null });
+
+      expect(() => createPlan(db, 'all')).toThrow('unresolved plan already exists');
+      expect(getPlan(db, failed.id)!.status).toBe('failed');
     });
 
     it('should not clean up designing plan within 2h', () => {
@@ -185,10 +190,14 @@ describe('ai-organize-plan', () => {
     });
 
     it('should reject retrying to assigning when another plan is already assigning', () => {
-      const failedPlan = createPlan(db, 'all');
-      transitionStatus(db, failedPlan.id, 'canceled');
-      updatePlan(db, failedPlan.id, { status: 'failed', phase: null });
       const activePlan = createPlan(db, 'all');
+      const failedPlanId = 'failed-plan-for-retry-lock';
+      const now = new Date().toISOString();
+      db.prepare(`
+        INSERT INTO ai_organize_plans (id, status, scope, phase, batches_done, batches_total, needs_review_count, created_at)
+        VALUES (?, 'failed', 'all', NULL, 0, 0, 0, ?)
+      `).run(failedPlanId, now);
+      const failedPlan = getPlan(db, failedPlanId)!;
 
       expect(() => transitionStatus(db, failedPlan.id, 'assigning')).toThrowError(PlanError);
 

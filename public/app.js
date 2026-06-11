@@ -106,6 +106,9 @@ function bookmarkApp() {
     organizeDiffExpanded: {},
     organizeSelectionOverrides: {},
     organizeQueuedStart: null,
+    organizeResolutionRequired: false,
+    organizeResolutionTitle: '',
+    organizeResolutionMessage: '',
     pendingPlans: [],
     backups: [],
     selectedManualBackup: '',
@@ -2496,12 +2499,8 @@ function bookmarkApp() {
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.success) {
-          if (res.status === 409 && data?.pendingPlanId) {
-            await this.recoverPendingPlan(data.pendingPlanId);
-            return;
-          }
-          if (res.status === 409 && data?.activePlanId) {
-            await this.recoverActivePlan(data.activePlanId);
+          if (res.status === 409 && (data?.blockingPlanId || data?.pendingPlanId || data?.activePlanId || data?.unresolvedPlanId)) {
+            await this.handleOrganizeStartConflict(data);
             return;
           }
           this.showToast(data?.error || '启动 AI 分类失败', 'error');
@@ -2541,6 +2540,9 @@ function bookmarkApp() {
       this.organizeAppliedCount = 0;
       this.organizeDiffExpanded = {};
       this.organizeSelectionOverrides = {};
+      this.organizeResolutionRequired = false;
+      this.organizeResolutionTitle = '';
+      this.organizeResolutionMessage = '';
       this.resetOrganizeAssignmentsState();
     },
 
@@ -2640,11 +2642,23 @@ function bookmarkApp() {
     },
 
     getOrganizePreviewGuardTitle() {
-      return '上一次任务尚未完成';
+      return this.organizeResolutionTitle || '上一次任务尚未完成';
     },
 
     getOrganizePreviewGuardMessage() {
-      return '请先应用建议或放弃建议。';
+      return this.organizeResolutionMessage || '请先应用建议或放弃建议。';
+    },
+
+    setOrganizeResolutionNotice(title, message) {
+      this.organizeResolutionRequired = true;
+      this.organizeResolutionTitle = title || '上一次任务尚未处理完成';
+      this.organizeResolutionMessage = message || '请先处理上一次 AI 整理任务后再开始新的整理。';
+    },
+
+    clearOrganizeResolutionNotice() {
+      this.organizeResolutionRequired = false;
+      this.organizeResolutionTitle = '';
+      this.organizeResolutionMessage = '';
     },
 
     buildOrganizeStartPayload() {
@@ -2678,10 +2692,15 @@ function bookmarkApp() {
       this.organizeQueuedStart = null;
       this.setOrganizeIdleState(true);
       this.showAIOrganizeModal = true;
+      const blockingLoaded = await this.loadBlockingOrganizePlan();
+      if (blockingLoaded) return;
       await this.loadPendingPlans();
       const latestPendingPlan = Array.isArray(this.pendingPlans) && this.pendingPlans.length > 0 ? this.pendingPlans[0] : null;
       if (latestPendingPlan?.id) {
-        await this.recoverPendingPlan(latestPendingPlan.id);
+        await this.recoverPendingPlan(latestPendingPlan.id, {
+          title: '上一次整理结果待处理',
+          message: '上一次 AI 整理结果尚未应用或放弃，请先应用/放弃后再开始新的整理。',
+        });
       }
     },
 
@@ -2760,13 +2779,8 @@ function bookmarkApp() {
         });
         const data = await res.json().catch(() => null);
         if (!res.ok || !data?.success) {
-          if (res.status === 409 && data?.pendingPlanId) {
-            await this.recoverPendingPlan(data.pendingPlanId);
-            return;
-          }
-          if (res.status === 409 && data?.activePlanId) {
-            this.organizeQueuedStart = null;
-            await this.recoverActivePlan(data.activePlanId);
+          if (res.status === 409 && (data?.blockingPlanId || data?.pendingPlanId || data?.activePlanId || data?.unresolvedPlanId)) {
+            await this.handleOrganizeStartConflict(data);
             return;
           }
           this.organizeQueuedStart = null;
@@ -2782,6 +2796,83 @@ function bookmarkApp() {
         this.organizeQueuedStart = null;
         this.showToast('启动整理失败', 'error');
         this.organizePhase = 'idle';
+      }
+    },
+
+    getOrganizeConflictMessage(data) {
+      return data?.message || data?.error || '请先处理上一次 AI 整理任务。';
+    },
+
+    async loadBlockingOrganizePlan() {
+      try {
+        const res = await fetch('/api/ai/organize/blocking');
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data?.blocking) return false;
+        await this.handleOrganizeStartConflict(data);
+        return true;
+      } catch {
+        return false;
+      }
+    },
+
+    async handleOrganizeStartConflict(data) {
+      const status = data?.blockingStatus || data?.blocking?.status || (data?.activePlanId ? 'assigning' : (data?.pendingPlanId ? 'preview' : null));
+      const planId = data?.blockingPlanId || data?.pendingPlanId || data?.activePlanId || data?.unresolvedPlanId || data?.blocking?.id;
+      const message = this.getOrganizeConflictMessage(data);
+      if (!planId) {
+        this.organizeQueuedStart = null;
+        this.setOrganizeIdleState(true);
+        this.showToast(message, 'error');
+        return false;
+      }
+
+      if (status === 'preview') {
+        return this.recoverPendingPlan(planId, {
+          title: '上一次整理结果待处理',
+          message,
+        });
+      }
+
+      const restored = await this.recoverBlockingPlan(planId, {
+        title: status === 'assigning' ? '上一次任务仍在执行' : '上一次任务异常待处理',
+        message,
+      });
+      if (!restored) this.showToast(message, status === 'assigning' ? 'info' : 'error');
+      return restored;
+    },
+
+    async recoverBlockingPlan(planId, options = {}) {
+      if (!planId) return false;
+      try {
+        const res = await fetch('/api/ai/organize/' + encodeURIComponent(planId));
+        const data = await res.json().catch(() => null);
+        if (!res.ok || !data || !data.id) {
+          this.showToast('未找到上一次整理任务', 'error');
+          this.setOrganizeIdleState(true);
+          return false;
+        }
+        this.organizePlan = data;
+        this.organizeSelectionOverrides = {};
+        this.organizeProgress = {
+          batches_done: data.batches_done || 0,
+          batches_total: data.batches_total || 0,
+          failed_batch_ids: data.failed_batch_ids || [],
+          needs_review_count: data.needs_review_count || 0,
+        };
+        this.organizeDiff = data.diff || null;
+        this.organizePreviewGuardActive = data.status === 'preview';
+        this.setOrganizeResolutionNotice(options.title, options.message);
+        this.showAIOrganizeModal = true;
+        if (data.status === 'assigning') { this.organizePhase = 'assigning'; this.pollOrganizeProgress(); }
+        else if (data.status === 'preview') { this.organizePhase = 'preview'; await this.loadOrganizeAssignmentsPage(1); }
+        else if (data.status === 'failed') this.organizePhase = 'failed';
+        else if (data.status === 'error') this.organizePhase = 'error';
+        else this.organizePhase = data.status || 'idle';
+        return true;
+      } catch {
+        this.showToast('恢复上一次整理任务失败', 'error');
+        this.setOrganizeIdleState(true);
+        return false;
       }
     },
 
@@ -2827,7 +2918,7 @@ function bookmarkApp() {
       }
     },
 
-    async recoverPendingPlan(planId) {
+    async recoverPendingPlan(planId, options = {}) {
       if (!planId) return false;
       try {
         const res = await fetch('/api/ai/organize/' + encodeURIComponent(planId));
@@ -2848,6 +2939,10 @@ function bookmarkApp() {
         this.organizeDiff = data.diff || null;
         this.organizePhase = 'preview';
         this.organizePreviewGuardActive = true;
+        this.setOrganizeResolutionNotice(
+          options.title || '上一次整理结果待处理',
+          options.message || '上一次 AI 整理结果尚未应用或放弃，请先应用/放弃后再开始新的整理。',
+        );
         this.showAIOrganizeModal = true;
         await this.loadOrganizeAssignmentsPage(1);
         return true;
@@ -2900,6 +2995,7 @@ function bookmarkApp() {
           } else if (data.status === 'applied') {
             this.organizePhase = 'applied';
             this.organizePreviewGuardActive = false;
+            this.clearOrganizeResolutionNotice();
             await this.loadOrganizeAssignmentsPage(this.organizeAssignmentPage || 1);
           } else if (data.status === 'assigning') {
             this.organizePhase = 'assigning';
@@ -2955,6 +3051,13 @@ function bookmarkApp() {
             }
           }
         } else {
+          if (data?.discard_recommended) {
+            this.organizePreviewGuardActive = true;
+            this.setOrganizeResolutionNotice(
+              '本次整理无法安全应用',
+              data?.message || ((data?.error || '应用失败') + '。建议放弃本次建议后重新开始。'),
+            );
+          }
           this.showToast(data?.error || '应用失败', 'error');
         }
       } catch {
@@ -2989,6 +3092,13 @@ function bookmarkApp() {
             await this.resumeQueuedOrganizeStart();
           }
         } else {
+          if (data?.discard_recommended) {
+            this.organizePreviewGuardActive = true;
+            this.setOrganizeResolutionNotice(
+              '本次整理无法安全应用',
+              data?.message || ((data?.error || '应用失败') + '。建议放弃本次建议后重新开始。'),
+            );
+          }
           this.showToast(data?.error || '应用失败', 'error');
         }
       } catch {
@@ -3025,6 +3135,7 @@ function bookmarkApp() {
       if (!this.organizePlan?.id) return;
       const wasPreview = this.organizePhase === 'preview';
       const previewGuardActive = this.organizePreviewGuardActive;
+      const shouldResumeQueuedStart = !!this.organizeQueuedStart && (wasPreview || this.organizeResolutionRequired);
       try {
         const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/cancel', {
           method: 'POST', headers: { 'Content-Type': 'application/json' }
@@ -3032,8 +3143,8 @@ function bookmarkApp() {
         const data = await res.json().catch(() => null);
         if (res.ok) {
           await this.loadPendingPlans();
-          if (wasPreview) {
-            this.showToast(previewGuardActive ? '已放弃上一次建议' : '已放弃建议', 'info');
+          if (wasPreview || shouldResumeQueuedStart) {
+            this.showToast(wasPreview ? (previewGuardActive ? '已放弃上一次建议' : '已放弃建议') : '已取消上一次任务', 'info');
             this.setOrganizeIdleState(true);
             await this.resumeQueuedOrganizeStart();
             return;
@@ -3060,11 +3171,10 @@ function bookmarkApp() {
           this.organizeProgress = { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 };
           this.organizePhase = 'assigning';
           this.organizePreviewGuardActive = false;
+          this.clearOrganizeResolutionNotice();
           this.pollOrganizeProgress();
-        } else if (res.status === 409 && data?.pendingPlanId) {
-          await this.recoverPendingPlan(data.pendingPlanId);
-        } else if (res.status === 409 && data?.activePlanId) {
-          await this.recoverActivePlan(data.activePlanId);
+        } else if (res.status === 409 && (data?.blockingPlanId || data?.pendingPlanId || data?.activePlanId || data?.unresolvedPlanId)) {
+          await this.handleOrganizeStartConflict(data);
         } else {
           this.showToast((data && data.error) ? data.error : '重试失败', 'error');
         }

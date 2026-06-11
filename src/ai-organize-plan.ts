@@ -76,17 +76,32 @@ export interface PlanSourceSnapshot {
 export class PlanError extends Error {
   statusCode: number;
   activePlanId?: string;
-  constructor(statusCode: number, message: string, options?: { activePlanId?: string }) {
+  blockingPlanId?: string;
+  blockingPlanStatus?: PlanStatus;
+  blockingJobId?: string | null;
+  discardRecommended?: boolean;
+  constructor(statusCode: number, message: string, options?: {
+    activePlanId?: string;
+    blockingPlanId?: string;
+    blockingPlanStatus?: PlanStatus;
+    blockingJobId?: string | null;
+    discardRecommended?: boolean;
+  }) {
     super(message);
     this.name = 'PlanError';
     this.statusCode = statusCode;
     this.activePlanId = options?.activePlanId;
+    this.blockingPlanId = options?.blockingPlanId;
+    this.blockingPlanStatus = options?.blockingPlanStatus;
+    this.blockingJobId = options?.blockingJobId;
+    this.discardRecommended = options?.discardRecommended;
   }
 }
 
 // ==================== Constants ====================
 
 const ACTIVE_STATUSES: PlanStatus[] = ['assigning'];
+const BLOCKING_STATUSES: PlanStatus[] = ['assigning', 'preview', 'failed', 'error'];
 const IMMUTABLE_TERMINAL_STATUSES = new Set<PlanStatus>(['applied', 'canceled', 'rolled_back']);
 const SNAPSHOT_TTL_MS = 24 * 60 * 60 * 1000;
 const PLAN_TIMEOUT_MS = 7_200_000;
@@ -94,6 +109,13 @@ const DEFAULT_REASONS: Record<string, string> = {
   canceled: 'user_cancel', applied: 'user_apply', rolled_back: 'user_rollback',
   assigning: 'plan_created', preview: 'assignment_complete', failed: 'assignment_failed', error: 'assignment_failed',
 };
+
+export interface BlockingOrganizePlan {
+  id: string;
+  job_id: string | null;
+  status: PlanStatus;
+  created_at: string;
+}
 
 // ==================== Helpers ====================
 const nowIso = () => new Date().toISOString();
@@ -157,7 +179,7 @@ function getExistingCategoryId(rawPath: string, lookup: PathLookup): number {
   if (!p) throw new Error('invalid category path');
   const key = casefold(p);
   const existing = lookup.get(key);
-  if (!existing) throw new PlanError(409, 'plan is stale: target categories changed');
+  if (!existing) throw new PlanError(409, 'plan is stale: target categories changed', { discardRecommended: true });
   return existing.id;
 }
 
@@ -397,35 +419,81 @@ function expireAssigningPlan(db: Db, plan: PlanRow): void {
   }
 }
 
-function ensureAssigningSlotAvailable(db: Db, excludePlanId?: string | null): void {
-  const rows = excludePlanId
-    ? db.prepare(`
-      SELECT *
-      FROM ai_organize_plans
-      WHERE status = 'assigning' AND id <> ?
-      ORDER BY created_at DESC
-    `).all(excludePlanId) as PlanRow[]
-    : db.prepare(`
-      SELECT *
-      FROM ai_organize_plans
-      WHERE status = 'assigning'
-      ORDER BY created_at DESC
-    `).all() as PlanRow[];
+function toBlockingPlan(row: PlanRow): BlockingOrganizePlan {
+  return {
+    id: row.id,
+    job_id: row.job_id ?? null,
+    status: row.status,
+    created_at: row.created_at,
+  };
+}
 
-  let activeConflict: PlanRow | null = null;
+function getBlockingPlanMessage(plan: BlockingOrganizePlan): string {
+  if (plan.status === 'assigning') return 'active plan already exists';
+  if (plan.status === 'preview') return 'pending plan already exists';
+  return 'unresolved plan already exists';
+}
+
+export function getBlockingOrganizePlan(db: Db, excludePlanId?: string | null): BlockingOrganizePlan | null {
+  const placeholders = BLOCKING_STATUSES.map(() => '?').join(',');
+  const params: unknown[] = [...BLOCKING_STATUSES];
+  let excludeClause = '';
+  if (excludePlanId) {
+    excludeClause = 'AND id <> ?';
+    params.push(excludePlanId);
+  }
+
+  const rows = db.prepare(`
+    SELECT *
+    FROM ai_organize_plans
+    WHERE status IN (${placeholders})
+      ${excludeClause}
+    ORDER BY
+      CASE status
+        WHEN 'assigning' THEN 0
+        WHEN 'preview' THEN 1
+        WHEN 'error' THEN 2
+        WHEN 'failed' THEN 3
+        ELSE 9
+      END,
+      created_at DESC
+  `).all(...params) as PlanRow[];
+
+  let blocking: PlanRow | null = null;
   for (const row of rows) {
-    const createdMs = Date.parse(row.created_at);
-    const age = Number.isFinite(createdMs) ? Date.now() - createdMs : Infinity;
-    if (age > PLAN_TIMEOUT_MS) {
-      expireAssigningPlan(db, row);
-      continue;
+    if (row.status === 'assigning') {
+      const createdMs = Date.parse(row.created_at);
+      const age = Number.isFinite(createdMs) ? Date.now() - createdMs : Infinity;
+      if (age > PLAN_TIMEOUT_MS) {
+        expireAssigningPlan(db, row);
+        continue;
+      }
     }
-    if (!activeConflict) activeConflict = row;
+    blocking = row;
+    break;
   }
 
-  if (activeConflict) {
-    throw new PlanError(409, 'active plan already exists', { activePlanId: activeConflict.id });
-  }
+  return blocking ? toBlockingPlan(blocking) : null;
+}
+
+function ensureNoBlockingOrganizePlan(db: Db, excludePlanId?: string | null): void {
+  const blocking = getBlockingOrganizePlan(db, excludePlanId);
+  if (!blocking) return;
+
+  throw new PlanError(409, getBlockingPlanMessage(blocking), {
+    activePlanId: blocking.status === 'assigning' ? blocking.id : undefined,
+    blockingPlanId: blocking.id,
+    blockingPlanStatus: blocking.status,
+    blockingJobId: blocking.job_id,
+  });
+}
+
+export function ensureNoBlockingPlanForNewRun(db: Db, excludePlanId?: string | null): void {
+  ensureNoBlockingOrganizePlan(db, excludePlanId);
+}
+
+export function isBlockingPlanStatus(status: string | null | undefined): status is PlanStatus {
+  return status === 'assigning' || status === 'preview' || status === 'failed' || status === 'error';
 }
 
 export function buildPlanSourceSnapshot(
@@ -511,7 +579,7 @@ function buildFreshAssigningSourceSnapshot(db: Db, plan: Pick<PlanRow, 'scope' |
 
 function requireSourceSnapshot(plan: PlanRow): PlanSourceSnapshot {
   const snapshot = parseSourceSnapshot(plan.source_snapshot);
-  if (!snapshot) throw new PlanError(409, 'plan safety snapshot missing; rerun organize');
+  if (!snapshot) throw new PlanError(409, 'plan safety snapshot missing; rerun organize', { discardRecommended: true });
   return snapshot;
 }
 
@@ -519,7 +587,7 @@ function ensureLiveTargetsAvailable(db: Db, plan: PlanRow, assignments: Assignme
   const lookup = buildPathLookup(db);
   for (const path of collectTargetPaths(plan, assignments)) {
     if (!lookup.has(casefold(path))) {
-      throw new PlanError(409, 'plan is stale: target categories changed');
+      throw new PlanError(409, 'plan is stale: target categories changed', { discardRecommended: true });
     }
   }
   return lookup;
@@ -624,24 +692,35 @@ function validatePlanApplySafety(db: Db, plan: PlanRow, assignments: Assignment[
   const currentStates = getBookmarkStates(db, selectedSnapshotStates.map(item => item.bookmark_id));
 
   if (currentStates.size !== selectedSnapshotStates.length) {
-    throw new PlanError(409, 'plan is stale: bookmarks changed');
+    throw new PlanError(409, 'plan is stale: bookmarks changed', { discardRecommended: true });
   }
 
   for (const item of selectedSnapshotStates) {
     const current = currentStates.get(item.bookmark_id);
-    if (!current) throw new PlanError(409, 'plan is stale: bookmarks changed');
+    if (!current) throw new PlanError(409, 'plan is stale: bookmarks changed', { discardRecommended: true });
   }
 
-  if (plan.template_id != null) {
+  const snapshotTemplateId = snapshot.template?.template_id ?? null;
+  const targetTemplateId = plan.template_id ?? snapshotTemplateId;
+  if (targetTemplateId != null) {
     const templateSnapshot = snapshot.template;
-    const currentTemplate = getTemplate(db, plan.template_id);
-    if (!templateSnapshot || !currentTemplate || currentTemplate.updated_at !== templateSnapshot.updated_at) {
-      throw new PlanError(409, 'plan is stale: target template changed');
+    const currentTemplate = getTemplate(db, targetTemplateId);
+    if (!currentTemplate) {
+      throw new PlanError(409, 'target template no longer exists; discard this plan and run AI organize again', { discardRecommended: true });
+    }
+    if (!templateSnapshot || currentTemplate.updated_at !== templateSnapshot.updated_at) {
+      throw new PlanError(409, 'plan is stale: target template changed', { discardRecommended: true });
     }
     const currentTemplatePaths = new Set(parseTemplatePaths(currentTemplate.tree).map(path => casefold(path)));
     for (const path of templateSnapshot.paths) {
       if (!currentTemplatePaths.has(casefold(path))) {
-        throw new PlanError(409, 'plan is stale: target template changed');
+        throw new PlanError(409, 'plan is stale: target template changed', { discardRecommended: true });
+      }
+    }
+    for (const assignment of assignments) {
+      const targetPath = normalizePath(assignment.category_path);
+      if (assignment.status === 'assigned' && targetPath && !currentTemplatePaths.has(casefold(targetPath))) {
+        throw new PlanError(409, 'plan is stale: target template changed', { discardRecommended: true });
       }
     }
   }
@@ -655,7 +734,7 @@ function validatePlanApplySafety(db: Db, plan: PlanRow, assignments: Assignment[
   for (const target of snapshot.live_target_categories) {
     const current = liveLookup.get(casefold(target.path));
     if (!current || current.id !== target.category_id) {
-      throw new PlanError(409, 'plan is stale: target categories changed');
+      throw new PlanError(409, 'plan is stale: target categories changed', { discardRecommended: true });
     }
   }
 
@@ -736,7 +815,7 @@ function collectSoftApplyConflicts(
 export function createPlan(db: Db, scope: string, templateId?: number | null): PlanRow {
   return db.transaction(() => {
     cleanupExpiredSnapshots(db);
-    ensureAssigningSlotAvailable(db);
+    ensureNoBlockingOrganizePlan(db);
     const normalizedScope = scope.trim() || 'all';
 
     // Use provided templateId or fallback to active template
@@ -810,7 +889,7 @@ export function transitionStatus(db: Db, planId: string, target: PlanStatus, rea
     const patch: Partial<PlanRow> = { status: target };
     if (target === 'assigning') {
       const planWithScope = ensurePlanScopeSnapshot(db, planId);
-      ensureAssigningSlotAvailable(db, planId);
+      ensureNoBlockingOrganizePlan(db, planId);
       const job = createJob(db, 'ai_organize', `AI organize plan ${planId}`, 0);
       patch.job_id = job.id;
       patch.phase = 'assigning';
@@ -980,7 +1059,7 @@ export function applyPlan(db: Db, planId: string, decisionsInput?: unknown): App
 
     for (const a of selectedAssignments) {
       const bm = bookmarks.get(a.bookmark_id);
-      if (!bm) throw new PlanError(409, 'plan is stale: bookmarks changed');
+      if (!bm) throw new PlanError(409, 'plan is stale: bookmarks changed', { discardRecommended: true });
 
       const tp = normalizePath(a.category_path);
       if (!tp) continue;
@@ -1062,7 +1141,7 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
 
     for (const a of selectedAssignments) {
       const bm = bookmarks.get(a.bookmark_id);
-      if (!bm) throw new PlanError(409, 'plan is stale: bookmarks changed');
+      if (!bm) throw new PlanError(409, 'plan is stale: bookmarks changed', { discardRecommended: true });
 
       const conflict = softConflicts.get(a.bookmark_id);
       if (conflict) {

@@ -1329,6 +1329,13 @@
                         class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                 </div>
                 <div class="min-h-0 flex-1 overflow-y-auto px-4 py-4" data-testid="ai-organize-body">
+                    <template x-if="organizePlan && (organizePlan.template_name || organizePlan.template_id || organizePlan.template_missing)">
+                        <div class="mb-3 rounded-lg border px-3 py-2 text-xs"
+                            :class="organizePlan.template_missing ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-blue-100 bg-blue-50 text-blue-700'"
+                            data-testid="organize-template-info"
+                            x-text="organizePlan.template_missing ? '目标分类模板已不存在，建议放弃本次整理并重新开始。' : ('本次整理基于模板：' + (organizePlan.template_name || ('#' + organizePlan.template_id)))">
+                        </div>
+                    </template>
 
                     <!-- Phase: idle - Scope selection -->
                     <template x-if="organizePhase === 'idle'">
@@ -1369,6 +1376,13 @@
                     <!-- Phase: assigning - Progress -->
                     <template x-if="organizePhase === 'assigning'">
                         <div class="space-y-4" data-testid="organize-phase-assigning">
+                            <template x-if="organizeResolutionRequired">
+                                <div data-testid="organize-resolution-guard"
+                                    class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                                    <div class="text-sm font-medium text-amber-800" x-text="organizeResolutionTitle"></div>
+                                    <div class="mt-1 text-xs leading-5 text-amber-700" x-text="organizeResolutionMessage"></div>
+                                </div>
+                            </template>
                             <div class="flex flex-col items-center gap-3">
                                 <div class="text-xs text-slate-400" data-testid="organize-phase-title">批量归类中</div>
                                 <div class="relative w-24 h-24">
@@ -1408,6 +1422,13 @@
                     <!-- Phase: failed / error -->
                     <template x-if="organizePhase === 'failed' || organizePhase === 'error'">
                         <div class="space-y-3" :data-testid="organizePhase === 'error' ? 'organize-phase-error' : 'organize-phase-failed'">
+                            <template x-if="organizeResolutionRequired">
+                                <div data-testid="organize-resolution-guard"
+                                    class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+                                    <div class="text-sm font-medium text-amber-800" x-text="organizeResolutionTitle"></div>
+                                    <div class="mt-1 text-xs leading-5 text-amber-700" x-text="organizeResolutionMessage"></div>
+                                </div>
+                            </template>
                             <div class="flex flex-col items-center gap-2 py-4">
                                 <div class="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-2xl"
                                     x-text="organizePhase === 'error' ? '!' : '✕'"></div>

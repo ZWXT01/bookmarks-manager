@@ -137,6 +137,8 @@ describe('integration: page assets', () => {
         expect(response.body).toContain("organizePhase === 'error' ? 'organize-error-cancel' : 'organize-failed-cancel'");
         expect(response.body).toContain("organizePhase === 'error' ? 'organize-error-retry' : 'organize-failed-retry'");
         expect(response.body).toContain("organizePhase === 'applied' ? 'organize-phase-applied' : 'organize-phase-preview'");
+        expect(response.body).toContain('data-testid="organize-template-info"');
+        expect(response.body).toContain('data-testid="organize-resolution-guard"');
         expect(response.body).toContain('data-testid="organize-preview-guard"');
         expect(response.body).toContain('x-text="getOrganizePreviewGuardTitle()"');
         expect(response.body).toContain('x-text="getOrganizePreviewGuardMessage()"');
@@ -152,7 +154,7 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="organize-open-job"');
     });
 
-    it('serves organize modal scripts that recover pending previews without reusing the guard for current runs', async () => {
+    it('serves organize modal scripts that recover blocking residues before starting new runs', async () => {
         const response = await ctx.app.inject({
             method: 'GET',
             url: '/public/app.js',
@@ -161,12 +163,17 @@ describe('integration: page assets', () => {
         expect(response.statusCode).toBe(200);
         expect(response.body).toContain('organizePreviewGuardActive: false,');
         expect(response.body).toContain('organizeQueuedStart: null,');
+        expect(response.body).toContain('organizeResolutionRequired: false,');
         expect(response.body).toContain('getOrganizePreviewGuardTitle() {');
-        expect(response.body).toContain("return '上一次任务尚未完成';");
-        expect(response.body).toContain("return '请先应用建议或放弃建议。';");
-        expect(response.body).toContain('async recoverPendingPlan(planId) {');
-        expect(response.body).toContain("if (res.status === 409 && data?.pendingPlanId) {");
-        expect(response.body).toContain("this.showToast(previewGuardActive ? '已放弃上一次建议' : '已放弃建议', 'info');");
+        expect(response.body).toContain("return this.organizeResolutionTitle || '上一次任务尚未完成';");
+        expect(response.body).toContain("return this.organizeResolutionMessage || '请先应用建议或放弃建议。';");
+        expect(response.body).toContain('async loadBlockingOrganizePlan() {');
+        expect(response.body).toContain("fetch('/api/ai/organize/blocking')");
+        expect(response.body).toContain('async handleOrganizeStartConflict(data) {');
+        expect(response.body).toContain('async recoverPendingPlan(planId, options = {}) {');
+        expect(response.body).toContain('async recoverBlockingPlan(planId, options = {}) {');
+        expect(response.body).toContain("data?.blockingPlanId || data?.pendingPlanId || data?.activePlanId || data?.unresolvedPlanId");
+        expect(response.body).toContain("this.showToast(wasPreview ? (previewGuardActive ? '已放弃上一次建议' : '已放弃建议') : '已取消上一次任务', 'info');");
         expect(response.body).toContain('await this.resumeQueuedOrganizeStart();');
     });
 

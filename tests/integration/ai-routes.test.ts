@@ -490,10 +490,13 @@ describe('integration: ai route contracts', () => {
         });
 
         expect(response.statusCode).toBe(409);
-        expect(response.json()).toEqual({
+        expect(response.json()).toMatchObject({
             error: 'pending plan already exists',
             pendingPlanId: previewPlan.id,
             pendingJobId: previewJob.id,
+            blockingPlanId: previewPlan.id,
+            blockingStatus: 'preview',
+            requiredAction: 'apply_or_discard',
         });
     });
 

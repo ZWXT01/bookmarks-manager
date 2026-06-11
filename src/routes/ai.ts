@@ -8,6 +8,11 @@ import {
     selectSingleClassifyCategory,
 } from '../ai-classify-guardrail';
 import { getConfiguredAiBatchSize, parseAiBatchSize } from '../ai-batch-size';
+import {
+    getBlockingOrganizePlan,
+    type BlockingOrganizePlan,
+    type PlanStatus,
+} from '../ai-organize-plan';
 
 export interface AIRoutesOptions {
     db: Database;
@@ -146,27 +151,97 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         return row?.message ?? null;
     }
 
-    function getLatestPendingPlan(excludePlanId?: string | null) {
-        const row = excludePlanId
-            ? db.prepare(`
-                SELECT id, job_id
-                FROM ai_organize_plans
-                WHERE status = 'preview' AND id <> ?
-                ORDER BY created_at DESC
-                LIMIT 1
-            `).get(excludePlanId) as { id: string; job_id: string | null } | undefined
-            : db.prepare(`
-                SELECT id, job_id
-                FROM ai_organize_plans
-                WHERE status = 'preview'
-                ORDER BY created_at DESC
-                LIMIT 1
-            `).get() as { id: string; job_id: string | null } | undefined;
-        return row ?? null;
+    function getPlanTemplateInfo(plan: Record<string, any>) {
+        const templateId = typeof plan.template_id === 'number' ? plan.template_id : null;
+        if (templateId == null) {
+            return { template_name: null, template_missing: false };
+        }
+        const row = db.prepare('SELECT name FROM category_templates WHERE id = ?').get(templateId) as { name: string } | undefined;
+        return {
+            template_name: row?.name ?? null,
+            template_missing: !row,
+        };
+    }
+
+    function getBlockingRequiredAction(status: PlanStatus) {
+        if (status === 'assigning') return 'wait_or_cancel';
+        if (status === 'preview') return 'apply_or_discard';
+        return 'retry_or_discard';
+    }
+
+    function getBlockingUserMessage(status: PlanStatus) {
+        if (status === 'assigning') {
+            return '上一次 AI 整理任务仍在执行，请等待完成，或先取消该任务后再开始新的整理。';
+        }
+        if (status === 'preview') {
+            return '上一次 AI 整理结果尚未应用或放弃，请先应用/放弃后再开始新的整理。';
+        }
+        if (status === 'failed') {
+            return '上一次 AI 整理任务失败且尚未放弃，请先重试或放弃后再开始新的整理。';
+        }
+        return '上一次 AI 整理任务中断且尚未放弃，请先重试或放弃后再开始新的整理。';
+    }
+
+    function buildBlockingPlanPayload(plan: BlockingOrganizePlan) {
+        const payload: Record<string, unknown> = {
+            error: plan.status === 'assigning'
+                ? 'active plan already exists'
+                : plan.status === 'preview'
+                    ? 'pending plan already exists'
+                    : 'unresolved plan already exists',
+            message: getBlockingUserMessage(plan.status),
+            blockingPlanId: plan.id,
+            blockingJobId: plan.job_id ?? null,
+            blockingStatus: plan.status,
+            requiredAction: getBlockingRequiredAction(plan.status),
+        };
+        if (plan.status === 'assigning') {
+            payload.activePlanId = plan.id;
+        } else if (plan.status === 'preview') {
+            payload.pendingPlanId = plan.id;
+            payload.pendingJobId = plan.job_id ?? null;
+        } else {
+            payload.unresolvedPlanId = plan.id;
+            payload.unresolvedJobId = plan.job_id ?? null;
+        }
+        return payload;
+    }
+
+    function buildPlanErrorPayload(error: any) {
+        const payload: Record<string, unknown> = {
+            error: error instanceof Error ? error.message : String(error),
+        };
+        if (error?.activePlanId) payload.activePlanId = error.activePlanId;
+        if (error?.blockingPlanId) {
+            payload.blockingPlanId = error.blockingPlanId;
+            payload.blockingStatus = error.blockingPlanStatus ?? null;
+            payload.blockingJobId = error.blockingJobId ?? null;
+            if (error.blockingPlanStatus) {
+                payload.message = getBlockingUserMessage(error.blockingPlanStatus);
+                payload.requiredAction = getBlockingRequiredAction(error.blockingPlanStatus);
+                if (error.blockingPlanStatus === 'preview') {
+                    payload.pendingPlanId = error.blockingPlanId;
+                    payload.pendingJobId = error.blockingJobId ?? null;
+                } else if (error.blockingPlanStatus === 'failed' || error.blockingPlanStatus === 'error') {
+                    payload.unresolvedPlanId = error.blockingPlanId;
+                    payload.unresolvedJobId = error.blockingJobId ?? null;
+                }
+            }
+        }
+        if (error?.discardRecommended) {
+            payload.discard_recommended = true;
+            payload.recommended_action = 'discard';
+            if (!payload.message) payload.message = '本次 AI 整理计划无法安全应用，建议放弃后重新开始。';
+        }
+        return payload;
     }
 
     function serializePlan(plan: Record<string, any>, options: { includeTargetTree?: boolean } = {}) {
-        const result: any = { ...plan, message: getPlanJobMessage(plan.job_id ?? null) };
+        const result: any = {
+            ...plan,
+            ...getPlanTemplateInfo(plan),
+            message: getPlanJobMessage(plan.job_id ?? null),
+        };
         if (plan.assignments) result.assignments = JSON.parse(plan.assignments);
         if (plan.failed_batch_ids) result.failed_batch_ids = JSON.parse(plan.failed_batch_ids);
         if (options.includeTargetTree && plan.target_tree) result.target_tree = JSON.parse(plan.target_tree);
@@ -382,14 +457,8 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             return reply.code(400).send({ error: 'batch_size 必须为 10、20 或 30' });
         }
 
-        const pendingPlan = getLatestPendingPlan();
-        if (pendingPlan) {
-            return reply.code(409).send({
-                error: 'pending plan already exists',
-                pendingPlanId: pendingPlan.id,
-                pendingJobId: pendingPlan.job_id ?? null,
-            });
-        }
+        const blockingPlan = getBlockingOrganizePlan(db);
+        if (blockingPlan) return reply.code(409).send(buildBlockingPlanPayload(blockingPlan));
 
         const config = getAIConfig(getSetting);
         if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
@@ -430,9 +499,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             return reply.send({ success: true, planId: plan.id, jobId: job.id });
         } catch (e: any) {
             req.log.error({ err: e }, 'classify-batch failed');
-            const resp: Record<string, unknown> = { error: e.message };
-            if (e.statusCode === 409 && e.activePlanId) resp.activePlanId = e.activePlanId;
-            return reply.code(e.statusCode || 500).send(resp);
+            return reply.code(e.statusCode || 500).send(buildPlanErrorPayload(e));
         }
     });
 
@@ -457,14 +524,8 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             return reply.code(400).send({ error: 'scope 参数无效，必须为 all、uncategorized、category:N 或 ids:N,N,N' });
         }
 
-        const pendingPlan = getLatestPendingPlan();
-        if (pendingPlan) {
-            return reply.code(409).send({
-                error: 'pending plan already exists',
-                pendingPlanId: pendingPlan.id,
-                pendingJobId: pendingPlan.job_id ?? null,
-            });
-        }
+        const blockingPlan = getBlockingOrganizePlan(db);
+        if (blockingPlan) return reply.code(409).send(buildBlockingPlanPayload(blockingPlan));
 
         const config = getAIConfig(getSetting);
         if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
@@ -509,9 +570,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             return reply.send({ success: true, planId: plan.id, jobId: job.id });
         } catch (e: any) {
             req.log.error({ err: e }, 'organize start failed');
-            const resp: Record<string, unknown> = { error: e.message };
-            if (e.statusCode === 409 && e.activePlanId) resp.activePlanId = e.activePlanId;
-            return reply.code(e.statusCode || 500).send(resp);
+            return reply.code(e.statusCode || 500).send(buildPlanErrorPayload(e));
         }
     });
 
@@ -534,6 +593,22 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             const rows = db.prepare(`SELECT * FROM ai_organize_plans WHERE status = 'preview' ORDER BY created_at DESC`).all() as any[];
             const plans = rows.map((p) => serializePlan(p));
             return reply.send({ plans });
+        } catch (e: any) {
+            return reply.code(500).send({ error: e.message });
+        }
+    });
+
+    // GET /api/ai/organize/blocking - 返回会阻止下一次 AI 整理的残留计划
+    app.get('/api/ai/organize/blocking', async (_req: FastifyRequest, reply: FastifyReply) => {
+        try {
+            const blocking = getBlockingOrganizePlan(db);
+            if (!blocking) return reply.send({ blocking: null });
+
+            const row = db.prepare('SELECT * FROM ai_organize_plans WHERE id = ?').get(blocking.id) as any | undefined;
+            return reply.send({
+                blocking: row ? serializePlan(row, { includeTargetTree: true }) : null,
+                ...buildBlockingPlanPayload(blocking),
+            });
         } catch (e: any) {
             return reply.code(500).send({ error: e.message });
         }
@@ -603,7 +678,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             }
             return reply.send({ success: true, needs_confirm: needsConfirm, template_name, ...result });
         } catch (e: any) {
-            return reply.code(e.statusCode || 500).send({ error: e.message });
+            return reply.code(e.statusCode || 500).send(buildPlanErrorPayload(e));
         }
     });
 
@@ -620,7 +695,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             });
             return reply.send({ success: true, ...result });
         } catch (e: any) {
-            return reply.code(e.statusCode || 500).send({ error: e.message });
+            return reply.code(e.statusCode || 500).send(buildPlanErrorPayload(e));
         }
     });
 
@@ -635,7 +710,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             const result = confirmEmpty(db, planId, decisions);
             return reply.send({ success: true, ...result });
         } catch (e: any) {
-            return reply.code(e.statusCode || 500).send({ error: e.message });
+            return reply.code(e.statusCode || 500).send(buildPlanErrorPayload(e));
         }
     });
 
@@ -674,14 +749,8 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                 return reply.code(409).send({ error: `invalid transition: ${currentPlan.status} → assigning` });
             }
 
-            const pendingPlan = getLatestPendingPlan(planId);
-            if (pendingPlan) {
-                return reply.code(409).send({
-                    error: 'pending plan already exists',
-                    pendingPlanId: pendingPlan.id,
-                    pendingJobId: pendingPlan.job_id ?? null,
-                });
-            }
+            const blockingPlan = getBlockingOrganizePlan(db, planId);
+            if (blockingPlan) return reply.code(409).send(buildBlockingPlanPayload(blockingPlan));
 
             const config = getAIConfig(getSetting);
             if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
@@ -708,9 +777,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
             return reply.send({ success: true, status: plan.status });
         } catch (e: any) {
-            const resp: Record<string, unknown> = { error: e.message };
-            if (e.statusCode === 409 && e.activePlanId) resp.activePlanId = e.activePlanId;
-            return reply.code(e.statusCode || 500).send(resp);
+            return reply.code(e.statusCode || 500).send(buildPlanErrorPayload(e));
         }
     });
 

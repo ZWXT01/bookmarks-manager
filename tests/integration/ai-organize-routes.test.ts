@@ -593,7 +593,7 @@ describe('integration: ai organize route contracts', () => {
         });
 
         expect(applyResponse.statusCode).toBe(409);
-        expect(applyResponse.json()).toEqual({ error: 'plan is stale: bookmarks changed' });
+        expect(applyResponse.json()).toMatchObject({ error: 'plan is stale: bookmarks changed', discard_recommended: true, recommended_action: 'discard' });
         expect(getPlan(ctx.db, plan.id)?.status).toBe('preview');
     });
 
@@ -689,7 +689,7 @@ describe('integration: ai organize route contracts', () => {
         ).get(targetCategory!.parent_id, '技术开发/前端', '前端') as { count: number };
 
         expect(applyResponse.statusCode).toBe(409);
-        expect(applyResponse.json()).toEqual({ error: 'plan is stale: target categories changed' });
+        expect(applyResponse.json()).toMatchObject({ error: 'plan is stale: target categories changed', discard_recommended: true, recommended_action: 'discard' });
         expect(recreatedCount.count).toBe(0);
         expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
     });
@@ -917,8 +917,55 @@ describe('integration: ai organize route contracts', () => {
         });
 
         expect(applyResponse.statusCode).toBe(409);
-        expect(applyResponse.json()).toEqual({ error: 'plan is stale: target template changed' });
+        expect(applyResponse.json()).toMatchObject({ error: 'plan is stale: target template changed', discard_recommended: true, recommended_action: 'discard' });
         expect(listTemplateSnapshots(ctx, crossTemplate.id)).toEqual([]);
+        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
+    });
+
+    it('recommends discarding when the target template was deleted before apply', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        activateAiTestTemplate(ctx.db);
+        const sourceCategory = getCategoryByPath(ctx.db, '技术开发/前端');
+        expect(sourceCategory).toBeTruthy();
+
+        const deletedTemplate = createTemplate(ctx.db, '待删除模板', [
+            { name: '工作', children: [{ name: '项目' }] },
+            { name: '学习', children: [{ name: '资料' }] },
+            { name: '生活', children: [{ name: '旅行' }] },
+        ]);
+
+        const [bookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Deleted Template Bookmark', url: 'https://deleted-template.example.test', categoryId: sourceCategory!.id },
+        ]);
+
+        const plan = seedPlan(ctx.db, {
+            status: 'preview',
+            template_id: deletedTemplate.id,
+            created_at: new Date(Date.now() - 60_000).toISOString(),
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '工作/项目', status: 'assigned' },
+            ],
+        });
+
+        ctx.db.pragma('foreign_keys = OFF');
+        ctx.db.prepare('DELETE FROM category_templates WHERE id = ?').run(deletedTemplate.id);
+        ctx.db.pragma('foreign_keys = ON');
+
+        const applyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${plan.id}/apply`,
+            headers: authHeaders,
+        });
+
+        expect(applyResponse.statusCode).toBe(409);
+        expect(applyResponse.json()).toMatchObject({
+            error: 'target template no longer exists; discard this plan and run AI organize again',
+            discard_recommended: true,
+            recommended_action: 'discard',
+        });
+        expect(getPlan(ctx.db, plan.id)?.status).toBe('preview');
         expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
     });
 
@@ -973,7 +1020,7 @@ describe('integration: ai organize route contracts', () => {
         });
 
         expect(resolveResponse.statusCode).toBe(409);
-        expect(resolveResponse.json()).toEqual({ error: 'plan is stale: bookmarks changed' });
+        expect(resolveResponse.json()).toMatchObject({ error: 'plan is stale: bookmarks changed', discard_recommended: true, recommended_action: 'discard' });
     });
 
     it('covers retry with the configured batch size default', async () => {
@@ -1335,9 +1382,12 @@ describe('integration: ai organize route contracts', () => {
         });
 
         expect(secondResponse.statusCode).toBe(409);
-        expect(secondResponse.json()).toEqual({
+        expect(secondResponse.json()).toMatchObject({
             error: 'active plan already exists',
             activePlanId: planId,
+            blockingPlanId: planId,
+            blockingStatus: 'assigning',
+            requiredAction: 'wait_or_cancel',
         });
 
         deferred.resolve(jsonCompletion({ assignments: buildAssignments(1, '技术开发/前端') }));
@@ -1368,10 +1418,62 @@ describe('integration: ai organize route contracts', () => {
         });
 
         expect(response.statusCode).toBe(409);
-        expect(response.json()).toEqual({
+        expect(response.json()).toMatchObject({
             error: 'pending plan already exists',
             pendingPlanId: previewPlan.id,
             pendingJobId: previewJob.id,
+            blockingPlanId: previewPlan.id,
+            blockingStatus: 'preview',
+            requiredAction: 'apply_or_discard',
+        });
+    });
+
+    it('rejects starting a new organize plan while a failed plan has not been discarded', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+
+        const failedJob = seedJob(ctx.db, {
+            type: 'ai_organize',
+            status: 'failed',
+            message: 'provider timeout',
+        });
+        const failedPlan = seedPlan(ctx.db, {
+            status: 'failed',
+            job_id: failedJob.id,
+            scope: 'all',
+        });
+
+        const response = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: session.headers,
+            payload: { scope: 'all', batch_size: 10 },
+        });
+
+        expect(response.statusCode).toBe(409);
+        expect(response.json()).toMatchObject({
+            error: 'unresolved plan already exists',
+            unresolvedPlanId: failedPlan.id,
+            unresolvedJobId: failedJob.id,
+            blockingPlanId: failedPlan.id,
+            blockingStatus: 'failed',
+            requiredAction: 'retry_or_discard',
+        });
+
+        const blockingResponse = await ctx.app.inject({
+            method: 'GET',
+            url: '/api/ai/organize/blocking',
+            headers: session.headers,
+        });
+        expect(blockingResponse.statusCode).toBe(200);
+        expect(blockingResponse.json()).toMatchObject({
+            blockingPlanId: failedPlan.id,
+            blockingStatus: 'failed',
+            blocking: {
+                id: failedPlan.id,
+                status: 'failed',
+                message: 'provider timeout',
+            },
         });
     });
 
@@ -1408,9 +1510,12 @@ describe('integration: ai organize route contracts', () => {
         });
 
         expect(retryResponse.statusCode).toBe(409);
-        expect(retryResponse.json()).toEqual({
+        expect(retryResponse.json()).toMatchObject({
             error: 'active plan already exists',
             activePlanId,
+            blockingPlanId: activePlanId,
+            blockingStatus: 'assigning',
+            requiredAction: 'wait_or_cancel',
         });
         expect(getPlan(appCtx.db, failedPlan.id)?.status).toBe('failed');
 
@@ -1445,10 +1550,13 @@ describe('integration: ai organize route contracts', () => {
         });
 
         expect(response.statusCode).toBe(409);
-        expect(response.json()).toEqual({
+        expect(response.json()).toMatchObject({
             error: 'pending plan already exists',
             pendingPlanId: previewPlan.id,
             pendingJobId: previewJob.id,
+            blockingPlanId: previewPlan.id,
+            blockingStatus: 'preview',
+            requiredAction: 'apply_or_discard',
         });
         expect(getPlan(ctx.db, failedPlan.id)?.status).toBe('failed');
     });
