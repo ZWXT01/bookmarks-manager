@@ -836,7 +836,8 @@
         discardBtn.disabled = true;
         try {
           await fetch('/api/ai/organize/' + planId + '/cancel', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
           });
           setPlanUiStatus('canceled');
           document.getElementById('plan-actions').classList.add('hidden');

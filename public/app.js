@@ -317,7 +317,8 @@ function bookmarkApp() {
         let res;
         if (jobType === 'ai_organize' && this.organizePlan?.id) {
           res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/cancel', {
-            method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' }
+            method: 'POST', headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+            body: JSON.stringify({})
           });
         } else {
           const cancelUrl = jobType === 'check' ? '/api/check/cancel' : `/api/jobs/${jobId}/cancel`;
@@ -2958,7 +2959,8 @@ function bookmarkApp() {
       if (!this.organizePlan?.id) return;
       try {
         const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/cancel', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
         });
         const data = await res.json().catch(() => null);
         if (res.ok) {
@@ -3116,7 +3118,8 @@ function bookmarkApp() {
       if (!this.organizePlan?.id) return;
       try {
         const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/rollback', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data?.success) {
@@ -3139,7 +3142,8 @@ function bookmarkApp() {
       const shouldResumeQueuedStart = !!this.organizeQueuedStart && (wasPreview || this.organizeResolutionRequired);
       try {
         const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/cancel', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
         });
         const data = await res.json().catch(() => null);
         if (res.ok) {
@@ -3164,7 +3168,8 @@ function bookmarkApp() {
       if (!this.organizePlan?.id) return;
       try {
         const res = await fetch('/api/ai/organize/' + this.organizePlan.id + '/retry', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' }
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({})
         });
         const data = await res.json().catch(() => null);
         if (res.ok && data?.success) {

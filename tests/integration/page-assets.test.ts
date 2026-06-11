@@ -83,6 +83,15 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('.max-w-screen-2xl');
     });
 
+    it('keeps JSON POST actions from sending an empty application/json body', () => {
+        const bodylessJsonPost = /method: 'POST', headers: \{ 'Content-Type': 'application\/json'(?:, 'Accept': 'application\/json')? \}\s*\n\s*\}\)/;
+        const appJs = fs.readFileSync('public/app.js', 'utf8');
+        const jobPage = fs.readFileSync('views/job.ejs', 'utf8');
+
+        expect(appJs).not.toMatch(bodylessJsonPost);
+        expect(jobPage).not.toMatch(bodylessJsonPost);
+    });
+
     it('renders template modal shells with stable selectors and explicit viewport height bounds', async () => {
         const session = await ctx.login();
         const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
