@@ -13,6 +13,21 @@ export interface JobsRoutesOptions {
 export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, done) => {
     const { db } = opts;
 
+    async function cancelLinkedAiOrganizePlan(jobId: string): Promise<boolean> {
+        const plan = db.prepare(`
+            SELECT id, status
+            FROM ai_organize_plans
+            WHERE job_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        `).get(jobId) as { id: string; status: string } | undefined;
+        if (!plan || !['assigning', 'preview', 'failed', 'error'].includes(plan.status)) return false;
+
+        const { transitionStatus } = await import('../ai-organize-plan');
+        transitionStatus(db, plan.id, 'canceled', 'job_cancel');
+        return true;
+    }
+
     // GET /api/jobs/current - 获取当前运行的任务
     app.get('/api/jobs/current', async (_req: FastifyRequest, reply: FastifyReply) => {
         try {
@@ -123,6 +138,14 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
                 return reply.send({ success: true, status: job.status });
             }
 
+            if (job.type === 'ai_organize') {
+                const planCanceled = await cancelLinkedAiOrganizePlan(jobId);
+                const nextJob = getJob(db, jobId);
+                if (planCanceled) {
+                    return reply.send({ success: true, status: nextJob?.status ?? 'canceled' });
+                }
+            }
+
             jobQueue.cancelJob(jobId);
             const next = updateJob(db, jobId, { status: 'canceled', message: '任务已取消' });
             return reply.send({ success: true, status: next.status });
@@ -150,6 +173,19 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
     // POST /api/jobs/clear-all - 清理所有任务
     app.post('/api/jobs/clear-all', async (req: FastifyRequest, reply: FastifyReply) => {
         try {
+            const activeOrganizePlans = db.prepare(`
+        SELECT p.id
+        FROM ai_organize_plans p
+        JOIN jobs j ON j.id = p.job_id
+        WHERE j.type = 'ai_organize'
+          AND p.status = 'assigning'
+      `).all() as Array<{ id: string }>;
+            if (activeOrganizePlans.length > 0) {
+                const { transitionStatus } = await import('../ai-organize-plan');
+                for (const plan of activeOrganizePlans) {
+                    transitionStatus(db, plan.id, 'canceled', 'job_clear_all');
+                }
+            }
             const result = db.prepare('DELETE FROM jobs').run();
             db.prepare('DELETE FROM job_failures').run();
             req.log.info({ deleted: result.changes }, 'cleared all jobs');

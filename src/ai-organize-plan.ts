@@ -419,6 +419,11 @@ function expireAssigningPlan(db: Db, plan: PlanRow): void {
   }
 }
 
+function cancelAssigningPlanForCanceledJob(db: Db, plan: PlanRow): void {
+  updatePlan(db, plan.id, { status: 'canceled', phase: null });
+  logStateChange(db, plan.id, plan.status, 'canceled', 'job_canceled');
+}
+
 function toBlockingPlan(row: PlanRow): BlockingOrganizePlan {
   return {
     id: row.id,
@@ -462,6 +467,20 @@ export function getBlockingOrganizePlan(db: Db, excludePlanId?: string | null): 
   let blocking: PlanRow | null = null;
   for (const row of rows) {
     if (row.status === 'assigning') {
+      if (row.job_id) {
+        const job = getJob(db, row.job_id);
+        if (job?.status === 'canceled') {
+          cancelAssigningPlanForCanceledJob(db, row);
+          continue;
+        }
+        if (job?.status === 'failed') {
+          expireAssigningPlan(db, row);
+          row.status = 'error';
+          row.phase = null;
+          blocking = row;
+          break;
+        }
+      }
       const createdMs = Date.parse(row.created_at);
       const age = Number.isFinite(createdMs) ? Date.now() - createdMs : Infinity;
       if (age > PLAN_TIMEOUT_MS) {
@@ -927,8 +946,9 @@ export function transitionStatus(db: Db, planId: string, target: PlanStatus, rea
 }
 
 export function getActivePlan(db: Db): PlanRow | null {
-  const ph = ACTIVE_STATUSES.map(() => '?').join(',');
-  return (db.prepare(`SELECT * FROM ai_organize_plans WHERE status IN (${ph}) ORDER BY created_at DESC LIMIT 1`).get(...ACTIVE_STATUSES) as PlanRow | undefined) ?? null;
+  const blocking = getBlockingOrganizePlan(db);
+  if (!blocking || blocking.status !== 'assigning') return null;
+  return getPlan(db, blocking.id);
 }
 
 // ==================== Tree Validation ====================
@@ -1278,11 +1298,17 @@ export function cleanupExpiredSnapshots(db: Db): number {
 export function recoverStalePlans(db: Db): number {
   const stale = db.prepare(`SELECT * FROM ai_organize_plans WHERE status = 'assigning'`).all() as PlanRow[];
   for (const plan of stale) {
+    const job = plan.job_id ? getJob(db, plan.job_id) : null;
+    if (job?.status === 'canceled') {
+      updatePlan(db, plan.id, { status: 'canceled' as PlanStatus, phase: null });
+      logStateChange(db, plan.id, plan.status, 'canceled', 'job_canceled');
+      continue;
+    }
+
     updatePlan(db, plan.id, { status: 'error' as PlanStatus, phase: null });
     logStateChange(db, plan.id, plan.status, 'error', 'server_restart');
-    if (plan.job_id) {
-      const job = getJob(db, plan.job_id);
-      if (job && (job.status === 'queued' || job.status === 'running')) {
+    if (plan.job_id && job) {
+      if (job.status === 'queued' || job.status === 'running') {
         updateJob(db, plan.job_id, { status: 'failed', message: 'server restart' });
       }
     }

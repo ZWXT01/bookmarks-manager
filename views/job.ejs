@@ -257,7 +257,7 @@
       <div class="mt-4 rounded-lg border bg-white p-3 shadow-sm">
         <div class="flex items-center justify-between">
           <div class="text-sm font-semibold text-slate-700">
-            分类建议（共 <span><%= organizeAssignmentTotal %></span> 条）
+            分类建议（共 <span id="assign-total-count"><%= organizeAssignmentTotal %></span> 条）
           </div>
           <% if (organizePlanStatus) { %>
             <span class="text-xs px-2 py-0.5 rounded <%= organizePlanStatus === 'applied' ? 'bg-green-100 text-green-700' : organizePlanStatus === 'preview' ? 'bg-blue-100 text-blue-700' : organizePlanStatus === 'assigning' ? 'bg-purple-100 text-purple-700' : organizePlanStatus === 'failed' || organizePlanStatus === 'error' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600' %>">
@@ -706,6 +706,8 @@
 
           assignCurrentPage = data.page;
           assignTotalPages = data.totalPages;
+          var totalCountEl = document.getElementById('assign-total-count');
+          if (totalCountEl) totalCountEl.textContent = data.total;
           var pager = document.getElementById('assign-pager');
           if (pager) pager.classList.toggle('hidden', assignTotalPages <= 1);
           var cpEl = document.getElementById('assign-current-page');

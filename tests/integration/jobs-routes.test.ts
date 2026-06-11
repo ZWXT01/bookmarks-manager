@@ -1,8 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { addJobFailure, getJob, publishJobEvent, updateJob } from '../../src/jobs';
+import { getPlan } from '../../src/ai-organize-plan';
 import { createTestApp, type TestAppContext } from '../helpers/app';
-import { seedJob } from '../helpers/factories';
+import { seedJob, seedPlan } from '../helpers/factories';
 
 describe('integration: jobs routes', () => {
     let ctx: TestAppContext;
@@ -164,6 +165,22 @@ describe('integration: jobs routes', () => {
         expect(terminalCancel.json()).toEqual({ success: true, status: 'done' });
     });
 
+    it('cancels the linked AI organize plan when canceling an AI job from job details', async () => {
+        const aiJob = seedJob(ctx.db, { id: 'job-ai-cancel', type: 'ai_organize', status: 'queued' });
+        const aiPlan = seedPlan(ctx.db, { id: 'plan-ai-cancel', job_id: aiJob.id, status: 'assigning' });
+
+        const response = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/jobs/${aiJob.id}/cancel`,
+            headers: authHeaders,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({ success: true, status: 'canceled' });
+        expect(getJob(ctx.db, aiJob.id)).toMatchObject({ status: 'canceled', message: 'plan canceled' });
+        expect(getPlan(ctx.db, aiPlan.id)?.status).toBe('canceled');
+    });
+
     it('clears completed jobs and removes orphaned failures', async () => {
         const runningJob = seedJob(ctx.db, { id: 'job-running', type: 'import', status: 'running' });
         const doneJob = seedJob(ctx.db, { id: 'job-done-clear', type: 'import', status: 'done' });
@@ -189,6 +206,8 @@ describe('integration: jobs routes', () => {
     it('clears all jobs and all failure rows', async () => {
         const queuedJob = seedJob(ctx.db, { id: 'job-clear-all-queued', type: 'import', status: 'queued' });
         const canceledJob = seedJob(ctx.db, { id: 'job-clear-all-canceled', type: 'check', status: 'canceled' });
+        const aiJob = seedJob(ctx.db, { id: 'job-clear-all-ai', type: 'ai_organize', status: 'queued' });
+        const aiPlan = seedPlan(ctx.db, { id: 'plan-clear-all-ai', job_id: aiJob.id, status: 'assigning' });
 
         addJobFailure(ctx.db, queuedJob.id, 'https://queued.example.com', 'queued-failure');
         addJobFailure(ctx.db, canceledJob.id, 'https://canceled.example.com', 'canceled-failure');
@@ -200,9 +219,10 @@ describe('integration: jobs routes', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        expect(response.json()).toEqual({ success: true, deleted: 2 });
+        expect(response.json()).toEqual({ success: true, deleted: 3 });
         expect((ctx.db.prepare('SELECT COUNT(*) AS count FROM jobs').get() as { count: number }).count).toBe(0);
         expect((ctx.db.prepare('SELECT COUNT(*) AS count FROM job_failures').get() as { count: number }).count).toBe(0);
+        expect(getPlan(ctx.db, aiPlan.id)?.status).toBe('canceled');
     });
 
     it('streams the initial SSE frame, broadcasts later updates, and closes cleanly on disconnect', async () => {

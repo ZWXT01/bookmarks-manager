@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import fs from 'fs';
 
 import { addJobFailure } from '../../src/jobs';
 import { createTestApp, type TestAppContext } from '../helpers/app';
@@ -127,7 +128,8 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="ai-organize-modal"');
         expect(response.body).toContain('data-testid="ai-organize-panel"');
         expect(response.body).toContain('data-testid="ai-organize-body"');
-        expect(response.body).toContain('style="max-height: calc(100vh - 2rem);"');
+        expect(response.body).toContain('fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/50 p-4');
+        expect(response.body).toContain('style="max-height: min(760px, calc(100vh - 2rem));"');
         expect(response.body).toContain('style="max-height: min(320px, 45vh);"');
         expect(response.body).toContain('min-h-0 flex-1 overflow-y-auto');
         expect(response.body).toContain('data-testid="organize-phase-idle"');
@@ -175,6 +177,14 @@ describe('integration: page assets', () => {
         expect(response.body).toContain("data?.blockingPlanId || data?.pendingPlanId || data?.activePlanId || data?.unresolvedPlanId");
         expect(response.body).toContain("this.showToast(wasPreview ? (previewGuardActive ? '已放弃上一次建议' : '已放弃建议') : '已取消上一次任务', 'info');");
         expect(response.body).toContain('await this.resumeQueuedOrganizeStart();');
+        expect(response.body).toContain("event.target.closest('button,a,input,select,textarea,[role=\"button\"],[role=\"tab\"]')");
+    });
+
+    it('renders job detail assignment totals with AJAX-refreshable count wiring', async () => {
+        const body = fs.readFileSync('views/job.ejs', 'utf8');
+        expect(body).toContain('id="assign-total-count"');
+        expect(body).toContain("document.getElementById('assign-total-count')");
+        expect(body).toContain('totalCountEl.textContent = data.total');
     });
 
     it('renders import and export shells with stable selectors for browser regression', async () => {

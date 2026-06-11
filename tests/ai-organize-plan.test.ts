@@ -9,6 +9,7 @@ import {
   deletePlan,
   transitionStatus,
   getActivePlan,
+  getBlockingOrganizePlan,
   PlanError,
   recoverStalePlans,
 } from '../src/ai-organize-plan';
@@ -121,6 +122,20 @@ describe('ai-organize-plan', () => {
       const fresh = createPlan(db, 'all');
       expect(fresh.id).not.toBe(old.id);
       expect(getPlan(db, old.id)!.status).toBe('error');
+    });
+
+    it('should reconcile assigning plans whose linked job was canceled', () => {
+      const old = createPlan(db, 'all');
+      const job = createJob(db, 'ai_organize', 'cancel from job detail', 0);
+      updatePlan(db, old.id, { job_id: job.id });
+      db.prepare('UPDATE jobs SET status = ? WHERE id = ?').run('canceled', job.id);
+
+      expect(getBlockingOrganizePlan(db)).toBeNull();
+      expect(getActivePlan(db)).toBeNull();
+      expect(getPlan(db, old.id)!.status).toBe('canceled');
+
+      const fresh = createPlan(db, 'all');
+      expect(fresh.id).not.toBe(old.id);
     });
 
     it('should attach activePlanId on 409 error', () => {
@@ -312,6 +327,20 @@ describe('ai-organize-plan', () => {
 
       const logs = getLogs(db, plan.id);
       expect(logs.some(l => l.to_status === 'error' && l.reason === 'server_restart')).toBe(true);
+    });
+
+    it('keeps job-detail cancellations terminal during startup recovery', () => {
+      const job = createJob(db, 'ai_organize', 'canceled from job detail', 0);
+      const plan = createPlan(db, 'all');
+      updatePlan(db, plan.id, { job_id: job.id });
+      db.prepare('UPDATE jobs SET status = ?, message = ? WHERE id = ?').run('canceled', '任务已取消', job.id);
+
+      const recovered = recoverStalePlans(db);
+
+      expect(recovered).toBe(1);
+      expect(getPlan(db, plan.id)).toMatchObject({ status: 'canceled', phase: null });
+      expect(getJob(db, job.id)).toMatchObject({ status: 'canceled', message: '任务已取消' });
+      expect(getLogs(db, plan.id).some(l => l.to_status === 'canceled' && l.reason === 'job_canceled')).toBe(true);
     });
   });
 });

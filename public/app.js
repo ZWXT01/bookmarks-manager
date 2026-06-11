@@ -1422,6 +1422,7 @@ function bookmarkApp() {
       const container = this.getCategoryTabsScrollTarget();
       if (!container || event.pointerType === 'touch' || event.button !== 0) return;
       if (container.scrollWidth <= container.clientWidth) return;
+      if (event.target && typeof event.target.closest === 'function' && event.target.closest('button,a,input,select,textarea,[role="button"],[role="tab"]')) return;
 
       this._categoryTabsDragging = true;
       this._categoryTabsPointerId = event.pointerId;
