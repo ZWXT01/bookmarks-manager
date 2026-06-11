@@ -433,11 +433,18 @@ export function createSubCategory(db: Db, name: string, parentId: number, option
         return existing.id;
     }
 
+    const maxSortOrder = db.prepare(`
+        SELECT COALESCE(MAX(sort_order), -1) as max_order
+        FROM categories
+        WHERE parent_id = ?
+    `).get(parentId) as { max_order: number };
+    const nextSortOrder = maxSortOrder.max_order + 1;
+
     const now = new Date().toISOString();
     const result = db.prepare(`
     INSERT INTO categories (name, parent_id, icon, color, sort_order, created_at)
-    VALUES (?, ?, ?, ?, 0, ?)
-  `).run(simpleName, parentId, options?.icon ?? null, options?.color ?? null, now);
+    VALUES (?, ?, ?, ?, ?, ?)
+  `).run(simpleName, parentId, options?.icon ?? null, options?.color ?? null, nextSortOrder, now);
     return Number(result.lastInsertRowid);
 }
 

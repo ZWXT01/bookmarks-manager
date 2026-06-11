@@ -491,7 +491,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       const pageClamped = Math.min(Math.max(1, page), totalPages);
       const offsetClamped = (pageClamped - 1) * pageSize;
 
-      const bookmarkSqlBase = 'SELECT b.id AS id, b.url AS url, b.title AS title, b.created_at AS created_at, b.check_status AS check_status, b.last_checked_at AS last_checked_at, b.check_http_code AS check_http_code, b.check_error AS check_error, CASE WHEN c.id IS NULL THEN NULL WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END AS category_name FROM bookmarks b LEFT JOIN categories c ON c.id = b.category_id LEFT JOIN categories p ON p.id = c.parent_id ';
+      const bookmarkSqlBase = `SELECT b.id AS id, b.url AS url, b.title AS title, b.created_at AS created_at, b.check_status AS check_status, b.last_checked_at AS last_checked_at, b.check_http_code AS check_http_code, b.check_error AS check_error, CASE WHEN c.id IS NULL THEN NULL WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END AS category_name FROM bookmarks b LEFT JOIN categories c ON c.id = b.category_id LEFT JOIN categories p ON p.id = c.parent_id `;
 
       const bookmarks = db
         .prepare(bookmarkSqlBase + whereSql + ' ORDER BY b.created_at DESC LIMIT ? OFFSET ?')
@@ -593,7 +593,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       const page = toIntClamp(req.query.page, 1, 10_000, 1);
       const pageSize = toIntClamp(req.query.pageSize, 10, 200, 50);
 
-      let sql = 'SELECT b.id, b.url, b.title, b.created_at, b.check_status, b.last_checked_at, b.check_http_code, b.check_error, b.skip_check, b.category_id, CASE WHEN c.id IS NULL THEN NULL WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END AS category_name FROM bookmarks b LEFT JOIN categories c ON b.category_id = c.id LEFT JOIN categories p ON p.id = c.parent_id ';
+      let sql = `SELECT b.id, b.url, b.title, b.created_at, b.check_status, b.last_checked_at, b.check_http_code, b.check_error, b.skip_check, b.category_id, CASE WHEN c.id IS NULL THEN NULL WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END AS category_name FROM bookmarks b LEFT JOIN categories c ON b.category_id = c.id LEFT JOIN categories p ON p.id = c.parent_id `;
       const conditions: string[] = [];
       const params: any[] = [];
 

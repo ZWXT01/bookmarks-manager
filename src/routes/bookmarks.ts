@@ -38,7 +38,7 @@ export const bookmarkRoutes: FastifyPluginCallback<BookmarkRoutesOptions> = (app
 
             const id = Number(res.lastInsertRowid);
             const row = db
-                .prepare('SELECT b.id, b.url, b.title, b.created_at, b.check_status, b.last_checked_at, b.check_http_code, b.check_error, CASE WHEN c.id IS NULL THEN NULL WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END as category_name FROM bookmarks b LEFT JOIN categories c ON b.category_id = c.id LEFT JOIN categories p ON p.id = c.parent_id WHERE b.id = ?')
+                .prepare(`SELECT b.id, b.url, b.title, b.created_at, b.check_status, b.last_checked_at, b.check_http_code, b.check_error, CASE WHEN c.id IS NULL THEN NULL WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END as category_name FROM bookmarks b LEFT JOIN categories c ON b.category_id = c.id LEFT JOIN categories p ON p.id = c.parent_id WHERE b.id = ?`)
                 .get(id);
 
             return reply.send({ bookmark: row });

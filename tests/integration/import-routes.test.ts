@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { getCategoryByPath } from '../../src/category-service';
 import { getJob, jobQueue } from '../../src/jobs';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import { seedBookmarks, seedCategory } from '../helpers/factories';
@@ -247,8 +248,9 @@ describe('integration: import routes', () => {
         await jobQueue.onIdle();
 
         const keepBookmark = ctx.db.prepare('SELECT category_id FROM bookmarks WHERE url = ?').get('https://keep.example.com') as { category_id: number | null };
-        const importedCategory = ctx.db.prepare('SELECT id FROM categories WHERE name = ?').get('Imported/Docs') as { id: number };
-        expect(keepBookmark.category_id).toBe(importedCategory.id);
+        const importedCategory = getCategoryByPath(ctx.db, 'Imported/Docs');
+        expect(importedCategory).toBeTruthy();
+        expect(keepBookmark.category_id).toBe(importedCategory!.id);
 
         const categoryCountAfterKeep = (ctx.db.prepare('SELECT COUNT(*) AS count FROM categories').get() as { count: number }).count;
 
