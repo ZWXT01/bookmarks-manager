@@ -5,6 +5,7 @@
 import path from 'path';
 import os from 'os';
 import fs from 'fs';
+import { randomUUID } from 'crypto';
 import { openDb, type Db } from '../../src/db';
 
 let counter = 0;
@@ -18,7 +19,7 @@ export function createTestDb(): { db: Db; cleanup: () => void } {
     counter += 1;
     const tmpPath = path.join(
         os.tmpdir(),
-        `bm_test_${Date.now()}_${counter}.db`,
+        `bm_test_${process.pid}_${Date.now()}_${counter}_${randomUUID()}.db`,
     );
     const db = openDb(tmpPath);
 
