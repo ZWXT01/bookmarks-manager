@@ -2,9 +2,8 @@ import type { Db } from './db';
 import type { Assignment, CategoryNode, PlanRow } from './ai-organize-plan';
 import { updatePlan, transitionStatus, getPlan, buildPlanSourceSnapshot, getPlanScopeBookmarkIds } from './ai-organize-plan';
 import { updateJob, jobQueue, publishJobEvent } from './jobs';
-import { getCategoryTree } from './category-service';
+import { getCategoryPathMap, getCategoryTree } from './category-service';
 import { createOpenAIClient, extractAICompletionText, type AIClientFactory } from './ai-client';
-import { getTemplate, getActiveTemplate } from './template-service';
 
 export interface AIConfig {
   baseUrl: string;
@@ -57,28 +56,13 @@ export function failPlanExecution(db: Db, planId: string, error: unknown, reason
 function buildLiveCategoryTreeSnapshot(db: Db): CategoryNode[] {
   return getCategoryTree(db).map(node => ({
     name: node.name,
-    children: (node.children ?? []).map(child => ({ name: child.name })),
+    children: (node.children ?? []).map(child => ({ name: child.displayName || child.name })),
   }));
 }
 
-function resolvePlanTargetTree(db: Db, plan: Pick<PlanRow, 'template_id' | 'target_tree'>): CategoryNode[] {
+function resolvePlanTargetTree(db: Db, plan: Pick<PlanRow, 'target_tree'>): CategoryNode[] {
   const snapshottedTree = parseTargetTree(plan.target_tree);
   if (snapshottedTree.length > 0) return snapshottedTree;
-
-  if (plan.template_id != null) {
-    const template = getTemplate(db, plan.template_id);
-    if (template) {
-      const templateTree = parseTargetTree(template.tree);
-      if (templateTree.length > 0) return templateTree;
-    }
-  }
-
-  const activeTemplate = getActiveTemplate(db);
-  if (activeTemplate) {
-    const activeTree = parseTargetTree(activeTemplate.tree);
-    if (activeTree.length > 0) return activeTree;
-  }
-
   return buildLiveCategoryTreeSnapshot(db);
 }
 
@@ -156,14 +140,21 @@ export async function assignBookmarks(
   const categoryList = buildCategoryListFromTree(targetTree);
 
   const scopeBookmarkIds = getPlanScopeBookmarkIds(db, planSnapshot);
+  const categoryPathMap = getCategoryPathMap(db);
   const bookmarks = scopeBookmarkIds.length > 0
     ? db.prepare(`
-      SELECT b.id, b.url, b.title, c.name AS current_category
+      SELECT b.id, b.url, b.title, b.category_id
       FROM bookmarks b
-      LEFT JOIN categories c ON c.id = b.category_id
       WHERE b.id IN (${scopeBookmarkIds.map(() => '?').join(',')})
       ORDER BY b.id
-    `).all(...scopeBookmarkIds) as BookmarkBatch[]
+    `).all(...scopeBookmarkIds).map((row: any) => {
+      return {
+        id: row.id,
+        url: row.url,
+        title: row.title,
+        current_category: row.category_id != null ? (categoryPathMap.get(row.category_id) ?? null) : null,
+      };
+    }) as BookmarkBatch[]
     : [];
 
   const fetchedBookmarkIds = new Set(bookmarks.map(bookmark => bookmark.id));

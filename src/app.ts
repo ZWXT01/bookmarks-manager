@@ -42,12 +42,12 @@ import {
   importRoutes,
   pagesRoutes,
   formsRoutes,
-  templateRoutes,
   type CategoryRow,
   type CategoryEditRow,
   type BookmarkRow,
   type BookmarkEditRow,
 } from './routes';
+import { expandCategoryIdsForScope, getCategoryIdsForScope } from './category-service';
 
 export interface BuildAppOptions {
   db?: Db;
@@ -377,7 +377,6 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
   await app.register(importRoutes, { db });
   await app.register(pagesRoutes, { db, toIntClamp });
   await app.register(formsRoutes, { db, safeRedirectTarget, withFlash });
-  await app.register(templateRoutes, { db });
 
   app.addHook('preHandler', async (req, reply) => {
     if (req.url.startsWith('/public/') || req.url === '/login' || req.url === '/favicon.ico' || req.url === '/api/auth/session') {
@@ -466,8 +465,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       if (activeCategoryId === 'uncategorized') {
         whereParts.push('b.category_id IS NULL');
       } else if (typeof activeCategoryId === 'number') {
-        whereParts.push('b.category_id = ?');
-        whereArgs.push(activeCategoryId);
+        const categoryIds = getCategoryIdsForScope(db, activeCategoryId);
+        if (categoryIds.length === 0) {
+          whereParts.push('1 = 0');
+        } else {
+          whereParts.push(`b.category_id IN (${categoryIds.map(() => '?').join(',')})`);
+          whereArgs.push(...categoryIds);
+        }
       }
 
       if (keyword) {
@@ -487,7 +491,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       const pageClamped = Math.min(Math.max(1, page), totalPages);
       const offsetClamped = (pageClamped - 1) * pageSize;
 
-      const bookmarkSqlBase = 'SELECT b.id AS id, b.url AS url, b.title AS title, b.created_at AS created_at, b.check_status AS check_status, b.last_checked_at AS last_checked_at, b.check_http_code AS check_http_code, b.check_error AS check_error, c.name AS category_name FROM bookmarks b LEFT JOIN categories c ON c.id = b.category_id ';
+      const bookmarkSqlBase = 'SELECT b.id AS id, b.url AS url, b.title AS title, b.created_at AS created_at, b.check_status AS check_status, b.last_checked_at AS last_checked_at, b.check_http_code AS check_http_code, b.check_error AS check_error, CASE WHEN c.id IS NULL THEN NULL WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END AS category_name FROM bookmarks b LEFT JOIN categories c ON c.id = b.category_id LEFT JOIN categories p ON p.id = c.parent_id ';
 
       const bookmarks = db
         .prepare(bookmarkSqlBase + whereSql + ' ORDER BY b.created_at DESC LIMIT ? OFFSET ?')
@@ -589,7 +593,7 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       const page = toIntClamp(req.query.page, 1, 10_000, 1);
       const pageSize = toIntClamp(req.query.pageSize, 10, 200, 50);
 
-      let sql = 'SELECT b.id, b.url, b.title, b.created_at, b.check_status, b.last_checked_at, b.check_http_code, b.check_error, b.skip_check, b.category_id, c.name as category_name FROM bookmarks b LEFT JOIN categories c ON b.category_id = c.id ';
+      let sql = 'SELECT b.id, b.url, b.title, b.created_at, b.check_status, b.last_checked_at, b.check_http_code, b.check_error, b.skip_check, b.category_id, CASE WHEN c.id IS NULL THEN NULL WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END AS category_name FROM bookmarks b LEFT JOIN categories c ON b.category_id = c.id LEFT JOIN categories p ON p.id = c.parent_id ';
       const conditions: string[] = [];
       const params: any[] = [];
 
@@ -598,8 +602,13 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
       } else if (category) {
         const catId = toInt(category);
         if (catId !== null) {
-          conditions.push('b.category_id = ?');
-          params.push(catId);
+          const categoryIds = getCategoryIdsForScope(db, catId);
+          if (categoryIds.length === 0) {
+            conditions.push('1 = 0');
+          } else {
+            conditions.push(`b.category_id IN (${categoryIds.map(() => '?').join(',')})`);
+            params.push(...categoryIds);
+          }
         }
       }
 
@@ -690,9 +699,14 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
             b.url AS url,
             b.title AS title,
             b.created_at AS created_at,
-            c.name AS category_name
+            CASE
+              WHEN c.id IS NULL THEN NULL
+              WHEN p.id IS NOT NULL THEN p.name || '/' || c.name
+              ELSE c.name
+            END AS category_name
           FROM bookmarks b
           LEFT JOIN categories c ON c.id = b.category_id
+          LEFT JOIN categories p ON p.id = c.parent_id
         `;
         const conditions: string[] = [];
         const params: any[] = [];
@@ -708,21 +722,31 @@ export async function buildApp(options: BuildAppOptions = {}): Promise<BuildAppR
           if (ids.length === 0) {
             return reply.code(400).send({ error: '无效的分类参数' });
           }
-          conditions.push(`b.category_id IN (${ids.map(() => '?').join(',')})`);
-          params.push(...ids);
+          const scopeIds = expandCategoryIdsForScope(db, ids);
+          if (scopeIds.length === 0) {
+            conditions.push('1 = 0');
+          } else {
+            conditions.push(`b.category_id IN (${scopeIds.map(() => '?').join(',')})`);
+            params.push(...scopeIds);
+          }
         } else if (category) {
           const categoryId = toInt(category);
           if (categoryId === null) {
             return reply.code(400).send({ error: '无效的分类参数' });
           }
-          conditions.push('b.category_id = ?');
-          params.push(categoryId);
+          const scopeIds = getCategoryIdsForScope(db, categoryId);
+          if (scopeIds.length === 0) {
+            conditions.push('1 = 0');
+          } else {
+            conditions.push(`b.category_id IN (${scopeIds.map(() => '?').join(',')})`);
+            params.push(...scopeIds);
+          }
         }
 
         if (conditions.length > 0) {
           sql += ' WHERE ' + conditions.join(' AND ');
         }
-        sql += ' ORDER BY c.name, b.created_at DESC';
+        sql += ' ORDER BY category_name, b.created_at DESC';
         rows = db.prepare(sql).all(...params) as Array<{ url: string; title: string; category_name: string | null; created_at: string }>;
       }
 

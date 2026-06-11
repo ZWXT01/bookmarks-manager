@@ -1,12 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createPlan, getPlan, transitionStatus, updatePlan } from '../../src/ai-organize-plan';
-import { getCategoryByPath } from '../../src/category-service';
+import { getCategoryByPath, getCategoryFullPath, renameCategory } from '../../src/category-service';
 import { getJob, jobQueue } from '../../src/jobs';
-import { createTemplate, updateTemplate } from '../../src/template-service';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import {
-    activateAiTestTemplate,
+    seedAiTestCategories,
     createQueuedAIHarness,
     jsonCompletion,
     seedAISettings,
@@ -45,12 +44,6 @@ function getBookmarkCategoryId(ctx: TestAppContext, bookmarkId: number): number 
     return row?.category_id ?? null;
 }
 
-function listTemplateSnapshots(ctx: TestAppContext, templateId: number) {
-    return ctx.db.prepare(
-        'SELECT bookmark_id, category_path FROM template_snapshots WHERE template_id = ? ORDER BY bookmark_id',
-    ).all(templateId) as Array<{ bookmark_id: number; category_path: string }>;
-}
-
 describe('integration: ai organize route contracts', () => {
     let ctx: TestAppContext | null = null;
 
@@ -76,7 +69,7 @@ describe('integration: ai organize route contracts', () => {
         const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([() => deferred.promise]);
         seedAISettings(appCtx.db, { batchSize: 30 });
-        activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
 
         const bookmarkIds = seedBookmarks(appCtx.db, Array.from({ length: 25 }, (_, index) => ({
             title: `Bookmark ${index + 1}`,
@@ -199,7 +192,7 @@ describe('integration: ai organize route contracts', () => {
         expect(harness.calls).toHaveLength(1);
     });
 
-    it('uses the latest active template for default organize while preserving explicit template overrides', async () => {
+    it('uses the latest live category list for repeated organize runs after discarding previous preview', async () => {
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
             jsonCompletion({
                 assignments: [
@@ -209,12 +202,12 @@ describe('integration: ai organize route contracts', () => {
             }),
             jsonCompletion({
                 assignments: [
-                    { index: 1, category: '归档/稍后阅读' },
+                    { index: 1, category: '技术开发/Web前端' },
                 ],
             }),
         ]);
         seedAISettings(appCtx.db, { batchSize: 10 });
-        const activeTemplate = activateAiTestTemplate(appCtx.db, '活动模板');
+        seedAiTestCategories(appCtx.db);
 
         const oldFrontend = getCategoryByPath(appCtx.db, '技术开发/前端');
         const oldDocs = getCategoryByPath(appCtx.db, '学习资源/文档');
@@ -226,17 +219,12 @@ describe('integration: ai organize route contracts', () => {
             { title: 'Legacy Docs Bookmark', url: 'https://legacy-docs.example.test', categoryId: oldDocs!.id },
         ]);
 
+        renameCategory(appCtx.db, oldFrontend!.id, 'Web前端');
+        renameCategory(appCtx.db, oldDocs!.id, '教程');
         const updatedTree = [
             { name: '技术开发', children: [{ name: 'Web前端' }, { name: '后端' }] },
             { name: '学习资源', children: [{ name: '教程' }] },
         ];
-        updateTemplate(appCtx.db, activeTemplate.id, { tree: updatedTree });
-
-        const explicitTree = [
-            { name: '归档', children: [{ name: '稍后阅读' }] },
-            { name: '参考', children: [{ name: 'API' }] },
-        ];
-        const explicitTemplate = createTemplate(appCtx.db, '显式模板', explicitTree);
 
         const defaultResponse = await appCtx.app.inject({
             method: 'POST',
@@ -258,7 +246,6 @@ describe('integration: ai organize route contracts', () => {
 
         const defaultPlan = getPlan(appCtx.db, (defaultResponse.json() as { planId: string }).planId);
         expect(defaultPlan).not.toBeNull();
-        expect(defaultPlan?.template_id).toBe(activeTemplate.id);
         expect(defaultPlan?.target_tree ? JSON.parse(defaultPlan.target_tree) : null).toEqual(updatedTree);
         expect(defaultPlan?.assignments ? JSON.parse(defaultPlan.assignments) : null).toEqual([
             { bookmark_id: bookmarkIds[0], category_path: '', status: 'needs_review' },
@@ -273,39 +260,36 @@ describe('integration: ai organize route contracts', () => {
         expect(discardDefaultResponse.statusCode).toBe(200);
         expect(getPlan(appCtx.db, defaultPlan!.id)?.status).toBe('canceled');
 
-        const explicitResponse = await appCtx.app.inject({
+        const ignoredOverrideResponse = await appCtx.app.inject({
             method: 'POST',
             url: '/api/ai/organize',
             headers: authHeaders,
             payload: {
                 scope: `ids:${bookmarkIds[0]}`,
                 batch_size: 10,
-                template_id: explicitTemplate.id,
             },
         });
-        expect(explicitResponse.statusCode).toBe(200);
+        expect(ignoredOverrideResponse.statusCode).toBe(200);
         await jobQueue.onIdle();
 
-        const explicitPrompt = harness.calls[1].messages[0].content as string;
-        expect(explicitPrompt).toContain('\n归档/稍后阅读\n');
-        expect(explicitPrompt).toContain('\n参考/API\n');
-        expect(explicitPrompt.includes('\n技术开发/Web前端\n')).toBe(false);
-        expect(explicitPrompt.includes('\n学习资源/教程\n')).toBe(false);
+        const prompt = harness.calls[1].messages[0].content as string;
+        expect(prompt).toContain('\n技术开发/Web前端\n');
+        expect(prompt).toContain('\n学习资源/教程\n');
+        expect(prompt.includes('\n归档/稍后阅读\n')).toBe(false);
 
-        const explicitPlan = getPlan(appCtx.db, (explicitResponse.json() as { planId: string }).planId);
-        expect(explicitPlan).not.toBeNull();
-        expect(explicitPlan?.template_id).toBe(explicitTemplate.id);
-        expect(explicitPlan?.target_tree ? JSON.parse(explicitPlan.target_tree) : null).toEqual(explicitTree);
-        expect(explicitPlan?.assignments ? JSON.parse(explicitPlan.assignments) : null).toEqual([
-            { bookmark_id: bookmarkIds[0], category_path: '归档/稍后阅读', status: 'assigned' },
+        const ignoredPlan = getPlan(appCtx.db, (ignoredOverrideResponse.json() as { planId: string }).planId);
+        expect(ignoredPlan).not.toBeNull();
+        expect(ignoredPlan?.target_tree ? JSON.parse(ignoredPlan.target_tree) : null).toEqual(updatedTree);
+        expect(ignoredPlan?.assignments ? JSON.parse(ignoredPlan.assignments) : null).toEqual([
+            { bookmark_id: bookmarkIds[0], category_path: '技术开发/Web前端', status: 'assigned' },
         ]);
     });
 
-    it('covers live-template apply, confirm-empty, and rollback restoration', async () => {
+    it('covers live category apply, confirm-empty, and rollback restoration', async () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
-        const template = activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
         const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
         const targetCategory = getCategoryByPath(ctx.db, '技术开发/前端');
         const occupiedCategory = getCategoryByPath(ctx.db, '技术开发/后端');
@@ -321,7 +305,6 @@ describe('integration: ai organize route contracts', () => {
 
         const plan = seedPlan(ctx.db, {
             status: 'preview',
-            template_id: template.id,
             created_at: new Date(Date.now() - 60_000).toISOString(),
             assignments: [
                 { bookmark_id: movingBookmarkId, category_path: '技术开发/前端', status: 'assigned' },
@@ -338,9 +321,8 @@ describe('integration: ai organize route contracts', () => {
         expect(applyResponse.json()).toMatchObject({
             success: true,
             needs_confirm: true,
-            template_name: template.name,
             applied_count: 1,
-            empty_categories: [{ id: sourceCategory!.id, name: sourceCategory!.name }],
+            empty_categories: [{ id: sourceCategory!.id, name: getCategoryFullPath(ctx.db, sourceCategory!.id) ?? '' }],
         });
         expect(getPlan(ctx.db, plan.id)?.status).toBe('preview');
         expect(getBookmarkCategoryId(ctx, movingBookmarkId)).toBe(targetCategory!.id);
@@ -379,7 +361,7 @@ describe('integration: ai organize route contracts', () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
-        const template = activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
         const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
         const targetCategory = getCategoryByPath(ctx.db, '技术开发/前端');
 
@@ -394,7 +376,6 @@ describe('integration: ai organize route contracts', () => {
 
         const plan = seedPlan(ctx.db, {
             status: 'preview',
-            template_id: template.id,
             created_at: new Date(Date.now() - 60_000).toISOString(),
             assignments: [
                 { bookmark_id: selectedBookmarkId, category_path: '技术开发/前端', status: 'assigned' },
@@ -418,7 +399,6 @@ describe('integration: ai organize route contracts', () => {
         expect(applyResponse.json()).toEqual({
             success: true,
             needs_confirm: false,
-            template_name: template.name,
             conflicts: [],
             empty_categories: [],
             applied_count: 1,
@@ -433,7 +413,7 @@ describe('integration: ai organize route contracts', () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
-        const template = activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
         const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
         const targetCategory = getCategoryByPath(ctx.db, '技术开发/后端');
 
@@ -447,7 +427,6 @@ describe('integration: ai organize route contracts', () => {
 
         const plan = seedPlan(ctx.db, {
             status: 'preview',
-            template_id: template.id,
             created_at: new Date(Date.now() - 60_000).toISOString(),
             assignments: [
                 { bookmark_id: conflictedBookmarkId, category_path: '技术开发/后端', status: 'assigned' },
@@ -497,76 +476,11 @@ describe('integration: ai organize route contracts', () => {
         expect(getBookmarkCategoryId(ctx, conflictedBookmarkId)).toBe(targetCategory!.id);
     });
 
-    it('covers cross-template apply and rollback through template snapshots', async () => {
-        ctx = await createTestApp();
-        const session = await ctx.login();
-        const authHeaders = session.headers;
-        activateAiTestTemplate(ctx.db);
-        const sourceCategory = getCategoryByPath(ctx.db, '技术开发/前端');
-        expect(sourceCategory).toBeTruthy();
-
-        const crossTemplate = createTemplate(ctx.db, '跨模板测试', [
-            { name: '工作', children: [{ name: '项目' }] },
-            { name: '学习', children: [{ name: '资料' }] },
-            { name: '生活', children: [{ name: '旅行' }] },
-        ]);
-
-        const [bookmarkId] = seedBookmarks(ctx.db, [
-            { title: 'Cross Template Bookmark', url: 'https://cross.example.test', categoryId: sourceCategory!.id },
-        ]);
-
-        const plan = seedPlan(ctx.db, {
-            status: 'preview',
-            template_id: crossTemplate.id,
-            created_at: new Date(Date.now() - 60_000).toISOString(),
-            assignments: [
-                { bookmark_id: bookmarkId, category_path: '工作/项目', status: 'assigned' },
-            ],
-        });
-
-        const applyResponse = await ctx.app.inject({
-            method: 'POST',
-            url: `/api/ai/organize/${plan.id}/apply`,
-            headers: authHeaders,
-        });
-
-        expect(applyResponse.statusCode).toBe(200);
-        expect(applyResponse.json()).toEqual({
-            success: true,
-            needs_confirm: false,
-            template_name: crossTemplate.name,
-            conflicts: [],
-            empty_categories: [],
-            applied_count: 1,
-        });
-        expect(getPlan(ctx.db, plan.id)?.status).toBe('applied');
-        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
-        expect(listTemplateSnapshots(ctx, crossTemplate.id)).toEqual([
-            { bookmark_id: bookmarkId, category_path: '工作/项目' },
-        ]);
-
-        const rollbackResponse = await ctx.app.inject({
-            method: 'POST',
-            url: `/api/ai/organize/${plan.id}/rollback`,
-            headers: authHeaders,
-        });
-
-        expect(rollbackResponse.statusCode).toBe(200);
-        expect(rollbackResponse.json()).toEqual({
-            success: true,
-            restored_categories: 0,
-            restored_bookmarks: 1,
-        });
-        expect(getPlan(ctx.db, plan.id)?.status).toBe('rolled_back');
-        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
-        expect(listTemplateSnapshots(ctx, crossTemplate.id)).toEqual([]);
-    });
-
     it('rejects stale apply when a preview bookmark was deleted before apply', async () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
-        const template = activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
         const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
 
         expect(sourceCategory).toBeTruthy();
@@ -577,7 +491,6 @@ describe('integration: ai organize route contracts', () => {
 
         const plan = seedPlan(ctx.db, {
             status: 'preview',
-            template_id: template.id,
             created_at: new Date(Date.now() - 60_000).toISOString(),
             assignments: [
                 { bookmark_id: bookmarkId, category_path: '技术开发/前端', status: 'assigned' },
@@ -601,7 +514,7 @@ describe('integration: ai organize route contracts', () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
-        const template = activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
         const sourceCategory = getCategoryByPath(ctx.db, '技术开发/前端');
         const driftedCategory = getCategoryByPath(ctx.db, '技术开发/后端');
         const targetCategory = getCategoryByPath(ctx.db, '学习资源/文档');
@@ -618,7 +531,6 @@ describe('integration: ai organize route contracts', () => {
 
         const plan = seedPlan(ctx.db, {
             status: 'preview',
-            template_id: template.id,
             created_at: new Date(Date.now() - 60_000).toISOString(),
             assignments: [
                 { bookmark_id: bookmarkId, category_path: '学习资源/文档', status: 'assigned' },
@@ -656,7 +568,7 @@ describe('integration: ai organize route contracts', () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
-        const template = activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
         const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
         const targetCategory = getCategoryByPath(ctx.db, '技术开发/前端');
 
@@ -669,7 +581,6 @@ describe('integration: ai organize route contracts', () => {
 
         const plan = seedPlan(ctx.db, {
             status: 'preview',
-            template_id: template.id,
             created_at: new Date(Date.now() - 60_000).toISOString(),
             assignments: [
                 { bookmark_id: bookmarkId, category_path: '技术开发/前端', status: 'assigned' },
@@ -698,7 +609,7 @@ describe('integration: ai organize route contracts', () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
-        const template = activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
         const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
         const targetCategory = getCategoryByPath(ctx.db, '技术开发/前端');
         const newerTargetCategory = getCategoryByPath(ctx.db, '技术开发/后端');
@@ -714,7 +625,6 @@ describe('integration: ai organize route contracts', () => {
 
         const olderPlan = seedPlan(ctx.db, {
             status: 'preview',
-            template_id: template.id,
             created_at: '2026-03-29T08:00:00.000Z',
             assignments: [
                 { bookmark_id: bookmarkId, category_path: '技术开发/前端', status: 'assigned' },
@@ -723,7 +633,6 @@ describe('integration: ai organize route contracts', () => {
 
         const newerPlan = seedPlan(ctx.db, {
             status: 'preview',
-            template_id: template.id,
             created_at: '2026-03-29T08:05:00.000Z',
             assignments: [
                 { bookmark_id: bookmarkId, category_path: '技术开发/后端', status: 'assigned' },
@@ -810,18 +719,18 @@ describe('integration: ai organize route contracts', () => {
             applied_count: 1,
         });
         expect(newerResolveResponse.json().empty_categories).toEqual([
-            { id: targetCategory!.id, name: targetCategory!.name },
+            { id: targetCategory!.id, name: getCategoryFullPath(ctx.db, targetCategory!.id) ?? '' },
         ]);
         expect(getPlan(ctx.db, newerPlan.id)?.status).toBe('applied');
         expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(newerTargetCategory!.id);
         expect(getBookmarkCategoryId(ctx, keeperBookmarkId)).toBe(sourceCategory!.id);
     });
 
-    it('allows a same-template preview plan to apply directly when newer plans do not overlap', async () => {
+    it('allows a live-category preview plan to apply directly when newer plans do not overlap', async () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
-        const template = activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
         const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
         const firstTarget = getCategoryByPath(ctx.db, '技术开发/前端');
         const secondTarget = getCategoryByPath(ctx.db, '技术开发/后端');
@@ -837,7 +746,6 @@ describe('integration: ai organize route contracts', () => {
 
         const olderPlan = seedPlan(ctx.db, {
             status: 'preview',
-            template_id: template.id,
             created_at: '2026-03-29T09:00:00.000Z',
             assignments: [
                 { bookmark_id: olderBookmarkId, category_path: '技术开发/前端', status: 'assigned' },
@@ -846,7 +754,6 @@ describe('integration: ai organize route contracts', () => {
 
         seedPlan(ctx.db, {
             status: 'preview',
-            template_id: template.id,
             created_at: '2026-03-29T09:05:00.000Z',
             assignments: [
                 { bookmark_id: newerBookmarkId, category_path: '技术开发/后端', status: 'assigned' },
@@ -872,108 +779,11 @@ describe('integration: ai organize route contracts', () => {
         expect(getBookmarkCategoryId(ctx, newerBookmarkId)).toBe(sourceCategory!.id);
     });
 
-    it('rejects cross-template apply when the target template changed after preview generation', async () => {
-        ctx = await createTestApp();
-        const session = await ctx.login();
-        const authHeaders = session.headers;
-        activateAiTestTemplate(ctx.db);
-        const sourceCategory = getCategoryByPath(ctx.db, '技术开发/前端');
-        expect(sourceCategory).toBeTruthy();
-
-        const crossTemplate = createTemplate(ctx.db, '跨模板漂移测试', [
-            { name: '工作', children: [{ name: '项目' }] },
-            { name: '学习', children: [{ name: '资料' }] },
-            { name: '生活', children: [{ name: '旅行' }] },
-        ]);
-
-        const [bookmarkId] = seedBookmarks(ctx.db, [
-            { title: 'Template Drift Bookmark', url: 'https://template-drift.example.test', categoryId: sourceCategory!.id },
-        ]);
-
-        const plan = seedPlan(ctx.db, {
-            status: 'preview',
-            template_id: crossTemplate.id,
-            created_at: new Date(Date.now() - 60_000).toISOString(),
-            assignments: [
-                { bookmark_id: bookmarkId, category_path: '工作/项目', status: 'assigned' },
-            ],
-        });
-
-        const updatedTree = [
-            { name: '工作', children: [{ name: '项目管理' }] },
-            { name: '学习', children: [{ name: '资料' }] },
-            { name: '生活', children: [{ name: '旅行' }] },
-        ];
-        ctx.db.prepare('UPDATE category_templates SET tree = ?, updated_at = ? WHERE id = ?').run(
-            JSON.stringify(updatedTree),
-            '2026-03-29T10:00:00.000Z',
-            crossTemplate.id,
-        );
-
-        const applyResponse = await ctx.app.inject({
-            method: 'POST',
-            url: `/api/ai/organize/${plan.id}/apply`,
-            headers: authHeaders,
-        });
-
-        expect(applyResponse.statusCode).toBe(409);
-        expect(applyResponse.json()).toMatchObject({ error: 'plan is stale: target template changed', discard_recommended: true, recommended_action: 'discard' });
-        expect(listTemplateSnapshots(ctx, crossTemplate.id)).toEqual([]);
-        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
-    });
-
-    it('recommends discarding when the target template was deleted before apply', async () => {
-        ctx = await createTestApp();
-        const session = await ctx.login();
-        const authHeaders = session.headers;
-        activateAiTestTemplate(ctx.db);
-        const sourceCategory = getCategoryByPath(ctx.db, '技术开发/前端');
-        expect(sourceCategory).toBeTruthy();
-
-        const deletedTemplate = createTemplate(ctx.db, '待删除模板', [
-            { name: '工作', children: [{ name: '项目' }] },
-            { name: '学习', children: [{ name: '资料' }] },
-            { name: '生活', children: [{ name: '旅行' }] },
-        ]);
-
-        const [bookmarkId] = seedBookmarks(ctx.db, [
-            { title: 'Deleted Template Bookmark', url: 'https://deleted-template.example.test', categoryId: sourceCategory!.id },
-        ]);
-
-        const plan = seedPlan(ctx.db, {
-            status: 'preview',
-            template_id: deletedTemplate.id,
-            created_at: new Date(Date.now() - 60_000).toISOString(),
-            assignments: [
-                { bookmark_id: bookmarkId, category_path: '工作/项目', status: 'assigned' },
-            ],
-        });
-
-        ctx.db.pragma('foreign_keys = OFF');
-        ctx.db.prepare('DELETE FROM category_templates WHERE id = ?').run(deletedTemplate.id);
-        ctx.db.pragma('foreign_keys = ON');
-
-        const applyResponse = await ctx.app.inject({
-            method: 'POST',
-            url: `/api/ai/organize/${plan.id}/apply`,
-            headers: authHeaders,
-        });
-
-        expect(applyResponse.statusCode).toBe(409);
-        expect(applyResponse.json()).toMatchObject({
-            error: 'target template no longer exists; discard this plan and run AI organize again',
-            discard_recommended: true,
-            recommended_action: 'discard',
-        });
-        expect(getPlan(ctx.db, plan.id)?.status).toBe('preview');
-        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
-    });
-
     it('rejects resolve when a conflicted bookmark was deleted after the first apply attempt', async () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
-        const template = activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
         const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
 
         expect(sourceCategory).toBeTruthy();
@@ -984,7 +794,6 @@ describe('integration: ai organize route contracts', () => {
 
         const plan = seedPlan(ctx.db, {
             status: 'preview',
-            template_id: template.id,
             created_at: new Date(Date.now() - 60_000).toISOString(),
             assignments: [
                 { bookmark_id: bookmarkId, category_path: '技术开发/后端', status: 'assigned' },
@@ -1028,7 +837,7 @@ describe('integration: ai organize route contracts', () => {
             jsonCompletion({ assignments: buildAssignments(25, '技术开发/前端') }),
         ]);
         seedAISettings(appCtx.db, { batchSize: 30 });
-        const template = activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
 
         seedBookmarks(appCtx.db, Array.from({ length: 25 }, (_, index) => ({
             title: `Retry Bookmark ${index + 1}`,
@@ -1037,7 +846,6 @@ describe('integration: ai organize route contracts', () => {
 
         const failedPlan = seedPlan(appCtx.db, {
             status: 'failed',
-            template_id: template.id,
             scope: 'all',
         });
 
@@ -1074,10 +882,9 @@ describe('integration: ai organize route contracts', () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
-        const template = activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
         const failedPlan = seedPlan(ctx.db, {
             status: 'failed',
-            template_id: template.id,
             scope: 'all',
         });
 
@@ -1112,13 +919,13 @@ describe('integration: ai organize route contracts', () => {
             jsonCompletion({ assignments: buildAssignments(2, '技术开发/前端') }),
         ]);
         seedAISettings(appCtx.db, { batchSize: 10 });
-        const template = activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
         seedBookmarks(appCtx.db, [
             { title: 'Retry Error 1', url: 'https://retry-error-1.example.test' },
             { title: 'Retry Error 2', url: 'https://retry-error-2.example.test' },
         ]);
 
-        const errorPlan = createPlan(appCtx.db, 'all', template.id);
+        const errorPlan = createPlan(appCtx.db, 'all');
         transitionStatus(appCtx.db, errorPlan.id, 'canceled');
         updatePlan(appCtx.db, errorPlan.id, { status: 'error', phase: null });
 
@@ -1153,7 +960,7 @@ describe('integration: ai organize route contracts', () => {
     it('marks assigning plans as stale when ids scope contains bookmarks that no longer exist', async () => {
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp();
         seedAISettings(appCtx.db, { batchSize: 10 });
-        activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
         const [bookmarkId] = seedBookmarks(appCtx.db, [
             { title: 'Live Scope Bookmark', url: 'https://live-scope.example.test' },
         ]);
@@ -1200,14 +1007,14 @@ describe('integration: ai organize route contracts', () => {
             jsonCompletion({ assignments: buildAssignments(2, '技术开发/前端') }),
         ]);
         seedAISettings(appCtx.db, { batchSize: 10 });
-        const template = activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
 
         const originalBookmarkIds = seedBookmarks(appCtx.db, [
             { title: 'Frozen Scope Retry 1', url: 'https://frozen-retry-1.example.test' },
             { title: 'Frozen Scope Retry 2', url: 'https://frozen-retry-2.example.test' },
         ]);
 
-        const failedPlan = createPlan(appCtx.db, 'all', template.id);
+        const failedPlan = createPlan(appCtx.db, 'all');
         transitionStatus(appCtx.db, failedPlan.id, 'canceled');
         updatePlan(appCtx.db, failedPlan.id, { status: 'failed', phase: null });
 
@@ -1256,13 +1063,13 @@ describe('integration: ai organize route contracts', () => {
         const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([() => deferred.promise]);
         seedAISettings(appCtx.db, { batchSize: 10 });
-        const template = activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
         const bookmarkIds = seedBookmarks(appCtx.db, [
             { title: 'Retry Clear 1', url: 'https://retry-clear-1.example.test' },
             { title: 'Retry Clear 2', url: 'https://retry-clear-2.example.test' },
         ]);
 
-        const failedPlan = createPlan(appCtx.db, 'all', template.id);
+        const failedPlan = createPlan(appCtx.db, 'all');
         transitionStatus(appCtx.db, failedPlan.id, 'canceled');
         updatePlan(appCtx.db, failedPlan.id, {
             status: 'failed',
@@ -1316,13 +1123,13 @@ describe('integration: ai organize route contracts', () => {
     it('marks retrying plans as stale when frozen scope bookmarks were deleted before reassignment', async () => {
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp();
         seedAISettings(appCtx.db, { batchSize: 10 });
-        const template = activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
         const bookmarkIds = seedBookmarks(appCtx.db, [
             { title: 'Retry Missing 1', url: 'https://retry-missing-1.example.test' },
             { title: 'Retry Missing 2', url: 'https://retry-missing-2.example.test' },
         ]);
 
-        const failedPlan = createPlan(appCtx.db, `ids:${bookmarkIds.join(',')}`, template.id);
+        const failedPlan = createPlan(appCtx.db, `ids:${bookmarkIds.join(',')}`);
         transitionStatus(appCtx.db, failedPlan.id, 'canceled');
         updatePlan(appCtx.db, failedPlan.id, {
             status: 'failed',
@@ -1354,11 +1161,26 @@ describe('integration: ai organize route contracts', () => {
         expect(harness.calls).toHaveLength(0);
     });
 
+    it('requires a current category list before starting organize', async () => {
+        const { ctx: appCtx, authHeaders } = await createHarnessApp();
+        seedAISettings(appCtx.db, { batchSize: 10 });
+
+        const response = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: authHeaders,
+            payload: { scope: 'all', batch_size: 10 },
+        });
+
+        expect(response.statusCode).toBe(400);
+        expect(response.json()).toEqual({ error: '请先创建分类' });
+    });
+
     it('rejects starting a second organize plan while another plan is assigning and returns activePlanId', async () => {
         const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([() => deferred.promise]);
         seedAISettings(appCtx.db, { batchSize: 10 });
-        activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
         seedBookmarks(appCtx.db, [
             { title: 'Assigning Lock Bookmark', url: 'https://assigning-lock.example.test' },
         ]);
@@ -1481,7 +1303,7 @@ describe('integration: ai organize route contracts', () => {
         const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([() => deferred.promise]);
         seedAISettings(appCtx.db, { batchSize: 10 });
-        const template = activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
         seedBookmarks(appCtx.db, [
             { title: 'Retry Lock Bookmark', url: 'https://retry-lock.example.test' },
         ]);
@@ -1499,7 +1321,6 @@ describe('integration: ai organize route contracts', () => {
 
         const failedPlan = seedPlan(appCtx.db, {
             status: 'failed',
-            template_id: template.id,
             scope: 'all',
         });
 
@@ -1632,7 +1453,7 @@ describe('integration: ai organize route contracts', () => {
             jsonCompletion({ assignments: [{ index: 1, category: '技术开发/后端' }] }),
         ]);
         seedAISettings(appCtx.db, { batchSize: 10 });
-        activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
         const [firstBookmarkId, secondBookmarkId] = seedBookmarks(appCtx.db, [
             { title: 'Canceled Bookmark', url: 'https://canceled.example.test' },
             { title: 'Queued Next Bookmark', url: 'https://queued-next.example.test' },
@@ -1724,7 +1545,6 @@ describe('integration: ai organize route contracts', () => {
         const validSnapshot = {
             categories: [],
             bookmark_categories: [],
-            active_template_id: null,
         };
 
         const expiredPlan = seedPlan(ctx.db, {
@@ -1748,7 +1568,6 @@ describe('integration: ai organize route contracts', () => {
             backup_snapshot: {
                 categories: 'bad-data',
                 bookmark_categories: [],
-                active_template_id: null,
             },
         });
 

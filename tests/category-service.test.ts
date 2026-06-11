@@ -54,8 +54,19 @@ describe('Category Service', () => {
 
             const child = getCategoryById(db, childId);
             expect(child).not.toBeNull();
-            expect(child!.name).toBe('技术/编程');
+            expect(child!.name).toBe('编程');
             expect(child!.parent_id).toBe(parentId);
+        });
+
+        it('allows the same child short name under different parents', () => {
+            const techId = createTopCategory(db, '技术');
+            const designId = createTopCategory(db, '设计');
+            const first = createSubCategory(db, '工具', techId);
+            const second = createSubCategory(db, '工具', designId);
+
+            expect(first).not.toBe(second);
+            expect(getCategoryFullPath(db, first)).toBe('技术/工具');
+            expect(getCategoryFullPath(db, second)).toBe('设计/工具');
         });
     });
 
@@ -82,6 +93,19 @@ describe('Category Service', () => {
             expect(life).toBeDefined();
             expect(life!.children).toHaveLength(0);
         });
+
+        it('rolls child bookmark counts up to the parent category', () => {
+            const techId = createTopCategory(db, '技术');
+            const frontendId = createSubCategory(db, '前端', techId);
+            seedBookmarks(db, [
+                { title: 'Parent Bookmark', url: 'https://parent.example.test', categoryId: techId },
+                { title: 'Child Bookmark', url: 'https://child.example.test', categoryId: frontendId },
+            ]);
+
+            const tech = getCategoryTree(db).find((node) => node.id === techId);
+            expect(tech?.count).toBe(2);
+            expect(tech?.children.find((child) => child.id === frontendId)?.count).toBe(1);
+        });
     });
 
     describe('getOrCreateCategoryByPath', () => {
@@ -97,8 +121,7 @@ describe('Category Service', () => {
         it('should create both levels from path like "技术/编程"', () => {
             const id = getOrCreateCategoryByPath(db, '技术/编程');
             const child = getCategoryById(db, id);
-            // Implementation stores sub-category name as full path "技术/编程"
-            expect(child!.name).toBe('技术/编程');
+            expect(child!.name).toBe('编程');
             expect(child!.parent_id).not.toBeNull();
 
             const parent = getCategoryById(db, child!.parent_id!);
@@ -160,6 +183,15 @@ describe('Category Service', () => {
             const cat = getCategoryById(db, id);
             expect(cat!.name).toBe('NewName');
         });
+
+        it('renames parent without rewriting child short names', () => {
+            const parentId = createTopCategory(db, '开发技术');
+            const childId = createSubCategory(db, '前端', parentId);
+            renameCategory(db, parentId, '技术开发');
+
+            expect(getCategoryById(db, childId)!.name).toBe('前端');
+            expect(getCategoryFullPath(db, childId)).toBe('技术开发/前端');
+        });
     });
 
     describe('deleteCategory', () => {
@@ -197,15 +229,19 @@ describe('Category Service', () => {
     describe('getTopLevelCategories / getSubCategories', () => {
         it('should separate top-level and sub-categories', () => {
             const techId = createTopCategory(db, '技术');
-            createSubCategory(db, '编程', techId);
+            const childId = createSubCategory(db, '编程', techId);
             createTopCategory(db, '生活');
+            seedBookmarks(db, [
+                { title: 'Child Count', url: 'https://child-count.example.test', categoryId: childId },
+            ]);
 
             const topLevel = getTopLevelCategories(db);
             expect(topLevel).toHaveLength(2);
+            expect(topLevel.find((cat) => cat.id === techId)?.count).toBe(1);
 
             const subs = getSubCategories(db, techId);
             expect(subs).toHaveLength(1);
-            expect(subs[0].name).toBe('技术/编程');
+            expect(subs[0].name).toBe('编程');
         });
     });
 });

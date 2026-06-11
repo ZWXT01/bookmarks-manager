@@ -15,5 +15,4 @@ export { checkRoutes } from './check';
 export { importRoutes } from './import';
 export { pagesRoutes } from './pages';
 export { formsRoutes } from './forms';
-export { templateRoutes } from './templates';
 export type { CategoryRow, CategoryEditRow, BookmarkRow, BookmarkEditRow } from './types';

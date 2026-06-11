@@ -1,6 +1,5 @@
 import type { Db } from './db';
 import { getCategoryTree } from './category-service';
-import { getActiveTemplate, type CategoryNode } from './template-service';
 
 const casefold = (value: string) => value.toLowerCase().trim();
 const compact = (value: string) => casefold(value).replace(/[\s._-]+/g, '');
@@ -145,31 +144,6 @@ function uniquePaths(paths: string[]): string[] {
   return result;
 }
 
-function treeToPaths(tree: CategoryNode[]): string[] {
-  const paths: string[] = [];
-  for (const node of tree) {
-    if (!node?.name) continue;
-    paths.push(node.name);
-    for (const child of node.children ?? []) {
-      if (!child?.name) continue;
-      paths.push(`${node.name}/${child.name}`);
-    }
-  }
-  return uniquePaths(paths);
-}
-
-function activeTemplatePaths(db: Db): string[] {
-  const active = getActiveTemplate(db);
-  if (!active) return [];
-
-  try {
-    const tree = JSON.parse(active.tree) as CategoryNode[];
-    return treeToPaths(tree);
-  } catch {
-    return [];
-  }
-}
-
 function liveCategoryPaths(db: Db): string[] {
   const paths: string[] = [];
   for (const node of getCategoryTree(db)) {
@@ -182,8 +156,6 @@ function liveCategoryPaths(db: Db): string[] {
 }
 
 export function getSingleClassifyAllowedPaths(db: Db): string[] {
-  const activePaths = activeTemplatePaths(db);
-  if (activePaths.length > 0) return activePaths;
   return liveCategoryPaths(db);
 }
 

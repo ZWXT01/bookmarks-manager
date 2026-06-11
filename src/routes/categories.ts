@@ -18,7 +18,6 @@ import {
   getCategoryById,
   getCategoryFullPath,
 } from '../category-service';
-import { syncCategoriesToActiveTemplate } from '../template-service';
 import { toInt, validateStringLength } from './types';
 
 export interface CategoryRoutesOptions {
@@ -66,11 +65,11 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
 
       let categoryId: number;
       if (name.includes('/')) {
-        categoryId = getOrCreateCategoryByPathWithSync(db, name, syncCategoriesToActiveTemplate);
+        categoryId = getOrCreateCategoryByPathWithSync(db, name);
       } else if (parentId !== null) {
-        categoryId = createSubCategoryWithSync(db, name, parentId, { icon, color }, syncCategoriesToActiveTemplate);
+        categoryId = createSubCategoryWithSync(db, name, parentId, { icon, color });
       } else {
-        categoryId = createTopCategoryWithSync(db, name, { icon, color }, syncCategoriesToActiveTemplate);
+        categoryId = createTopCategoryWithSync(db, name, { icon, color });
       }
 
       const cat = getCategoryById(db, categoryId);
@@ -151,7 +150,7 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
     }
 
     try {
-      renameCategoryWithSync(db, categoryId, newName, syncCategoriesToActiveTemplate);
+      renameCategoryWithSync(db, categoryId, newName);
       const cat = getCategoryById(db, categoryId);
       const fullPath = getCategoryFullPath(db, categoryId);
       return reply.send({
@@ -190,7 +189,7 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
     }
 
     try {
-      moveCategoryWithSync(db, categoryId, newParentId, syncCategoriesToActiveTemplate);
+      moveCategoryWithSync(db, categoryId, newParentId);
       const cat = getCategoryById(db, categoryId);
       const fullPath = getCategoryFullPath(db, categoryId);
       return reply.send({
@@ -216,7 +215,7 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
     }
 
     try {
-      const result = deleteCategoryWithSync(db, categoryId, syncCategoriesToActiveTemplate);
+      const result = deleteCategoryWithSync(db, categoryId);
       req.log.info({ categoryId, movedBookmarks: result.movedBookmarks }, 'category deleted');
       return reply.send({
         success: true,
@@ -248,7 +247,7 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
     }
 
     try {
-      const result = deleteCategoriesWithSync(db, ids, syncCategoriesToActiveTemplate);
+      const result = deleteCategoriesWithSync(db, ids);
       req.log.info({ count: ids.length, movedBookmarks: result.movedBookmarks, ids }, 'batch delete categories');
       return reply.send({ success: true, deleted: ids.length, movedBookmarks: result.movedBookmarks });
     } catch (e: any) {
@@ -352,8 +351,6 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
         if (totalChanges !== items.length) {
           throw new Error('Some categories were not updated');
         }
-        // 同步到活动模板
-        syncCategoriesToActiveTemplate(db);
       });
 
       transaction(categories);

@@ -3,9 +3,10 @@ import os from 'os';
 import path from 'path';
 
 import { selectSingleClassifyCategory } from '../src/ai-classify-guardrail';
-import type { CategoryNode } from '../src/template-service';
 
-interface SemanticTemplate {
+interface CategoryNode { name: string; children?: { name: string }[] }
+
+interface SemanticTaxonomy {
     id: string;
     name: string;
     tree: CategoryNode[];
@@ -13,7 +14,7 @@ interface SemanticTemplate {
 
 interface SemanticSampleCase {
     id: string;
-    templateId: string;
+    taxonomyId: string;
     title: string;
     url: string;
     description?: string;
@@ -23,14 +24,14 @@ interface SemanticSampleCase {
 }
 
 interface SemanticSampleDataset {
-    templates: SemanticTemplate[];
+    taxonomies: SemanticTaxonomy[];
     cases: SemanticSampleCase[];
 }
 
 interface SemanticSampleResult {
     id: string;
-    templateId: string;
-    templateName: string;
+    taxonomyId: string;
+    taxonomyName: string;
     providerCategory: string;
     expectedCategory: string;
     actualCategory: string | null;
@@ -96,7 +97,7 @@ function treeToPaths(tree: CategoryNode[]): string[] {
 function main() {
     const { datasetPath, reportPath } = parseArgs(process.argv.slice(2));
     const dataset = loadDataset(datasetPath);
-    const templateMap = new Map(dataset.templates.map((template) => [template.id, template]));
+    const taxonomyMap = new Map(dataset.taxonomies.map((taxonomy) => [taxonomy.id, taxonomy]));
 
     const report: ValidationReport = {
         startedAt: new Date().toISOString(),
@@ -110,12 +111,12 @@ function main() {
     };
 
     for (const sample of dataset.cases) {
-        const template = templateMap.get(sample.templateId);
-        if (!template) {
-            throw new Error(`sample ${sample.id} references unknown template ${sample.templateId}`);
+        const taxonomy = taxonomyMap.get(sample.taxonomyId);
+        if (!taxonomy) {
+            throw new Error(`sample ${sample.id} references unknown taxonomy ${sample.taxonomyId}`);
         }
 
-        const allowedPaths = treeToPaths(template.tree);
+        const allowedPaths = treeToPaths(taxonomy.tree);
         const actualCategory = selectSingleClassifyCategory({
             rawCategory: sample.providerCategory,
             allowedPaths,
@@ -129,8 +130,8 @@ function main() {
 
         report.results.push({
             id: sample.id,
-            templateId: sample.templateId,
-            templateName: template.name,
+            taxonomyId: sample.taxonomyId,
+            taxonomyName: taxonomy.name,
             providerCategory: sample.providerCategory,
             expectedCategory: sample.expectedCategory,
             actualCategory,

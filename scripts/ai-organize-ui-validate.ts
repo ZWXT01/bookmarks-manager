@@ -5,7 +5,7 @@ import { chromium, type Browser, type Page } from 'playwright';
 import { getPlan } from '../src/ai-organize-plan';
 import { getCategoryByPath } from '../src/category-service';
 import { getJob } from '../src/jobs';
-import { activateAiTestTemplate, createQueuedAIHarness, jsonCompletion, seedAISettings } from '../tests/helpers/ai';
+import { createQueuedAIHarness, jsonCompletion, seedAISettings, seedAiTestCategories } from '../tests/helpers/ai';
 import { createTestApp } from '../tests/helpers/app';
 import { seedBookmarks, seedJob, seedPlan } from '../tests/helpers/factories';
 
@@ -172,8 +172,8 @@ async function main() {
 
     try {
         seedAISettings(ctx.db);
-        const template = activateAiTestTemplate(ctx.db, 'AI Organize UI 模板');
-        const templateTree = JSON.parse(template.tree) as Array<Record<string, unknown>>;
+        const seededCategories = seedAiTestCategories(ctx.db, 'AI Organize UI 分类');
+        const categoryTree = seededCategories.tree as Array<Record<string, unknown>>;
 
         const docsCategory = getCategoryByPath(ctx.db, '学习资源/文档');
         const frontendCategory = getCategoryByPath(ctx.db, '技术开发/前端');
@@ -182,6 +182,8 @@ async function main() {
         assert(docsCategory, 'source category missing');
         assert(frontendCategory, 'frontend category missing');
         assert(backendCategory, 'backend category missing');
+        assert.equal(frontendCategory.name, '前端');
+        assert.equal(backendCategory.name, '后端');
 
         const [assigningBookmarkId, retryBookmarkId, errorBookmarkId, previewMovingBookmarkId, previewKeeperBookmarkId] = seedBookmarks(ctx.db, [
             { title: 'Assigning Cancel Bookmark', url: 'https://assigning.example.test', categoryId: docsCategory.id },
@@ -189,6 +191,10 @@ async function main() {
             { title: 'Error Bookmark', url: 'https://error.example.test', categoryId: docsCategory.id },
             { title: 'Preview Moving Bookmark', url: 'https://preview-moving.example.test', categoryId: docsCategory.id },
             { title: 'Preview Keeper Bookmark', url: 'https://preview-keeper.example.test', categoryId: docsCategory.id },
+        ]);
+        const [frontendFilterBookmarkId, backendFilterBookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Frontend Parent Filter Bookmark', url: 'https://frontend-filter.example.test', categoryId: frontendCategory.id },
+            { title: 'Backend Parent Filter Bookmark', url: 'https://backend-filter.example.test', categoryId: backendCategory.id },
         ]);
 
         const baseUrl = await ctx.app.listen({ host: '127.0.0.1', port: 0 });
@@ -200,7 +206,43 @@ async function main() {
 
         const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
         await login(page, baseUrl, ctx.auth.username, ctx.auth.password);
-        await page.getByTestId('active-template-name').waitFor({ state: 'visible' });
+        await page.getByTestId('open-ai-organize').waitFor({ state: 'visible' });
+
+        assert.equal(await page.getByTestId('active-template-name').count(), 0, 'removed template name should not render');
+        assert.equal(await page.getByTestId('template-select-modal').count(), 0, 'removed template select modal should not render');
+        const templatesApiStatus = await page.evaluate(async () => {
+            const response = await fetch('/api/templates');
+            return response.status;
+        });
+        assert.equal(templatesApiStatus, 404, 'removed template API should return 404');
+
+        const techTab = page.getByTestId('category-nav-tab').filter({ hasText: '技术开发' }).first();
+        await techTab.click();
+        await page.getByText('Frontend Parent Filter Bookmark').waitFor({ state: 'visible' });
+        await page.getByText('Backend Parent Filter Bookmark').waitFor({ state: 'visible' });
+        await techTab.hover();
+        await page.getByTestId('subcategory-nav-item').filter({ hasText: '前端' }).first().click();
+        await page.getByText('Frontend Parent Filter Bookmark').waitFor({ state: 'visible' });
+        await pollUntil(
+            async () => await page.getByText('Backend Parent Filter Bookmark').isVisible().catch(() => false),
+            (value) => value === false,
+            5000,
+            'backend bookmark hidden after child category filter',
+        );
+        await page.getByTestId('category-nav-all-tab').click();
+
+        await openOrganizeModal(page);
+        const idleText = (await page.getByTestId('organize-phase-idle').textContent()) ?? '';
+        assert.match(idleText, /当前分类列表/);
+        const panelBox = await page.getByTestId('ai-organize-panel').boundingBox();
+        const viewport = page.viewportSize();
+        assert(panelBox && viewport, 'organize panel geometry missing');
+        const panelCenterY = panelBox.y + panelBox.height / 2;
+        assert(
+            Math.abs(panelCenterY - viewport.height / 2) < 120,
+            `organize panel should be vertically centered, got centerY=${panelCenterY}, viewport=${viewport.height}`,
+        );
+        await closeOrganizeModal(page);
 
         await openOrganizeModal(page);
         await domClick(page, 'organize-start');
@@ -247,6 +289,10 @@ async function main() {
         assert.equal(assigningPlan.phase, null);
         assert.equal(getJob(ctx.db, assigningPlan.job_id!)?.status, 'canceled');
         assert.equal(getPlan(ctx.db, assigningPlanId)?.status, 'canceled');
+        await openOrganizeModal(page);
+        await page.getByTestId('organize-phase-idle').waitFor({ state: 'visible' });
+        assert.equal(await page.getByTestId('organize-resolution-guard').isVisible().catch(() => false), false);
+        await closeOrganizeModal(page);
 
         const retryJob = seedJob(ctx.db, {
             id: 'ui-failed-job',
@@ -264,8 +310,7 @@ async function main() {
             job_id: retryJob.id,
             status: 'failed',
             scope: `ids:${retryBookmarkId}`,
-            template_id: template.id,
-            target_tree: templateTree,
+            target_tree: categoryTree,
             assignments: [{ bookmark_id: retryBookmarkId, category_path: '', status: 'needs_review' }],
             failed_batch_ids: [0],
             needs_review_count: 1,
@@ -314,8 +359,7 @@ async function main() {
             job_id: errorJob.id,
             status: 'error',
             scope: `ids:${errorBookmarkId}`,
-            template_id: template.id,
-            target_tree: templateTree,
+            target_tree: categoryTree,
         });
 
         await openOrganizeModal(page);
@@ -334,6 +378,50 @@ async function main() {
             'error plan cancel transition',
         );
 
+        const paginationBookmarkIds = seedBookmarks(ctx.db, Array.from({ length: 45 }, (_, index) => ({
+            title: `Pagination Assignment ${String(index + 1).padStart(2, '0')}`,
+            url: `https://pagination-${index + 1}.example.test`,
+            categoryId: docsCategory.id,
+        })));
+        const paginationJob = seedJob(ctx.db, {
+            id: 'ui-pagination-job',
+            type: 'ai_organize',
+            status: 'done',
+            total: 45,
+            processed: 45,
+            inserted: 45,
+            skipped: 0,
+            failed: 0,
+            message: '分页测试计划已生成',
+        });
+        const paginationPlan = seedPlan(ctx.db, {
+            id: 'ui-pagination-plan',
+            job_id: paginationJob.id,
+            status: 'applied',
+            scope: `ids:${paginationBookmarkIds.join(',')}`,
+            target_tree: categoryTree,
+            assignments: paginationBookmarkIds.map((bookmarkId) => ({
+                bookmark_id: bookmarkId,
+                category_path: '技术开发/前端',
+                status: 'assigned',
+            })),
+            batches_done: 3,
+            batches_total: 3,
+            needs_review_count: 0,
+        });
+
+        await page.goto(`${baseUrl}/jobs/${paginationJob.id}`, { waitUntil: 'domcontentloaded' });
+        await page.locator('#assign-total-count').waitFor({ state: 'visible' });
+        assert.equal((await page.locator('#assign-total-count').textContent())?.trim(), '45');
+        assert.equal((await page.locator('#assign-total-pages').textContent())?.trim(), '3');
+        await page.locator('#assign-next-btn').click();
+        await pollUntil(
+            async () => (await page.locator('#assign-current-page').textContent())?.trim() ?? '',
+            (value) => value === '2',
+            5000,
+            'assignment pager moves to page 2',
+        );
+
         const previewJob = seedJob(ctx.db, {
             id: 'ui-preview-job',
             type: 'ai_organize',
@@ -350,8 +438,7 @@ async function main() {
             job_id: previewJob.id,
             status: 'preview',
             scope: `ids:${previewMovingBookmarkId},${previewKeeperBookmarkId}`,
-            template_id: template.id,
-            target_tree: templateTree,
+            target_tree: categoryTree,
             assignments: [
                 { bookmark_id: previewMovingBookmarkId, category_path: '技术开发/前端', status: 'assigned' },
             ],
@@ -405,6 +492,20 @@ async function main() {
                     status: getPlan(ctx.db, previewPlan.id)?.status ?? null,
                     movedBookmarkCategoryId: movedBookmark.category_id,
                     keptBookmarkCategoryId: keptBookmark.category_id,
+                },
+                noTemplateUi: {
+                    templatesApiStatus,
+                    frontendCategoryName: frontendCategory.name,
+                    backendCategoryName: backendCategory.name,
+                },
+                categoryFiltering: {
+                    frontendFilterBookmarkId,
+                    backendFilterBookmarkId,
+                },
+                assignmentPagination: {
+                    planId: paginationPlan.id,
+                    total: paginationBookmarkIds.length,
+                    totalPages: 3,
                 },
             },
         }, null, 2));

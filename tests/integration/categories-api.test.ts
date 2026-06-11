@@ -64,7 +64,7 @@ describe('integration: categories API', () => {
             count: category.count,
             level: category.level,
         }))).toEqual([
-            { fullPath: 'Tech', count: 1, level: 0 },
+            { fullPath: 'Tech', count: 2, level: 0 },
             { fullPath: 'Tech/JS', count: 1, level: 1 },
             { fullPath: 'Life', count: 0, level: 0 },
         ]);
@@ -81,7 +81,7 @@ describe('integration: categories API', () => {
         });
         expect(tree.json().tree[0]).toMatchObject({
             name: 'Tech',
-            count: 1,
+            count: 2,
             children: [{ fullPath: 'Tech/JS', count: 1 }],
         });
     });

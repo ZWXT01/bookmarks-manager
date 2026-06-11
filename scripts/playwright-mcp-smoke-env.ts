@@ -4,7 +4,8 @@ import { getCategoryByPath } from '../src/category-service';
 import { seedAISettings, createQueuedAIHarness, jsonCompletion, textCompletion } from '../tests/helpers/ai';
 import { createTestApp } from '../tests/helpers/app';
 import { seedBookmarks, seedCategoryTree, seedJob, seedSnapshot } from '../tests/helpers/factories';
-import { applyTemplate, createTemplate, type CategoryNode } from '../src/template-service';
+
+interface CategoryNode { name: string; children: { name: string }[] }
 
 const PRIMARY_TEMPLATE_TREE: CategoryNode[] = [
     {
@@ -76,11 +77,8 @@ async function main() {
             batchSize: 20,
         });
 
-        const primaryTemplate = createTemplate(ctx.db, 'MCP Smoke 模板', PRIMARY_TEMPLATE_TREE);
-        createTemplate(ctx.db, 'MCP 备用模板', ALTERNATE_TEMPLATE_TREE);
-        applyTemplate(ctx.db, primaryTemplate.id);
-
         seedCategoryTree(ctx.db, [
+            ...PRIMARY_TEMPLATE_TREE,
             { name: '临时分类', children: [{ name: '收件箱' }] },
         ]);
 
@@ -88,7 +86,7 @@ async function main() {
         const docsCategory = getCategoryByPath(ctx.db, '学习资源/文档');
         const aiCategory = getCategoryByPath(ctx.db, '工具软件/AI');
         if (!frontendCategory || !docsCategory || !aiCategory) {
-            throw new Error('failed to prepare template-backed categories');
+            throw new Error('failed to prepare live categories');
         }
 
         const bookmarkIds = seedBookmarks(ctx.db, [
@@ -126,8 +124,8 @@ async function main() {
                     '本地任务页',
                     '本地设置页',
                 ],
-                activeTemplate: 'MCP Smoke 模板',
-                alternateTemplate: 'MCP 备用模板',
+                categoryTree: PRIMARY_TEMPLATE_TREE.map((node) => node.name),
+                alternateTaxonomyReference: ALTERNATE_TEMPLATE_TREE.map((node) => node.name),
                 snapshotTitle: '登录页快照',
             },
         }, null, 2));

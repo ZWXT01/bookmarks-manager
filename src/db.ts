@@ -15,7 +15,7 @@ export function openDb(dbPath: string): Db {
   db.exec(`
     CREATE TABLE IF NOT EXISTS categories (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
+      name TEXT NOT NULL,
       parent_id INTEGER NULL REFERENCES categories(id) ON DELETE SET NULL,
       created_at TEXT NOT NULL
     );
@@ -130,25 +130,6 @@ export function openDb(dbPath: string): Db {
     );
 
     CREATE INDEX IF NOT EXISTS idx_plan_state_logs_plan_id ON plan_state_logs(plan_id);
-
-    -- 分类模板表
-    CREATE TABLE IF NOT EXISTS category_templates (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL DEFAULT 'preset',
-      tree TEXT NOT NULL,
-      is_active INTEGER NOT NULL DEFAULT 0,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL
-    );
-
-    -- 模板书签快照表
-    CREATE TABLE IF NOT EXISTS template_snapshots (
-      template_id INTEGER NOT NULL REFERENCES category_templates(id) ON DELETE CASCADE,
-      bookmark_id INTEGER NOT NULL,
-      category_path TEXT NOT NULL,
-      PRIMARY KEY (template_id, bookmark_id)
-    );
   `);
 
   // 迁移：添加skip_check字段（如果不存在）
@@ -195,6 +176,10 @@ export function openDb(dbPath: string): Db {
     db.exec(`ALTER TABLE categories ADD COLUMN sort_order INTEGER DEFAULT 0`);
   }
 
+  migrateCategoriesToScopedShortNames(db);
+  migrateAiOrganizePlansAwayFromTemplates(db);
+  dropLegacyTemplateTables(db);
+
   // 迁移：添加 bookmarks.updated_at 字段（冲突检测依赖）
   const hasUpdatedAt = columns.some(col => col.name === 'updated_at');
   if (!hasUpdatedAt) {
@@ -214,146 +199,291 @@ export function openDb(dbPath: string): Db {
   // 迁移：取消旧 designing 状态的 Plan
   db.exec(`UPDATE ai_organize_plans SET status = 'canceled' WHERE status = 'designing'`);
 
-  // 迁移：添加 ai_organize_plans.template_id 列
+  // 迁移：添加 ai_organize_plans.source_snapshot 列
   const planColumns = db.prepare("PRAGMA table_info(ai_organize_plans)").all() as Array<{ name: string }>;
-  if (!planColumns.some(col => col.name === 'template_id')) {
-    db.exec(`ALTER TABLE ai_organize_plans ADD COLUMN template_id INTEGER REFERENCES category_templates(id)`);
-  }
   if (!planColumns.some(col => col.name === 'source_snapshot')) {
     db.exec(`ALTER TABLE ai_organize_plans ADD COLUMN source_snapshot TEXT`);
   }
 
-  // 迁移：修正预置模板 tree JSON 中含 / 的子分类名
-  const slashTemplates = db.prepare(
-    `SELECT id, tree FROM category_templates WHERE type = 'preset' AND tree LIKE '%/%'`
-  ).all() as Array<{ id: number; tree: string }>;
-  for (const t of slashTemplates) {
-    const fixed = t.tree.replace(/UI\/UX/g, 'UI&UX')
-      .replace(/JavaScript\/TypeScript/g, 'JavaScript&TypeScript')
-      .replace(/CI\/CD/g, 'CI&CD');
-    if (fixed !== t.tree) {
-      db.prepare('UPDATE category_templates SET tree = ? WHERE id = ?').run(fixed, t.id);
-    }
-  }
-
-  // 迁移：插入预置分类模板种子数据
-  seedPresetTemplates(db);
-
   return db;
 }
 
-function seedPresetTemplates(db: Db): void {
-  const now = new Date().toISOString();
-  const stmt = db.prepare(
-    `INSERT OR IGNORE INTO category_templates (name, type, tree, is_active, created_at, updated_at)
-     SELECT ?, 'preset', ?, 0, ?, ? WHERE NOT EXISTS (SELECT 1 FROM category_templates WHERE name = ?)`
-  );
+interface CategoryMigrationRow {
+  id: number;
+  name: string;
+  parent_id: number | null;
+  created_at: string;
+  icon: string | null;
+  color: string | null;
+  sort_order: number | null;
+}
 
-  const presets: { name: string; tree: object[] }[] = [
-    {
-      name: '综合通用版',
-      tree: [
-        { name: '技术开发', children: [{ name: '前端' }, { name: '后端' }, { name: '移动开发' }, { name: '数据库' }, { name: '运维与部署' }] },
-        { name: '学习教育', children: [{ name: '在线课程' }, { name: '语言学习' }, { name: '阅读笔记' }, { name: '证书考试' }] },
-        { name: '工具软件', children: [{ name: '效率工具' }, { name: '浏览器插件' }, { name: '写作笔记' }, { name: '安全隐私' }] },
-        { name: '新闻资讯', children: [{ name: '科技资讯' }, { name: '财经资讯' }, { name: '国际新闻' }, { name: '行业动态' }] },
-        { name: '社交媒体', children: [{ name: '微博' }, { name: '知乎' }, { name: '小红书' }, { name: 'Reddit' }] },
-        { name: '娱乐影音', children: [{ name: '电影' }, { name: '电视剧' }, { name: '音乐' }, { name: '动漫' }, { name: '综艺' }] },
-        { name: '购物电商', children: [{ name: '综合电商' }, { name: '海淘' }, { name: '优惠折扣' }, { name: '二手闲置' }] },
-        { name: '生活服务', children: [{ name: '出行导航' }, { name: '住房租房' }, { name: '医疗健康' }, { name: '餐饮外卖' }, { name: '政务办事' }] },
-        { name: '设计创意', children: [{ name: 'UI&UX' }, { name: '平面设计' }, { name: '灵感素材' }, { name: '字体图标' }] },
-        { name: '金融理财', children: [{ name: '记账工具' }, { name: '基金股票' }, { name: '保险保障' }, { name: '宏观资讯' }] },
-        { name: '游戏', children: [{ name: 'PC游戏' }, { name: '主机游戏' }, { name: '手游' }, { name: '独立游戏' }, { name: '攻略社区' }] },
-        { name: '成人内容', children: [{ name: 'NSFW' }, { name: '成人社区' }, { name: '成人视频' }] },
-      ],
-    },
-    {
-      name: '开发者版',
-      tree: [
-        { name: '编程语言', children: [{ name: 'JavaScript&TypeScript' }, { name: 'Python' }, { name: 'Go' }, { name: 'Rust' }, { name: 'Java' }] },
-        { name: '框架与库', children: [{ name: '前端框架' }, { name: '后端框架' }, { name: 'UI组件' }, { name: '数据处理' }, { name: '测试工具' }] },
-        { name: '开发工具', children: [{ name: 'IDE编辑器' }, { name: 'Git版本控制' }, { name: '构建与打包' }, { name: '调试与性能' }, { name: 'API调试' }] },
-        { name: '云服务与运维', children: [{ name: '容器与K8s' }, { name: 'CI&CD' }, { name: '监控与日志' }, { name: '网络与安全' }, { name: 'Serverless' }] },
-        { name: '技术社区', children: [{ name: 'GitHub' }, { name: 'Stack Overflow' }, { name: '掘金' }, { name: 'V2EX' }, { name: 'Hacker News' }] },
-        { name: '学习资源', children: [{ name: '官方文档' }, { name: '系列教程' }, { name: '书籍' }, { name: '在线课程' }, { name: '代码示例' }] },
-        { name: 'AI与数据', children: [{ name: '大模型LLM' }, { name: '机器学习' }, { name: '数据分析' }, { name: '数据工程' }, { name: '向量数据库' }] },
-        { name: '开源项目', children: [{ name: 'Star清单' }, { name: '贡献指南' }, { name: 'Issue跟踪' }, { name: 'Release更新' }] },
-        { name: '职业发展', children: [{ name: '简历面试' }, { name: '进阶路线' }, { name: '工程管理' }, { name: '远程工作' }, { name: '软技能' }] },
-        { name: '其他', children: [{ name: '灵感想法' }, { name: '工具脚本' }, { name: '会议活动' }] },
-      ],
-    },
-    {
-      name: '生活娱乐版',
-      tree: [
-        { name: '购物电商', children: [{ name: '综合电商' }, { name: '海淘' }, { name: '优惠返利' }, { name: '二手闲置' }] },
-        { name: '美食餐饮', children: [{ name: '菜谱' }, { name: '餐厅点评' }, { name: '外卖' }, { name: '咖啡茶饮' }] },
-        { name: '旅行出行', children: [{ name: '机酒预订' }, { name: '攻略游记' }, { name: '交通导航' }, { name: '目的地' }] },
-        { name: '健康运动', children: [{ name: '健身训练' }, { name: '跑步骑行' }, { name: '营养饮食' }, { name: '医疗科普' }] },
-        { name: '影视音乐', children: [{ name: '影视资讯' }, { name: '片单推荐' }, { name: '音乐播放器' }, { name: '演出活动' }] },
-        { name: '游戏', children: [{ name: '攻略评测' }, { name: '发行平台' }, { name: '社区论坛' }, { name: '直播视频' }] },
-        { name: '社交', children: [{ name: '微信公众号' }, { name: '微博' }, { name: '小红书' }, { name: 'Discord' }] },
-        { name: '新闻资讯', children: [{ name: '国内新闻' }, { name: '国际新闻' }, { name: '科技资讯' }, { name: '财经资讯' }] },
-        { name: '学习成长', children: [{ name: '阅读' }, { name: '技能学习' }, { name: '语言学习' }, { name: '自我管理' }] },
-        { name: '实用工具', children: [{ name: '记账理财' }, { name: '图片视频' }, { name: '在线工具' }, { name: '生活查询' }] },
-      ],
-    },
-    {
-      name: '极简版',
-      tree: [
-        { name: '工作', children: [{ name: '待办' }, { name: '文档' }, { name: '协作' }] },
-        { name: '学习', children: [{ name: '课程' }, { name: '阅读' }, { name: '笔记' }] },
-        { name: '生活', children: [{ name: '购物' }, { name: '出行' }, { name: '健康' }] },
-        { name: '娱乐', children: [{ name: '影视' }, { name: '音乐' }, { name: '游戏' }] },
-        { name: '工具', children: [{ name: '在线工具' }, { name: '浏览器扩展' }, { name: '下载' }] },
-        { name: '其他', children: [{ name: '临时' }, { name: '收藏' }] },
-      ],
-    },
-    {
-      name: '产品运营版',
-      tree: [
-        { name: '市场洞察', children: [{ name: '行业资讯' }, { name: '竞品监测' }, { name: '用户调研' }, { name: '数据报告' }] },
-        { name: '内容运营', children: [{ name: '选题策划' }, { name: '渠道分发' }, { name: '增长案例' }, { name: '社区运营' }] },
-        { name: '产品设计', children: [{ name: '需求池' }, { name: '原型交互' }, { name: '体验研究' }, { name: '设计系统' }] },
-        { name: '商业化', children: [{ name: '定价策略' }, { name: '转化优化' }, { name: '广告投放' }, { name: '销售协同' }] },
-        { name: '项目协作', children: [{ name: 'Roadmap' }, { name: '项目管理' }, { name: '会议纪要' }, { name: '资源素材' }] },
-      ],
-    },
-    {
-      name: '内容创作版',
-      tree: [
-        { name: '选题灵感', children: [{ name: '热点追踪' }, { name: '读书摘录' }, { name: '采访素材' }, { name: '案例拆解' }] },
-        { name: '写作与脚本', children: [{ name: '长文写作' }, { name: '视频脚本' }, { name: '标题优化' }, { name: '发布清单' }] },
-        { name: '视觉制作', children: [{ name: '封面排版' }, { name: '图片素材' }, { name: '视频剪辑' }, { name: '动效参考' }] },
-        { name: '发布运营', children: [{ name: '平台规则' }, { name: '发布时间' }, { name: '数据复盘' }, { name: '商单合作' }] },
-        { name: '品牌资产', children: [{ name: '风格指南' }, { name: '作品集' }, { name: '模板组件' }, { name: '合作资源' }] },
-      ],
-    },
-    {
-      name: '研究学习版',
-      tree: [
-        { name: '研究方向', children: [{ name: '主题追踪' }, { name: '关键词' }, { name: '研究问题' }, { name: '假设框架' }] },
-        { name: '学术资料', children: [{ name: '论文检索' }, { name: '期刊会议' }, { name: '开源数据' }, { name: '引用管理' }] },
-        { name: '课程学习', children: [{ name: '在线课程' }, { name: '公开课' }, { name: '学习笔记' }, { name: '练习题' }] },
-        { name: '方法工具', children: [{ name: '实验设计' }, { name: '调研方法' }, { name: '数据分析' }, { name: '可视化' }] },
-        { name: '输出沉淀', children: [{ name: '读书笔记' }, { name: '文献综述' }, { name: '复盘总结' }, { name: '分享材料' }] },
-      ],
-    },
-    {
-      name: '收藏归档版',
-      tree: [
-        { name: '待处理', children: [{ name: '稍后阅读' }, { name: '待整理' }, { name: '待下载' }, { name: '待核实' }] },
-        { name: '长期参考', children: [{ name: '常用工具' }, { name: '官方文档' }, { name: '案例库' }, { name: '模板库' }] },
-        { name: '项目归档', children: [{ name: '已完成' }, { name: '历史版本' }, { name: '交付物' }, { name: '决策记录' }] },
-        { name: '生活资料', children: [{ name: '账单合同' }, { name: '证件办事' }, { name: '出行住宿' }, { name: '健康记录' }] },
-        { name: '娱乐收藏', children: [{ name: '片单' }, { name: '音乐单' }, { name: '游戏清单' }, { name: '灵感收藏' }] },
-      ],
-    },
+function tableSql(db: Db, name: string): string {
+  const row = db.prepare(
+    `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`
+  ).get(name) as { sql: string | null } | undefined;
+  return row?.sql ?? '';
+}
+
+function categoriesHaveGlobalNameUnique(db: Db): boolean {
+  if (/\bname\s+TEXT\s+NOT\s+NULL\s+UNIQUE\b/i.test(tableSql(db, 'categories'))) return true;
+  const indexes = db.prepare(`PRAGMA index_list(categories)`).all() as Array<{
+    name: string;
+    unique: number;
+    partial: number;
+    origin: string;
+  }>;
+  for (const idx of indexes) {
+    if (!idx.unique || idx.partial) continue;
+    const cols = db.prepare(`PRAGMA index_info(${JSON.stringify(idx.name)})`).all() as Array<{ name: string }>;
+    if (cols.length === 1 && cols[0]?.name === 'name') return true;
+  }
+  return false;
+}
+
+function tableExists(db: Db, name: string): boolean {
+  return Boolean(db.prepare(
+    `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`
+  ).get(name));
+}
+
+function columnNames(db: Db, tableName: string): string[] {
+  return (db.prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>)
+    .map(column => column.name);
+}
+
+function normalizeChildName(rawName: string, parentName: string | null | undefined): string {
+  const trimmed = rawName.trim();
+  if (parentName && trimmed.startsWith(parentName + '/')) {
+    return trimmed.slice(parentName.length + 1).trim() || trimmed;
+  }
+  return trimmed.includes('/') ? trimmed.split('/').pop()!.trim() : trimmed;
+}
+
+function makeUniqueName(baseName: string, used: Set<string>): string {
+  const normalized = baseName.trim() || '未命名';
+  if (!used.has(normalized)) {
+    used.add(normalized);
+    return normalized;
+  }
+
+  let index = 2;
+  while (used.has(`${normalized} (${index})`)) index += 1;
+  const next = `${normalized} (${index})`;
+  used.add(next);
+  return next;
+}
+
+function normalizeCategoryRows(rows: CategoryMigrationRow[]): CategoryMigrationRow[] {
+  const rootRows = rows.filter(row => row.parent_id === null);
+  const rootNameById = new Map<number, string>();
+  const usedRootNames = new Set<string>();
+
+  for (const row of rootRows) {
+    const name = makeUniqueName(row.name.trim() || '未命名', usedRootNames);
+    rootNameById.set(row.id, name);
+  }
+
+  const usedChildNames = new Map<number, Set<string>>();
+  const normalized = rows.map(row => ({ ...row }));
+
+  for (const row of normalized) {
+    if (row.parent_id === null || !rootNameById.has(row.parent_id)) {
+      row.parent_id = null;
+      row.name = rootNameById.get(row.id) ?? makeUniqueName(row.name.trim() || '未命名', usedRootNames);
+      continue;
+    }
+
+    const parentName = rootNameById.get(row.parent_id)!;
+    let used = usedChildNames.get(row.parent_id);
+    if (!used) {
+      used = new Set<string>();
+      usedChildNames.set(row.parent_id, used);
+    }
+    row.name = makeUniqueName(normalizeChildName(row.name, parentName), used);
+  }
+
+  return normalized.sort((a, b) => a.id - b.id);
+}
+
+function migrateCategoriesToScopedShortNames(db: Db): void {
+  const settingsReady = Boolean(db.prepare(
+    `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'settings'`
+  ).get());
+  if (!settingsReady) return;
+
+  const marker = db.prepare(`SELECT value FROM settings WHERE key = ?`).get('categories_short_names_migrated') as { value: string } | undefined;
+  const hasSlashChildren = (db.prepare(
+    `SELECT COUNT(1) AS cnt FROM categories WHERE parent_id IS NOT NULL AND name LIKE '%/%'`
+  ).get() as { cnt: number }).cnt > 0;
+  const needsRebuild = !marker || categoriesHaveGlobalNameUnique(db) || hasSlashChildren;
+
+  if (needsRebuild) {
+    const rows = db.prepare(`
+      SELECT id, name, parent_id, created_at, icon, color, sort_order
+      FROM categories
+      ORDER BY id
+    `).all() as CategoryMigrationRow[];
+    const normalizedRows = normalizeCategoryRows(rows);
+
+    db.pragma('foreign_keys = OFF');
+    try {
+      db.exec('BEGIN IMMEDIATE');
+      db.exec(`DROP TABLE IF EXISTS categories_new_short_names`);
+      db.exec(`
+        CREATE TABLE categories_new_short_names (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          parent_id INTEGER NULL REFERENCES categories(id) ON DELETE SET NULL,
+          created_at TEXT NOT NULL,
+          icon TEXT,
+          color TEXT,
+          sort_order INTEGER DEFAULT 0
+        )
+      `);
+
+      const insert = db.prepare(`
+        INSERT INTO categories_new_short_names (id, name, parent_id, created_at, icon, color, sort_order)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const row of normalizedRows) {
+        insert.run(
+          row.id,
+          row.name,
+          row.parent_id,
+          row.created_at,
+          row.icon ?? null,
+          row.color ?? null,
+          row.sort_order ?? 0,
+        );
+      }
+
+      db.exec(`DROP TABLE categories`);
+      db.exec(`ALTER TABLE categories_new_short_names RENAME TO categories`);
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_categories_name ON categories(name);
+        CREATE INDEX IF NOT EXISTS idx_categories_parent_id ON categories(parent_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_root_name_unique ON categories(name) WHERE parent_id IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_child_parent_name_unique ON categories(parent_id, name) WHERE parent_id IS NOT NULL;
+      `);
+      db.prepare(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+        .run('categories_short_names_migrated', '1');
+      db.exec('COMMIT');
+    } catch (error) {
+      try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+      throw error;
+    } finally {
+      db.pragma('foreign_keys = ON');
+    }
+  } else {
+    db.exec(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_root_name_unique ON categories(name) WHERE parent_id IS NULL;
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_categories_child_parent_name_unique ON categories(parent_id, name) WHERE parent_id IS NOT NULL;
+    `);
+    if (hasSlashChildren) {
+      const rows = db.prepare(`
+        SELECT id, name, parent_id, created_at, icon, color, sort_order
+        FROM categories
+        ORDER BY id
+      `).all() as CategoryMigrationRow[];
+      const normalizedRows = normalizeCategoryRows(rows);
+      const update = db.prepare('UPDATE categories SET name = ?, parent_id = ? WHERE id = ?');
+      const tx = db.transaction(() => {
+        for (const row of normalizedRows) update.run(row.name, row.parent_id, row.id);
+      });
+      tx();
+    }
+    db.prepare(`INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value`)
+      .run('categories_short_names_migrated', '1');
+  }
+}
+
+function migrateAiOrganizePlansAwayFromTemplates(db: Db): void {
+  if (!tableExists(db, 'ai_organize_plans')) return;
+
+  const existingColumns = new Set(columnNames(db, 'ai_organize_plans'));
+  const foreignKeys = db.prepare(`PRAGMA foreign_key_list(ai_organize_plans)`).all() as Array<{ table: string }>;
+  const hasTemplateColumn = existingColumns.has('template_id');
+  const hasTemplateForeignKey = foreignKeys.some(key => key.table === 'category_templates');
+
+  if (!hasTemplateColumn && !hasTemplateForeignKey) return;
+
+  const canonicalColumns = [
+    'id',
+    'job_id',
+    'status',
+    'scope',
+    'target_tree',
+    'assignments',
+    'diff_summary',
+    'backup_snapshot',
+    'source_snapshot',
+    'phase',
+    'batches_done',
+    'batches_total',
+    'failed_batch_ids',
+    'needs_review_count',
+    'created_at',
+    'applied_at',
   ];
+  const selectExprs = canonicalColumns.map(column => {
+    if (existingColumns.has(column)) return column;
+    if (column === 'status') return `'canceled' AS status`;
+    if (column === 'scope') return `'all' AS scope`;
+    if (column === 'batches_done' || column === 'batches_total' || column === 'needs_review_count') return `0 AS ${column}`;
+    if (column === 'created_at') return `datetime('now') AS created_at`;
+    return `NULL AS ${column}`;
+  });
 
-  const count = (db.prepare('SELECT COUNT(*) AS c FROM category_templates WHERE type = ?').get('preset') as { c: number }).c;
-  if (count >= presets.length) return;
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.exec('BEGIN IMMEDIATE');
+    db.exec(`DROP TABLE IF EXISTS ai_organize_plans_new_no_templates`);
+    db.exec(`
+      CREATE TABLE ai_organize_plans_new_no_templates (
+        id TEXT PRIMARY KEY,
+        job_id TEXT,
+        status TEXT NOT NULL DEFAULT 'designing',
+        scope TEXT NOT NULL DEFAULT 'all',
+        target_tree TEXT,
+        assignments TEXT,
+        diff_summary TEXT,
+        backup_snapshot TEXT,
+        source_snapshot TEXT,
+        phase TEXT,
+        batches_done INTEGER NOT NULL DEFAULT 0,
+        batches_total INTEGER NOT NULL DEFAULT 0,
+        failed_batch_ids TEXT,
+        needs_review_count INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        applied_at TEXT
+      )
+    `);
+    db.exec(`
+      INSERT INTO ai_organize_plans_new_no_templates (${canonicalColumns.join(', ')})
+      SELECT ${selectExprs.join(', ')}
+      FROM ai_organize_plans
+    `);
+    db.exec(`DROP TABLE ai_organize_plans`);
+    db.exec(`ALTER TABLE ai_organize_plans_new_no_templates RENAME TO ai_organize_plans`);
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_ai_organize_plans_status ON ai_organize_plans(status)`);
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch { /* ignore */ }
+    throw error;
+  } finally {
+    db.pragma('foreign_keys = ON');
+  }
+}
 
-  for (const p of presets) {
-    stmt.run(p.name, JSON.stringify(p.tree), now, now, p.name);
+function dropLegacyTemplateTables(db: Db): void {
+  db.pragma('foreign_keys = OFF');
+  try {
+    db.exec(`
+      DROP TABLE IF EXISTS template_snapshots;
+      DROP TABLE IF EXISTS category_templates;
+    `);
+  } finally {
+    db.pragma('foreign_keys = ON');
   }
 }

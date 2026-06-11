@@ -4,7 +4,7 @@ import { getPlan } from '../../src/ai-organize-plan';
 import { getJob, jobQueue } from '../../src/jobs';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import {
-    activateAiTestTemplate,
+    seedAiTestCategories,
     createQueuedAIHarness,
     jsonCompletion,
     sseCompletion,
@@ -161,7 +161,17 @@ describe('integration: ai route contracts', () => {
         expect(missingConfig.json()).toEqual({ error: '请先在设置页配置 AI' });
 
         seedAISettings(appCtx.db);
-        activateAiTestTemplate(appCtx.db);
+
+        const missingCategories = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify',
+            headers: authHeaders,
+            payload: { title: 'React', url: 'https://react.dev' },
+        });
+        expect(missingCategories.statusCode).toBe(400);
+        expect(missingCategories.json()).toEqual({ error: '请先创建分类' });
+
+        seedAiTestCategories(appCtx.db);
 
         const missingInput = await appCtx.app.inject({
             method: 'POST',
@@ -177,7 +187,7 @@ describe('integration: ai route contracts', () => {
         ctx = await createTestApp({ aiClientFactory: successHarness.aiClientFactory });
         const successSession = await ctx.login();
         seedAISettings(ctx.db);
-        activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
 
         const formPayload = new URLSearchParams({ url: 'https://nodejs.org', title: '' }).toString();
         const successResponse = await ctx.app.inject({
@@ -209,7 +219,7 @@ describe('integration: ai route contracts', () => {
         ctx = await createTestApp({ aiClientFactory: streamedHarness.aiClientFactory });
         const streamedSession = await ctx.login();
         seedAISettings(ctx.db);
-        activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
 
         const streamedResponse = await ctx.app.inject({
             method: 'POST',
@@ -228,7 +238,7 @@ describe('integration: ai route contracts', () => {
         ctx = await createTestApp({ aiClientFactory: normalizedHarness.aiClientFactory });
         const normalizedSession = await ctx.login();
         seedAISettings(ctx.db);
-        activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
 
         const normalizedResponse = await ctx.app.inject({
             method: 'POST',
@@ -242,19 +252,15 @@ describe('integration: ai route contracts', () => {
         expect(normalizedResponse.statusCode).toBe(200);
         expect(normalizedResponse.json()).toEqual({ category: '学习资源/文档' });
 
-        const semanticTemplateHarness = createQueuedAIHarness([textCompletion('框架与库/前端框架')]);
+        const semanticCategoryHarness = createQueuedAIHarness([textCompletion('框架与库/前端框架')]);
         await ctx.cleanup();
-        ctx = await createTestApp({ aiClientFactory: semanticTemplateHarness.aiClientFactory });
+        ctx = await createTestApp({ aiClientFactory: semanticCategoryHarness.aiClientFactory });
         const semanticSession = await ctx.login();
         seedAISettings(ctx.db);
-        ctx.db.prepare('DELETE FROM category_templates').run();
-        ctx.db.prepare('DELETE FROM template_snapshots').run();
-        const { createTemplate, applyTemplate } = await import('../../src/template-service');
-        const semanticTemplate = createTemplate(ctx.db, '开发者语义模板', [
-            { name: '框架与库', children: [{ name: '前端框架' }] },
-            { name: '学习资源', children: [{ name: '官方文档' }, { name: '系列教程' }, { name: '代码示例' }] },
-        ]);
-        applyTemplate(ctx.db, semanticTemplate.id);
+        const { getOrCreateCategoryByPath } = await import('../../src/category-service');
+        for (const path of ['框架与库/前端框架', '学习资源/官方文档', '学习资源/系列教程', '学习资源/代码示例']) {
+            getOrCreateCategoryByPath(ctx.db, path);
+        }
 
         const semanticResponse = await ctx.app.inject({
             method: 'POST',
@@ -273,7 +279,7 @@ describe('integration: ai route contracts', () => {
         ctx = await createTestApp({ aiClientFactory: descriptionOnlyHarness.aiClientFactory });
         const descriptionSession = await ctx.login();
         seedAISettings(ctx.db);
-        activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
 
         const descriptionOnlyResponse = await ctx.app.inject({
             method: 'POST',
@@ -294,7 +300,7 @@ describe('integration: ai route contracts', () => {
         ctx = await createTestApp({ aiClientFactory: unmappedHarness.aiClientFactory });
         const unmappedSession = await ctx.login();
         seedAISettings(ctx.db);
-        activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
 
         const unmappedResponse = await ctx.app.inject({
             method: 'POST',
@@ -313,7 +319,7 @@ describe('integration: ai route contracts', () => {
         ctx = await createTestApp({ aiClientFactory: emptyHarness.aiClientFactory });
         const emptySession = await ctx.login();
         seedAISettings(ctx.db);
-        activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
 
         const emptyResponse = await ctx.app.inject({
             method: 'POST',
@@ -329,7 +335,7 @@ describe('integration: ai route contracts', () => {
         ctx = await createTestApp({ aiClientFactory: timeoutHarness.aiClientFactory });
         const timeoutSession = await ctx.login();
         seedAISettings(ctx.db);
-        activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
 
         const timeoutResponse = await ctx.app.inject({
             method: 'POST',
@@ -348,7 +354,7 @@ describe('integration: ai route contracts', () => {
         ctx = await createTestApp({ aiClientFactory: failureHarness.aiClientFactory });
         const failureSession = await ctx.login();
         seedAISettings(ctx.db);
-        activateAiTestTemplate(ctx.db);
+        seedAiTestCategories(ctx.db);
 
         const failureResponse = await ctx.app.inject({
             method: 'POST',
@@ -360,7 +366,7 @@ describe('integration: ai route contracts', () => {
         expect(failureResponse.json()).toEqual({ error: 'fixture classify failure' });
     }, 30000);
 
-    it('covers classify-batch validation, config checks, and template requirements', async () => {
+    it('covers classify-batch validation and config checks without taxonomy presets', async () => {
         const { ctx: appCtx, authHeaders } = await createHarnessApp();
 
         const invalidIds = await appCtx.app.inject({
@@ -392,6 +398,15 @@ describe('integration: ai route contracts', () => {
 
         seedAISettings(appCtx.db);
 
+        const missingCategories = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/classify-batch',
+            headers: authHeaders,
+            payload: { bookmark_ids: [1], batch_size: 10 },
+        });
+        expect(missingCategories.statusCode).toBe(400);
+        expect(missingCategories.json()).toEqual({ error: '请先创建分类' });
+
         const invalidBatchSize = await appCtx.app.inject({
             method: 'POST',
             url: '/api/ai/classify-batch',
@@ -401,23 +416,6 @@ describe('integration: ai route contracts', () => {
         expect(invalidBatchSize.statusCode).toBe(400);
         expect(invalidBatchSize.json()).toEqual({ error: 'batch_size 必须为 10、20 或 30' });
 
-        const missingTemplate = await appCtx.app.inject({
-            method: 'POST',
-            url: '/api/ai/classify-batch',
-            headers: authHeaders,
-            payload: { bookmark_ids: [1], batch_size: 10 },
-        });
-        expect(missingTemplate.statusCode).toBe(400);
-        expect(missingTemplate.json()).toEqual({ error: '请先应用一个分类模板' });
-
-        const invalidTemplate = await appCtx.app.inject({
-            method: 'POST',
-            url: '/api/ai/classify-batch',
-            headers: authHeaders,
-            payload: { bookmark_ids: [1], batch_size: 10, template_id: 999999 },
-        });
-        expect(invalidTemplate.statusCode).toBe(400);
-        expect(invalidTemplate.json()).toEqual({ error: '指定的模板不存在' });
     }, 30000);
 
     it('creates preview plans with the configured default batch size for successful classify-batch requests', async () => {
@@ -427,7 +425,7 @@ describe('integration: ai route contracts', () => {
             }),
         ]);
         seedAISettings(appCtx.db, { batchSize: 30 });
-        const template = activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
         const bookmarkIds = seedBookmarks(appCtx.db, Array.from({ length: 25 }, (_, index) => ({
             title: `Bookmark ${index + 1}`,
             url: `https://bookmark-${index + 1}.example.test`,
@@ -439,7 +437,6 @@ describe('integration: ai route contracts', () => {
             headers: authHeaders,
             payload: {
                 bookmark_ids: bookmarkIds,
-                template_id: template.id,
             },
         });
 
@@ -500,7 +497,7 @@ describe('integration: ai route contracts', () => {
         });
     });
 
-    it('refreshes default single and batch AI category sources to the latest active template after edits', async () => {
+    it('refreshes single and batch AI category sources from the latest live categories after edits', async () => {
         const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
             textCompletion('学习资源/教程'),
             jsonCompletion({
@@ -511,9 +508,8 @@ describe('integration: ai route contracts', () => {
             }),
         ]);
         seedAISettings(appCtx.db);
-        const template = activateAiTestTemplate(appCtx.db, '可编辑活动模板');
-        const { getCategoryByPath } = await import('../../src/category-service');
-        const { updateTemplate } = await import('../../src/template-service');
+        seedAiTestCategories(appCtx.db);
+        const { getCategoryByPath, renameCategory } = await import('../../src/category-service');
 
         const oldFrontend = getCategoryByPath(appCtx.db, '技术开发/前端');
         const oldDocs = getCategoryByPath(appCtx.db, '学习资源/文档');
@@ -529,15 +525,16 @@ describe('integration: ai route contracts', () => {
             { name: '技术开发', children: [{ name: 'Web前端' }, { name: '后端' }] },
             { name: '学习资源', children: [{ name: '教程' }] },
         ];
-        updateTemplate(appCtx.db, template.id, { tree: updatedTree });
+        renameCategory(appCtx.db, oldFrontend!.id, 'Web前端');
+        renameCategory(appCtx.db, oldDocs!.id, '教程');
 
         const classifyResponse = await appCtx.app.inject({
             method: 'POST',
             url: '/api/ai/classify',
             headers: authHeaders,
             payload: {
-                title: 'Template Edit Tutorial',
-                url: 'https://template-edit.example.test/tutorial',
+                title: 'Category Edit Tutorial',
+                url: 'https://category-edit.example.test/tutorial',
             },
         });
         expect(classifyResponse.statusCode).toBe(200);

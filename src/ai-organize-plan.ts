@@ -1,8 +1,7 @@
 import { randomUUID } from 'crypto';
 import type { Db } from './db';
-import { getCategoryTree } from './category-service';
+import { getCategoryIdsForScope, getCategoryTree } from './category-service';
 import { createJob, updateJob, getJob, jobQueue } from './jobs';
-import { getActiveTemplate, getTemplate } from './template-service';
 
 // ==================== Types ====================
 
@@ -14,7 +13,6 @@ export interface PlanRow {
   backup_snapshot: string | null; source_snapshot: string | null; phase: string | null;
   batches_done: number; batches_total: number;
   failed_batch_ids: string | null; needs_review_count: number;
-  template_id: number | null;
   created_at: string; applied_at: string | null;
 }
 
@@ -59,16 +57,9 @@ export interface PlanLiveTargetSnapshot {
   category_id: number;
 }
 
-export interface PlanTemplateSnapshot {
-  template_id: number;
-  updated_at: string | null;
-  paths: string[];
-}
-
 export interface PlanSourceSnapshot {
   bookmark_states: PlanBookmarkSnapshot[];
   live_target_categories: PlanLiveTargetSnapshot[];
-  template: PlanTemplateSnapshot | null;
   scope_bookmark_ids: number[];
   scope_frozen: boolean;
 }
@@ -210,9 +201,14 @@ type CatUsage = { id: number; name: string; bookmark_count: number; has_children
 
 function getCatUsage(db: Db): CatUsage[] {
   return db.prepare(`
-    SELECT c.id, c.name, COUNT(b.id) AS bookmark_count,
+    SELECT c.id,
+      CASE WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END AS name,
+      COUNT(b.id) AS bookmark_count,
       CASE WHEN EXISTS (SELECT 1 FROM categories ch WHERE ch.parent_id = c.id) THEN 1 ELSE 0 END AS has_children
-    FROM categories c LEFT JOIN bookmarks b ON b.category_id = c.id GROUP BY c.id
+    FROM categories c
+    LEFT JOIN categories p ON p.id = c.parent_id
+    LEFT JOIN bookmarks b ON b.category_id = c.id
+    GROUP BY c.id
   `).all() as CatUsage[];
 }
 
@@ -277,12 +273,14 @@ function resolveScopeBookmarkIds(db: Db, rawScope: string): number[] {
   if (scope.startsWith('category:')) {
     const categoryId = Number(scope.split(':')[1]);
     if (!Number.isInteger(categoryId) || categoryId <= 0) return [];
+    const categoryIds = getCategoryIdsForScope(db, categoryId);
+    if (categoryIds.length === 0) return [];
     return db.prepare(`
       SELECT id
       FROM bookmarks
-      WHERE category_id = ?
+      WHERE category_id IN (${categoryIds.map(() => '?').join(',')})
       ORDER BY id
-    `).all(categoryId).map((row) => Number((row as { id: number }).id)).filter((id) => Number.isInteger(id) && id > 0);
+    `).all(...categoryIds).map((row) => Number((row as { id: number }).id)).filter((id) => Number.isInteger(id) && id > 0);
   }
   return db.prepare(`
     SELECT id
@@ -316,23 +314,6 @@ function parseSourceSnapshot(raw: string | null): PlanSourceSnapshot | null {
       .filter(item => item.path && Number.isInteger(item.category_id) && item.category_id > 0)
     : [];
 
-  let template: PlanTemplateSnapshot | null = null;
-  if (value.template && typeof value.template === 'object') {
-    const rawTemplate = value.template as Record<string, unknown>;
-    const templateId = Number(rawTemplate.template_id);
-    if (Number.isInteger(templateId) && templateId > 0) {
-      template = {
-        template_id: templateId,
-        updated_at: typeof rawTemplate.updated_at === 'string' ? rawTemplate.updated_at : null,
-        paths: Array.isArray(rawTemplate.paths)
-          ? rawTemplate.paths
-            .map(item => normalizePath(typeof item === 'string' ? item : ''))
-            .filter(Boolean)
-          : [],
-      };
-    }
-  }
-
   const hasScopeBookmarkIds = Array.isArray(value.scope_bookmark_ids);
   const scopeBookmarkIds = parseScopeBookmarkIds(value.scope_bookmark_ids);
   const scopeFrozen = value.scope_frozen === true || hasScopeBookmarkIds;
@@ -340,55 +321,19 @@ function parseSourceSnapshot(raw: string | null): PlanSourceSnapshot | null {
   return {
     bookmark_states: bookmarkStates,
     live_target_categories: liveTargetCategories,
-    template,
     scope_bookmark_ids: scopeBookmarkIds,
     scope_frozen: scopeFrozen,
   };
 }
 
-function parseTemplatePaths(rawTree: string): string[] {
-  const tree = parseTree(rawTree);
-  const paths: string[] = [];
-  for (const node of tree) {
-    const top = normalizePath(node.name);
-    if (top) paths.push(top);
-    for (const child of node.children) {
-      const childPath = normalizePath(`${node.name}/${child.name}`);
-      if (childPath) paths.push(childPath);
-    }
-  }
-  const seen = new Set<string>();
-  return paths.filter(path => {
-    const key = casefold(path);
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
-}
-
 function buildLiveCategoryTreeSnapshot(db: Db): CategoryNode[] {
   return getCategoryTree(db).map(node => ({
     name: node.name,
-    children: (node.children ?? []).map(child => ({ name: child.name })),
+    children: (node.children ?? []).map(child => ({ name: child.displayName || child.name })),
   }));
 }
 
-function buildTemplateSnapshot(db: Db, templateId: number | null | undefined): PlanTemplateSnapshot | null {
-  if (templateId == null) return null;
-  const template = getTemplate(db, templateId);
-  if (!template) return null;
-  return {
-    template_id: template.id,
-    updated_at: template.updated_at,
-    paths: parseTemplatePaths(template.tree),
-  };
-}
-
-function buildInitialTargetTree(db: Db, templateId: number | null | undefined): CategoryNode[] {
-  if (templateId != null) {
-    const template = getTemplate(db, templateId);
-    if (template) return parseTree(template.tree);
-  }
+function buildInitialTargetTree(db: Db): CategoryNode[] {
   return buildLiveCategoryTreeSnapshot(db);
 }
 
@@ -517,7 +462,7 @@ export function isBlockingPlanStatus(status: string | null | undefined): status 
 
 export function buildPlanSourceSnapshot(
   db: Db,
-  plan: Pick<PlanRow, 'scope' | 'template_id' | 'target_tree' | 'assignments' | 'source_snapshot'>,
+  plan: Pick<PlanRow, 'scope' | 'target_tree' | 'assignments' | 'source_snapshot'>,
   assignmentsInput?: Assignment[],
 ): PlanSourceSnapshot {
   const assignments = assignmentsInput ?? parseAssignments(plan.assignments);
@@ -532,29 +477,21 @@ export function buildPlanSourceSnapshot(
     };
   });
 
-  const activeTemplate = getActiveTemplate(db);
   const liveTargetCategories: PlanLiveTargetSnapshot[] = [];
-  if (plan.template_id == null || activeTemplate?.id === plan.template_id) {
-    const lookup = buildPathLookup(db);
-    for (const path of collectTargetPaths(plan, assignments)) {
-      const existing = lookup.get(casefold(path));
-      if (existing) liveTargetCategories.push({ path: existing.path, category_id: existing.id });
-    }
+  const lookup = buildPathLookup(db);
+  for (const path of collectTargetPaths(plan, assignments)) {
+    const existing = lookup.get(casefold(path));
+    if (existing) liveTargetCategories.push({ path: existing.path, category_id: existing.id });
   }
 
   const existingSnapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
-  const existingTemplateSnapshot = existingSnapshot?.template;
   const scopeBookmarkIds = existingSnapshot?.scope_frozen
     ? existingSnapshot.scope_bookmark_ids
     : (bookmarkIds.length > 0 ? bookmarkIds : resolveScopeBookmarkIds(db, plan.scope));
-  const template = existingTemplateSnapshot && existingTemplateSnapshot.template_id === plan.template_id
-    ? existingTemplateSnapshot
-    : buildTemplateSnapshot(db, plan.template_id);
 
   return {
     bookmark_states: bookmarkSnapshots,
     live_target_categories: liveTargetCategories,
-    template,
     scope_bookmark_ids: scopeBookmarkIds,
     scope_frozen: true,
   };
@@ -576,19 +513,17 @@ export function ensurePlanScopeSnapshot(db: Db, planId: string): PlanRow {
   const sourceSnapshot: PlanSourceSnapshot = {
     bookmark_states: existingSnapshot?.bookmark_states ?? [],
     live_target_categories: existingSnapshot?.live_target_categories ?? [],
-    template: existingSnapshot?.template ?? buildTemplateSnapshot(db, plan.template_id),
     scope_bookmark_ids: resolveScopeBookmarkIds(db, plan.scope),
     scope_frozen: true,
   };
   return updatePlan(db, planId, { source_snapshot: JSON.stringify(sourceSnapshot) });
 }
 
-function buildFreshAssigningSourceSnapshot(db: Db, plan: Pick<PlanRow, 'scope' | 'template_id' | 'source_snapshot'>): PlanSourceSnapshot {
+function buildFreshAssigningSourceSnapshot(db: Db, plan: Pick<PlanRow, 'scope' | 'source_snapshot'>): PlanSourceSnapshot {
   const existingSnapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
   return {
     bookmark_states: [],
     live_target_categories: [],
-    template: existingSnapshot?.template ?? buildTemplateSnapshot(db, plan.template_id),
     scope_bookmark_ids: existingSnapshot?.scope_frozen
       ? existingSnapshot.scope_bookmark_ids
       : resolveScopeBookmarkIds(db, plan.scope),
@@ -683,9 +618,8 @@ function findNewerOverlappingPlanConflicts(
     WHERE id <> ?
       AND created_at > ?
       AND status IN ('preview', 'applied')
-      AND ((template_id IS NULL AND ? IS NULL) OR template_id = ?)
     ORDER BY created_at DESC
-  `).all(plan.id, plan.created_at, plan.template_id, plan.template_id) as Array<Pick<PlanRow, 'id' | 'status' | 'created_at' | 'assignments'>>;
+  `).all(plan.id, plan.created_at) as Array<Pick<PlanRow, 'id' | 'status' | 'created_at' | 'assignments'>>;
 
   const conflicts = new Map<number, OverlappingPlanConflict>();
   for (const row of rows) {
@@ -717,36 +651,6 @@ function validatePlanApplySafety(db: Db, plan: PlanRow, assignments: Assignment[
   for (const item of selectedSnapshotStates) {
     const current = currentStates.get(item.bookmark_id);
     if (!current) throw new PlanError(409, 'plan is stale: bookmarks changed', { discardRecommended: true });
-  }
-
-  const snapshotTemplateId = snapshot.template?.template_id ?? null;
-  const targetTemplateId = plan.template_id ?? snapshotTemplateId;
-  if (targetTemplateId != null) {
-    const templateSnapshot = snapshot.template;
-    const currentTemplate = getTemplate(db, targetTemplateId);
-    if (!currentTemplate) {
-      throw new PlanError(409, 'target template no longer exists; discard this plan and run AI organize again', { discardRecommended: true });
-    }
-    if (!templateSnapshot || currentTemplate.updated_at !== templateSnapshot.updated_at) {
-      throw new PlanError(409, 'plan is stale: target template changed', { discardRecommended: true });
-    }
-    const currentTemplatePaths = new Set(parseTemplatePaths(currentTemplate.tree).map(path => casefold(path)));
-    for (const path of templateSnapshot.paths) {
-      if (!currentTemplatePaths.has(casefold(path))) {
-        throw new PlanError(409, 'plan is stale: target template changed', { discardRecommended: true });
-      }
-    }
-    for (const assignment of assignments) {
-      const targetPath = normalizePath(assignment.category_path);
-      if (assignment.status === 'assigned' && targetPath && !currentTemplatePaths.has(casefold(targetPath))) {
-        throw new PlanError(409, 'plan is stale: target template changed', { discardRecommended: true });
-      }
-    }
-  }
-
-  const activeTemplate = getActiveTemplate(db);
-  if (plan.template_id != null && activeTemplate?.id !== plan.template_id) {
-    return { snapshot, currentStates };
   }
 
   const liveLookup = buildPathLookup(db);
@@ -831,31 +735,23 @@ function collectSoftApplyConflicts(
 
 // ==================== CRUD ====================
 
-export function createPlan(db: Db, scope: string, templateId?: number | null): PlanRow {
+export function createPlan(db: Db, scope: string): PlanRow {
   return db.transaction(() => {
     cleanupExpiredSnapshots(db);
     ensureNoBlockingOrganizePlan(db);
     const normalizedScope = scope.trim() || 'all';
 
-    // Use provided templateId or fallback to active template
-    let targetTemplateId = templateId;
-    if (targetTemplateId === undefined) {
-      const activeTpl = getActiveTemplate(db);
-      targetTemplateId = activeTpl?.id ?? null;
-    }
-
     const id = randomUUID();
     const now = nowIso();
-    const initialTargetTree = buildInitialTargetTree(db, targetTemplateId);
+    const initialTargetTree = buildInitialTargetTree(db);
     const initialSourceSnapshot: PlanSourceSnapshot = {
       bookmark_states: [],
       live_target_categories: [],
-      template: buildTemplateSnapshot(db, targetTemplateId),
       scope_bookmark_ids: resolveScopeBookmarkIds(db, normalizedScope),
       scope_frozen: true,
     };
-    db.prepare(`INSERT INTO ai_organize_plans (id, status, scope, phase, template_id, batches_done, batches_total, needs_review_count, created_at)
-      VALUES (?, 'assigning', ?, 'assigning', ?, 0, 0, 0, ?)`).run(id, normalizedScope, targetTemplateId, now);
+    db.prepare(`INSERT INTO ai_organize_plans (id, status, scope, phase, batches_done, batches_total, needs_review_count, created_at)
+      VALUES (?, 'assigning', ?, 'assigning', 0, 0, 0, ?)`).run(id, normalizedScope, now);
     updatePlan(db, id, {
       target_tree: JSON.stringify(initialTargetTree),
       source_snapshot: JSON.stringify(initialSourceSnapshot),
@@ -1034,8 +930,7 @@ export function computeDiff(db: Db, plan: PlanRow): DiffSummary {
 export function createBackupSnapshot(db: Db): string {
   const categories = db.prepare('SELECT id, name, parent_id, icon, color, sort_order, created_at FROM categories ORDER BY id').all();
   const bookmark_categories = db.prepare('SELECT id AS bookmark_id, category_id FROM bookmarks ORDER BY id').all();
-  const active = getActiveTemplate(db);
-  return JSON.stringify({ categories, bookmark_categories, active_template_id: active?.id ?? null });
+  return JSON.stringify({ categories, bookmark_categories });
 }
 
 export function applyPlan(db: Db, planId: string, decisionsInput?: unknown): ApplyResult {
@@ -1049,22 +944,6 @@ export function applyPlan(db: Db, planId: string, decisionsInput?: unknown): App
 
     // Snapshot BEFORE any mutations
     if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
-
-    const active = getActiveTemplate(db);
-    if (plan.template_id != null && active?.id !== plan.template_id) {
-      // Cross-template apply: write to the plan's template snapshot, leave live tables untouched
-      const delSnap = db.prepare('DELETE FROM template_snapshots WHERE template_id = ? AND bookmark_id = ?');
-      const insSnap = db.prepare('INSERT INTO template_snapshots (template_id, bookmark_id, category_path) VALUES (?, ?, ?)');
-      let applied = 0;
-      for (const a of selectedAssignments) {
-        const tp = normalizePath(a.category_path);
-        if (!tp) continue;
-        delSnap.run(plan.template_id, a.bookmark_id);
-        insSnap.run(plan.template_id, a.bookmark_id, tp);
-        applied++;
-      }
-      return { conflicts: [], empty_categories: [], applied_count: applied };
-    }
 
     const lookup = ensureLiveTargetsAvailable(db, plan, selectedAssignments);
 
@@ -1102,7 +981,10 @@ export function applyPlan(db: Db, planId: string, decisionsInput?: unknown): App
     if (sourceCatIds.size > 0) {
       const ph = [...sourceCatIds].map(() => '?').join(',');
       empty = db.prepare(`
-        SELECT c.id, c.name FROM categories c
+        SELECT c.id,
+          CASE WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END AS name
+        FROM categories c
+        LEFT JOIN categories p ON p.id = c.parent_id
         LEFT JOIN bookmarks b ON b.category_id = c.id
         WHERE c.id IN (${ph})
           AND NOT EXISTS (SELECT 1 FROM categories ch WHERE ch.parent_id = c.id)
@@ -1127,26 +1009,6 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
     const validation = validatePlanApplySafety(db, plan, selectedAssignments);
 
     if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
-
-    // Cross-template check: if plan belongs to non-active template, write to snapshot
-    const active = getActiveTemplate(db);
-    if (plan.template_id != null && active?.id !== plan.template_id) {
-      const delSnap = db.prepare('DELETE FROM template_snapshots WHERE template_id = ? AND bookmark_id = ?');
-      const insSnap = db.prepare('INSERT INTO template_snapshots (template_id, bookmark_id, category_path) VALUES (?, ?, ?)');
-      let applied = 0;
-      const conflictMap = new Map((decisions.conflicts ?? []).map(c => [c.bookmark_id, c.action]));
-      for (const a of selectedAssignments) {
-        const action = conflictMap.get(a.bookmark_id);
-        if (action === 'skip') continue;
-        const tp = normalizePath(a.category_path);
-        if (!tp) continue;
-        delSnap.run(plan.template_id, a.bookmark_id);
-        insSnap.run(plan.template_id, a.bookmark_id, tp);
-        applied++;
-      }
-      transitionStatus(db, planId, 'applied');
-      return { conflicts: [], empty_categories: [], applied_count: applied };
-    }
 
     const conflictMap = new Map((decisions.conflicts ?? []).map(c => [c.bookmark_id, c.action]));
     const emptyMap = new Map((decisions.empty_categories ?? []).map(e => [e.id, e.action]));
@@ -1183,7 +1045,10 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
 
     // delete empty categories per user decision
     const currentEmpty = db.prepare(`
-      SELECT c.id, c.name FROM categories c
+      SELECT c.id,
+        CASE WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END AS name
+      FROM categories c
+      LEFT JOIN categories p ON p.id = c.parent_id
       LEFT JOIN bookmarks b ON b.category_id = c.id
       WHERE NOT EXISTS (SELECT 1 FROM categories ch WHERE ch.parent_id = c.id)
       GROUP BY c.id HAVING COUNT(b.id) = 0
@@ -1200,7 +1065,10 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
     if (sourceCatIds.size > 0) {
       const ph = [...sourceCatIds].map(() => '?').join(',');
       remaining = db.prepare(`
-        SELECT c.id, c.name FROM categories c
+        SELECT c.id,
+          CASE WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END AS name
+        FROM categories c
+        LEFT JOIN categories p ON p.id = c.parent_id
         LEFT JOIN bookmarks b ON b.category_id = c.id
         WHERE c.id IN (${ph})
           AND NOT EXISTS (SELECT 1 FROM categories ch WHERE ch.parent_id = c.id)
@@ -1225,33 +1093,12 @@ export function rollbackPlan(db: Db, planId: string): RollbackResult {
     throw new PlanError(403, 'rollback window expired');
   }
 
-  const snapshot = safeJson<{ categories?: unknown[]; bookmark_categories?: unknown[]; active_template_id?: number | null }>(plan.backup_snapshot, {});
+  const snapshot = safeJson<{ categories?: unknown[]; bookmark_categories?: unknown[] }>(plan.backup_snapshot, {});
   if (!Array.isArray(snapshot.categories) || !Array.isArray(snapshot.bookmark_categories)) {
     throw new PlanError(403, 'rollback snapshot corrupted');
   }
 
   return db.transaction(() => {
-    // Critical fix: Check if this was a cross-template apply
-    // Cross-template applies only modify template_snapshots, not live data
-    const activeAtApply = snapshot.active_template_id;
-    const wasCrossTemplate = plan.template_id != null && activeAtApply != null && plan.template_id !== activeAtApply;
-
-    if (wasCrossTemplate) {
-      // Cross-template rollback: only remove template_snapshots entries
-      const assignments = parseAssignments(plan.assignments);
-      const delSnap = db.prepare('DELETE FROM template_snapshots WHERE template_id = ? AND bookmark_id = ?');
-      let restored = 0;
-      for (const a of assignments) {
-        if (a.status !== 'needs_review') {
-          delSnap.run(plan.template_id, a.bookmark_id);
-          restored++;
-        }
-      }
-      transitionStatus(db, planId, 'rolled_back');
-      return { restored_categories: 0, restored_bookmarks: restored };
-    }
-
-    // Same-template rollback: restore live categories and bookmarks
     db.prepare('DELETE FROM categories').run();
     const ins = db.prepare('INSERT INTO categories (id, name, parent_id, icon, color, sort_order, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)');
     // insert parents first
@@ -1265,14 +1112,6 @@ export function rollbackPlan(db: Db, planId: string): RollbackResult {
     for (const m of snapshot.bookmark_categories! as any[]) {
       const catId = m.category_id !== null && validIds.has(m.category_id) ? m.category_id : null;
       restored += upd.run(catId, now, m.bookmark_id).changes;
-    }
-
-    if (snapshot.active_template_id != null) {
-      const cur = getActiveTemplate(db);
-      if (cur?.id !== snapshot.active_template_id) {
-        db.prepare('UPDATE category_templates SET is_active = 0 WHERE is_active = 1').run();
-        db.prepare('UPDATE category_templates SET is_active = 1 WHERE id = ?').run(snapshot.active_template_id);
-      }
     }
 
     transitionStatus(db, planId, 'rolled_back');
@@ -1323,18 +1162,14 @@ export function confirmEmpty(db: Db, planId: string, decisions: { id: number; ac
     const plan = getPlan(db, planId);
     if (!plan || plan.status !== 'preview') throw new Error('plan must be in preview status');
 
-    // Cross-template check: if plan belongs to non-active template, skip category deletion
-    const active = getActiveTemplate(db);
-    if (plan.template_id != null && active?.id !== plan.template_id) {
-      // For cross-template plans, category deletion doesn't apply since we only write to snapshots
-      return { deleted: 0, kept: 0 };
-    }
-
     const decisionMap = new Map(decisions.map(d => [d.id, d.action]));
 
     // re-verify which categories are actually still empty leaf nodes
     const currentEmpty = db.prepare(`
-      SELECT c.id, c.name FROM categories c
+      SELECT c.id,
+        CASE WHEN p.id IS NOT NULL THEN p.name || '/' || c.name ELSE c.name END AS name
+      FROM categories c
+      LEFT JOIN categories p ON p.id = c.parent_id
       LEFT JOIN bookmarks b ON b.category_id = c.id
       WHERE NOT EXISTS (SELECT 1 FROM categories ch WHERE ch.parent_id = c.id)
       GROUP BY c.id HAVING COUNT(b.id) = 0

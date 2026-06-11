@@ -14,12 +14,25 @@ import {
     type ValidationProviderName,
     type ValidationProviderSource,
 } from '../src/provider-validation-config';
-import { applyTemplate, createTemplate, type CategoryNode, type TemplateRow } from '../src/template-service';
+import { getOrCreateCategoryByPath } from '../src/category-service';
+
+interface CategoryNode { name: string; children: { name: string }[] }
 
 interface SemanticTemplate {
     id: string;
     name: string;
     tree: CategoryNode[];
+}
+
+function replaceCategoryTree(db: Db, tree: CategoryNode[]): void {
+    db.prepare('DELETE FROM bookmarks').run();
+    db.prepare('DELETE FROM categories').run();
+    for (const node of tree) {
+        getOrCreateCategoryByPath(db, node.name);
+        for (const child of node.children ?? []) {
+            getOrCreateCategoryByPath(db, `${node.name}/${child.name}`);
+        }
+    }
 }
 
 interface SemanticSampleCase {
@@ -346,10 +359,9 @@ async function main() {
             upsertSetting(db, key, value);
         }
 
-        const templateRows = new Map<string, TemplateRow>();
+        const templateRows = new Map<string, SemanticTemplate>();
         for (const template of dataset.templates) {
-            const row = createTemplate(db, template.name, template.tree);
-            templateRows.set(template.id, row);
+            templateRows.set(template.id, template);
         }
 
         const headers = createBearerHeaders(apiToken);
@@ -397,7 +409,7 @@ async function main() {
                 continue;
             }
 
-            applyTemplate(db, template.id);
+            replaceCategoryTree(db, template.tree);
 
             const attempt = await injectWithRetries(app, {
                 method: 'POST',

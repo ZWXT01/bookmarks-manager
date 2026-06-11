@@ -157,211 +157,24 @@ describe('integration: ops routes', () => {
         expect(failedReset.json()).toEqual({ error: '重置失败' });
     });
 
-    it('covers template CRUD, apply/reset success, and validation/not-found branches', async () => {
-        const listResponse = await ctx.app.inject({
-            method: 'GET',
-            url: '/api/templates',
-            headers: ctx.authHeaders,
-        });
-
-        expect(listResponse.statusCode).toBe(200);
-        const templates = listResponse.json().templates as Array<any>;
-        expect(templates.length).toBeGreaterThanOrEqual(8);
-        const presetTemplate = templates.find((template: any) => template.type === 'preset');
-        expect(presetTemplate).toBeTruthy();
-        expect(
-            templates
-                .filter((template: any) => template.type === 'preset')
-                .map((template: any) => template.name),
-        ).toEqual(expect.arrayContaining([
-            '综合通用版',
-            '开发者版',
-            '生活娱乐版',
-            '极简版',
-            '产品运营版',
-            '内容创作版',
-            '研究学习版',
-            '收藏归档版',
-        ]));
-
-        const createResponse = await ctx.app.inject({
-            method: 'POST',
-            url: '/api/templates',
-            headers: ctx.authHeaders,
-            payload: {
-                name: 'Ops Template',
-                tree: [
-                    { name: 'Work', children: [{ name: 'Docs' }] },
-                    { name: 'Life', children: [{ name: 'Travel' }] },
-                ],
-            },
-        });
-
-        expect(createResponse.statusCode).toBe(200);
-        const templateId = createResponse.json().template.id as number;
-
-        const getResponse = await ctx.app.inject({
-            method: 'GET',
-            url: `/api/templates/${templateId}`,
-            headers: ctx.authHeaders,
-        });
-
-        expect(getResponse.statusCode).toBe(200);
-        expect(getResponse.json().template).toMatchObject({
-            id: templateId,
-            name: 'Ops Template',
-        });
-        expect(getResponse.json().template.tree).toEqual([
-            { name: 'Work', children: [{ name: 'Docs' }] },
-            { name: 'Life', children: [{ name: 'Travel' }] },
-        ]);
-
-        const updateResponse = await ctx.app.inject({
-            method: 'PUT',
-            url: `/api/templates/${templateId}`,
-            headers: ctx.authHeaders,
-            payload: {
-                name: 'Ops Template v2',
-                tree: [
-                    { name: 'Projects', children: [{ name: 'Alpha' }] },
-                ],
-            },
-        });
-
-        expect(updateResponse.statusCode).toBe(200);
-        expect(updateResponse.json().template).toMatchObject({
-            id: templateId,
-            name: 'Ops Template v2',
-        });
-
-        const applyResponse = await ctx.app.inject({
-            method: 'POST',
-            url: `/api/templates/${templateId}/apply`,
-            headers: ctx.authHeaders,
-        });
-
-        expect(applyResponse.statusCode).toBe(200);
-        expect(applyResponse.json()).toEqual({ success: true });
-        expect(ctx.db.prepare('SELECT id FROM category_templates WHERE is_active = 1').get()).toEqual({ id: templateId });
-        expect(ctx.db.prepare('SELECT name FROM categories WHERE parent_id IS NULL ORDER BY name').all()).toEqual([{ name: 'Projects' }]);
-        expect(ctx.db.prepare('SELECT name FROM categories WHERE parent_id IS NOT NULL ORDER BY name').all()).toEqual([{ name: 'Projects/Alpha' }]);
-
-        seedCategory(ctx.db, 'Extra');
-
-        const resetResponse = await ctx.app.inject({
-            method: 'POST',
-            url: `/api/templates/${templateId}/reset`,
-            headers: ctx.authHeaders,
-        });
-
-        expect(resetResponse.statusCode).toBe(200);
-        expect(resetResponse.json()).toEqual({ success: true });
-        expect(ctx.db.prepare('SELECT id FROM categories WHERE name = ?').get('Extra')).toBeUndefined();
-        expect(ctx.db.prepare('SELECT name FROM categories WHERE parent_id IS NULL ORDER BY name').all()).toEqual([{ name: 'Projects' }]);
-
-        const secondTemplate = await ctx.app.inject({
-            method: 'POST',
-            url: '/api/templates',
-            headers: ctx.authHeaders,
-            payload: {
-                name: 'Switch Template',
-                tree: [{ name: 'Reference', children: [{ name: 'Links' }] }],
-            },
-        });
-        const secondTemplateId = secondTemplate.json().template.id as number;
-
-        const applySecondResponse = await ctx.app.inject({
-            method: 'POST',
-            url: `/api/templates/${secondTemplateId}/apply`,
-            headers: ctx.authHeaders,
-        });
-
-        expect(applySecondResponse.statusCode).toBe(200);
-
-        const deleteResponse = await ctx.app.inject({
-            method: 'DELETE',
-            url: `/api/templates/${templateId}`,
-            headers: ctx.authHeaders,
-        });
-
-        expect(deleteResponse.statusCode).toBe(200);
-        expect(deleteResponse.json()).toEqual({ success: true });
-
-        const missingAfterDelete = await ctx.app.inject({
-            method: 'GET',
-            url: `/api/templates/${templateId}`,
-            headers: ctx.authHeaders,
-        });
-
-        expect(missingAfterDelete.statusCode).toBe(404);
-        expect(missingAfterDelete.json()).toEqual({ error: 'template not found' });
-
-        const invalidId = await ctx.app.inject({
-            method: 'GET',
-            url: '/api/templates/not-a-number',
-            headers: ctx.authHeaders,
-        });
-        expect(invalidId.statusCode).toBe(400);
-        expect(invalidId.json()).toEqual({ error: 'invalid id' });
-
-        const missingTemplate = await ctx.app.inject({
-            method: 'DELETE',
-            url: '/api/templates/999999',
-            headers: ctx.authHeaders,
-        });
-        expect(missingTemplate.statusCode).toBe(404);
-        expect(missingTemplate.json()).toEqual({ error: 'template not found' });
-
-        const invalidTree = await ctx.app.inject({
-            method: 'POST',
-            url: '/api/templates',
-            headers: ctx.authHeaders,
-            payload: {
-                name: 'Broken Template',
-                tree: [
-                    { name: 'Dup', children: [] },
-                    { name: 'Dup', children: [] },
-                ],
-            },
-        });
-        expect(invalidTree.statusCode).toBe(400);
-        expect(invalidTree.json().error).toContain('duplicate top-level: Dup');
-
-        const presetUpdate = await ctx.app.inject({
-            method: 'PUT',
-            url: `/api/templates/${presetTemplate.id}`,
-            headers: ctx.authHeaders,
-            payload: { name: 'Blocked' },
-        });
-        expect(presetUpdate.statusCode).toBe(403);
-        expect(presetUpdate.json()).toEqual({ error: 'preset templates cannot be updated' });
-
-        const presetApply = await ctx.app.inject({
-            method: 'POST',
-            url: `/api/templates/${presetTemplate.id}/apply`,
-            headers: ctx.authHeaders,
-        });
-        expect(presetApply.statusCode).toBe(403);
-        expect(presetApply.json().error).toContain('Preset templates are read-only references');
-
-        const inactiveTemplate = await ctx.app.inject({
-            method: 'POST',
-            url: '/api/templates',
-            headers: ctx.authHeaders,
-            payload: {
-                name: 'Inactive Template',
-                tree: [{ name: 'Archive', children: [] }],
-            },
-        });
-        const inactiveTemplateId = inactiveTemplate.json().template.id as number;
-
-        const resetInactive = await ctx.app.inject({
-            method: 'POST',
-            url: `/api/templates/${inactiveTemplateId}/reset`,
-            headers: ctx.authHeaders,
-        });
-        expect(resetInactive.statusCode).toBe(403);
-        expect(resetInactive.json()).toEqual({ error: 'Only the currently active template can be reset' });
+    it('does not expose removed category template API routes', async () => {
+        for (const request of [
+            { method: 'GET', url: '/api/templates' },
+            { method: 'POST', url: '/api/templates', payload: { name: 'Old Template', tree: [] } },
+            { method: 'GET', url: '/api/templates/1' },
+            { method: 'PUT', url: '/api/templates/1', payload: { name: 'Old Template' } },
+            { method: 'POST', url: '/api/templates/1/apply' },
+            { method: 'POST', url: '/api/templates/1/reset' },
+            { method: 'DELETE', url: '/api/templates/1' },
+        ]) {
+            const response = await ctx.app.inject({
+                method: request.method as any,
+                url: request.url,
+                headers: ctx.authHeaders,
+                payload: 'payload' in request ? request.payload : undefined,
+            });
+            expect(response.statusCode, `${request.method} ${request.url}`).toBe(404);
+        }
     });
 
     it('covers snapshot save/list/view/delete/batch-delete success and validation branches', async () => {

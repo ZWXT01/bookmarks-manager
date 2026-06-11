@@ -79,7 +79,6 @@ export function buildNetscapeHtml(rows: ExportBookmarkRow[]): string {
 }
 
 export function queryExportRows(db: Db): ExportBookmarkRow[] {
-  // c.name 已经存储完整路径（如 "技术/编程"），直接使用即可
   return db
     .prepare(
       `
@@ -87,10 +86,15 @@ export function queryExportRows(db: Db): ExportBookmarkRow[] {
         b.url AS url, 
         b.title AS title, 
         b.created_at AS created_at,
-        c.name AS category_name
+        CASE
+          WHEN c.id IS NULL THEN NULL
+          WHEN p.id IS NOT NULL THEN p.name || '/' || c.name
+          ELSE c.name
+        END AS category_name
       FROM bookmarks b
       LEFT JOIN categories c ON c.id = b.category_id
-      ORDER BY c.name, b.created_at DESC
+      LEFT JOIN categories p ON p.id = c.parent_id
+      ORDER BY category_name, b.created_at DESC
       `,
     )
     .all() as ExportBookmarkRow[];

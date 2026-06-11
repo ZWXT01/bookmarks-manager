@@ -5,7 +5,13 @@ import type {
     AIClientFactory,
     AIClientFactoryOptions,
 } from '../../src/ai-client';
-import { applyTemplate, createTemplate, type CategoryNode, type TemplateRow } from '../../src/template-service';
+import { getOrCreateCategoryByPath } from '../../src/category-service';
+
+export interface CategoryNode { name: string; children: { name: string }[] }
+export interface SeededAiCategories {
+    name: string;
+    tree: CategoryNode[];
+}
 
 export interface SeedAISettingsOptions {
     baseUrl?: string;
@@ -29,7 +35,7 @@ export interface QueuedAIHarness {
     remainingSteps: () => number;
 }
 
-export const AI_TEST_TEMPLATE_TREE: CategoryNode[] = [
+export const AI_TEST_CATEGORY_TREE: CategoryNode[] = [
     {
         name: '技术开发',
         children: [{ name: '前端' }, { name: '后端' }],
@@ -100,10 +106,15 @@ export function createQueuedAIHarness(steps: MockAIStep[]): QueuedAIHarness {
     };
 }
 
-export function activateAiTestTemplate(db: Db, name = 'AI 测试模板'): TemplateRow {
-    const template = createTemplate(db, name, AI_TEST_TEMPLATE_TREE);
-    applyTemplate(db, template.id);
-    return template;
+export function seedAiTestCategories(db: Db, name = 'AI 测试分类'): SeededAiCategories {
+    for (const node of AI_TEST_CATEGORY_TREE) {
+        getOrCreateCategoryByPath(db, node.name);
+        for (const child of node.children ?? []) {
+            getOrCreateCategoryByPath(db, `${node.name}/${child.name}`);
+        }
+    }
+
+    return { name, tree: AI_TEST_CATEGORY_TREE };
 }
 
 export function textCompletion(content: string): AIChatCompletionResponse {

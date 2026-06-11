@@ -5,7 +5,6 @@
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { deleteCategoryWithSync, getOrCreateCategoryByPathWithSync, renameCategoryWithSync } from '../category-service';
-import { syncCategoriesToActiveTemplate } from '../template-service';
 import { canonicalizeUrl } from '../url';
 import { toInt, validateStringLength } from '../utils/helpers';
 
@@ -30,7 +29,7 @@ export const formsRoutes: FastifyPluginCallback<FormsRoutesOptions> = (app, opts
 
         try {
             validateStringLength(name, 200, '分类名称');
-            getOrCreateCategoryByPathWithSync(db, name, syncCategoriesToActiveTemplate);
+            getOrCreateCategoryByPathWithSync(db, name);
             req.log.info({ categoryName: name }, 'category created');
             return reply.redirect(flash(redirectTo, 'msg', '分类已创建'));
         } catch (e: any) {
@@ -60,7 +59,7 @@ export const formsRoutes: FastifyPluginCallback<FormsRoutesOptions> = (app, opts
 
         try {
             validateStringLength(name, 200, '分类名称');
-            renameCategoryWithSync(db, categoryId, name, syncCategoriesToActiveTemplate);
+            renameCategoryWithSync(db, categoryId, name);
             req.log.info({ categoryId, newName: name }, 'category updated');
             return reply.redirect(flash(redirectTo, 'msg', '分类已更新'));
         } catch (e: any) {
@@ -84,7 +83,7 @@ export const formsRoutes: FastifyPluginCallback<FormsRoutesOptions> = (app, opts
         }
 
         try {
-            const result = deleteCategoryWithSync(db, categoryId, syncCategoriesToActiveTemplate);
+            const result = deleteCategoryWithSync(db, categoryId);
             req.log.info({ categoryId, movedBookmarks: result.movedBookmarks }, 'category deleted');
             return reply.redirect(flash(redirectTo, 'msg', '分类已删除'));
         } catch (e: any) {

@@ -6,6 +6,7 @@ import type { Database } from 'better-sqlite3';
 import { getJob, updateJob, createJob, jobQueue } from '../jobs';
 import { runCheckJob } from '../checker';
 import { toInt } from '../utils/helpers';
+import { expandCategoryIdsForScope, getCategoryIdsForScope } from '../category-service';
 
 export interface CheckRoutesOptions {
     db: Database;
@@ -84,8 +85,13 @@ export const checkRoutes: FastifyPluginCallback<CheckRoutesOptions> = (app, opts
             if (scope === 'selected') {
                 return reply.code(400).send({ error: 'Operation failed' });
             } else if (scope === 'categories' && categoryIds.length > 0) {
-                const placeholders = categoryIds.map(() => '?').join(',');
-                rows = db.prepare(`SELECT id FROM bookmarks WHERE category_id IN (${placeholders}) AND skip_check = 0 ORDER BY id`).all(...categoryIds) as Array<{ id: number }>;
+                const scopedCategoryIds = expandCategoryIdsForScope(db, categoryIds);
+                if (scopedCategoryIds.length === 0) {
+                    rows = [];
+                } else {
+                    const placeholders = scopedCategoryIds.map(() => '?').join(',');
+                    rows = db.prepare(`SELECT id FROM bookmarks WHERE category_id IN (${placeholders}) AND skip_check = 0 ORDER BY id`).all(...scopedCategoryIds) as Array<{ id: number }>;
+                }
             } else if (scope === 'category') {
                 if (!category) {
                     return reply.code(400).send({ error: 'Operation failed' });
@@ -97,7 +103,13 @@ export const checkRoutes: FastifyPluginCallback<CheckRoutesOptions> = (app, opts
                     if (catId === null) {
                         return reply.code(400).send({ error: 'Operation failed' });
                     }
-                    rows = db.prepare('SELECT id FROM bookmarks WHERE category_id = ? AND skip_check = 0 ORDER BY id').all(catId) as Array<{ id: number }>;
+                    const scopedCategoryIds = getCategoryIdsForScope(db, catId);
+                    if (scopedCategoryIds.length === 0) {
+                        rows = [];
+                    } else {
+                        const placeholders = scopedCategoryIds.map(() => '?').join(',');
+                        rows = db.prepare(`SELECT id FROM bookmarks WHERE category_id IN (${placeholders}) AND skip_check = 0 ORDER BY id`).all(...scopedCategoryIds) as Array<{ id: number }>;
+                    }
                 }
             } else if (scope === 'not_checked') {
                 rows = db.prepare("SELECT id FROM bookmarks WHERE check_status = 'not_checked' AND skip_check = 0 ORDER BY id").all() as Array<{ id: number }>;

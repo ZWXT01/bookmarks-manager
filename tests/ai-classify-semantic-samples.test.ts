@@ -4,9 +4,10 @@ import path from 'path';
 import { describe, expect, it } from 'vitest';
 
 import { selectSingleClassifyCategory } from '../src/ai-classify-guardrail';
-import type { CategoryNode } from '../src/template-service';
 
-interface SemanticTemplate {
+interface CategoryNode { name: string; children?: { name: string }[] }
+
+interface SemanticTaxonomy {
     id: string;
     name: string;
     tree: CategoryNode[];
@@ -14,7 +15,7 @@ interface SemanticTemplate {
 
 interface SemanticSampleCase {
     id: string;
-    templateId: string;
+    taxonomyId: string;
     title: string;
     url: string;
     description?: string;
@@ -23,7 +24,7 @@ interface SemanticSampleCase {
 }
 
 interface SemanticSampleDataset {
-    templates: SemanticTemplate[];
+    taxonomies: SemanticTaxonomy[];
     cases: SemanticSampleCase[];
 }
 
@@ -58,17 +59,17 @@ function treeToPaths(tree: CategoryNode[]): string[] {
 describe('single classify semantic sample corpus', () => {
     it('matches every curated semantic sample', () => {
         const dataset = loadDataset();
-        const templateMap = new Map(dataset.templates.map((template) => [template.id, template]));
+        const taxonomyMap = new Map(dataset.taxonomies.map((taxonomy) => [taxonomy.id, taxonomy]));
 
         const failures = dataset.cases.flatMap((sample) => {
-            const template = templateMap.get(sample.templateId);
-            if (!template) {
-                return [`${sample.id}: missing template ${sample.templateId}`];
+            const taxonomy = taxonomyMap.get(sample.taxonomyId);
+            if (!taxonomy) {
+                return [`${sample.id}: missing taxonomy ${sample.taxonomyId}`];
             }
 
             const actualCategory = selectSingleClassifyCategory({
                 rawCategory: sample.providerCategory,
-                allowedPaths: treeToPaths(template.tree),
+                allowedPaths: treeToPaths(taxonomy.tree),
                 title: sample.title,
                 url: sample.url,
                 description: sample.description ?? '',

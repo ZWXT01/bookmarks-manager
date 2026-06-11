@@ -5,8 +5,8 @@ import { applyPlan, createPlan, getPlan, updatePlan } from '../../src/ai-organiz
 import { createJob, getJob, jobQueue } from '../../src/jobs';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import {
-    AI_TEST_TEMPLATE_TREE,
-    activateAiTestTemplate,
+    AI_TEST_CATEGORY_TREE,
+    seedAiTestCategories,
     createQueuedAIHarness,
     jsonCompletion,
     seedAISettings,
@@ -61,7 +61,7 @@ describe('integration: AI deterministic harness', () => {
             textCompletion('技术开发/前端/React'),
         ]);
         const config = seedAISettings(appCtx.db);
-        activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
 
         const response = await appCtx.app.inject({
             method: 'POST',
@@ -86,11 +86,11 @@ describe('integration: AI deterministic harness', () => {
         expect(harness.remainingSteps()).toBe(0);
     });
 
-    it('normalizes a single classify result back into the active template taxonomy', async () => {
+    it('normalizes a single classify result back into the live category taxonomy', async () => {
         const { ctx: appCtx, authHeaders } = await createHarnessApp([
             textCompletion('学习资源/React'),
         ]);
-        activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
         seedAISettings(appCtx.db);
 
         const response = await appCtx.app.inject({
@@ -112,12 +112,10 @@ describe('integration: AI deterministic harness', () => {
             textCompletion('技术开发/前端'),
         ]);
         seedAISettings(appCtx.db);
-        const { createTemplate, applyTemplate } = await import('../../src/template-service');
-        const template = createTemplate(appCtx.db, '开发者语义模板', [
-            { name: '框架与库', children: [{ name: '前端框架' }] },
-            { name: '学习资源', children: [{ name: '官方文档' }, { name: '系列教程' }, { name: '代码示例' }] },
-        ]);
-        applyTemplate(appCtx.db, template.id);
+        const { getOrCreateCategoryByPath } = await import('../../src/category-service');
+        for (const path of ['框架与库/前端框架', '学习资源/官方文档', '学习资源/系列教程', '学习资源/代码示例']) {
+            getOrCreateCategoryByPath(appCtx.db, path);
+        }
 
         const response = await appCtx.app.inject({
             method: 'POST',
@@ -142,7 +140,7 @@ describe('integration: AI deterministic harness', () => {
                 ],
             }),
         ]);
-        activateAiTestTemplate(appCtx.db);
+        seedAiTestCategories(appCtx.db);
         seedAISettings(appCtx.db);
 
         const bookmarkIds = seedBookmarks(appCtx.db, [
@@ -190,13 +188,13 @@ describe('integration: AI deterministic harness', () => {
 
     it('replays organize batch failures deterministically and marks every bookmark for review', async () => {
         ctx = await createTestApp();
-        const templateId = activateAiTestTemplate(ctx.db).id;
+        seedAiTestCategories(ctx.db);
         const config = seedAISettings(ctx.db);
         const bookmarkIds = seedBookmarks(ctx.db, [
             { title: 'React', url: 'https://react.dev' },
             { title: 'Node.js', url: 'https://nodejs.org' },
         ]);
-        const plan = createPlan(ctx.db, 'all', templateId);
+        const plan = createPlan(ctx.db, 'all');
         const job = createJob(ctx.db, 'ai_organize', 'fixture organize failure', bookmarkIds.length);
         updatePlan(ctx.db, plan.id, { job_id: job.id });
         const harness = createQueuedAIHarness([new Error('fixture timeout')]);
@@ -232,18 +230,17 @@ describe('integration: AI deterministic harness', () => {
         expect(harness.remainingSteps()).toBe(0);
     });
 
-    it('freezes the template snapshot used during assignment so later template edits stale the preview', async () => {
+    it('freezes the live category tree used during assignment so later category edits stale the preview', async () => {
         ctx = await createTestApp();
-        const template = activateAiTestTemplate(ctx.db, '中途变更模板');
+        seedAiTestCategories(ctx.db);
         const config = seedAISettings(ctx.db);
         const bookmarkIds = seedBookmarks(ctx.db, [
             { title: 'React', url: 'https://react.dev' },
         ]);
-        const plan = createPlan(ctx.db, `ids:${bookmarkIds[0]}`, template.id);
-        const job = createJob(ctx.db, 'ai_organize', 'template snapshot freeze', bookmarkIds.length);
+        const plan = createPlan(ctx.db, `ids:${bookmarkIds[0]}`);
+        const job = createJob(ctx.db, 'ai_organize', 'category snapshot freeze', bookmarkIds.length);
         updatePlan(ctx.db, plan.id, { job_id: job.id });
 
-        const { updateTemplate } = await import('../../src/template-service');
         const deferred = createDeferred<ReturnType<typeof jsonCompletion>>();
         const harness = createQueuedAIHarness([() => deferred.promise]);
         const assignPromise = assignBookmarks(
@@ -257,12 +254,10 @@ describe('integration: AI deterministic harness', () => {
 
         expect(harness.calls).toHaveLength(1);
 
-        updateTemplate(ctx.db, template.id, {
-            tree: [
-                { name: '技术开发', children: [{ name: 'Web前端' }, { name: '后端' }] },
-                { name: '学习资源', children: [{ name: '教程' }] },
-            ],
-        });
+        const { getCategoryByPath, renameCategory } = await import('../../src/category-service');
+        const frontend = getCategoryByPath(ctx.db, '技术开发/前端');
+        expect(frontend).toBeTruthy();
+        renameCategory(ctx.db, frontend!.id, 'Web前端');
 
         deferred.resolve(jsonCompletion({
             assignments: [{ index: 1, category: '技术开发/前端' }],
@@ -272,18 +267,14 @@ describe('integration: AI deterministic harness', () => {
         const updatedPlan = getPlan(ctx.db, plan.id);
         expect(updatedPlan).not.toBeNull();
         expect(updatedPlan?.status).toBe('preview');
-        expect(updatedPlan?.target_tree ? JSON.parse(updatedPlan.target_tree) : null).toEqual(AI_TEST_TEMPLATE_TREE);
+        expect(updatedPlan?.target_tree ? JSON.parse(updatedPlan.target_tree) : null).toEqual(AI_TEST_CATEGORY_TREE);
         expect(parseAssignments(updatedPlan!.id, updatedPlan!.assignments)).toEqual([
             { bookmark_id: bookmarkIds[0], category_path: '技术开发/前端', status: 'assigned' },
         ]);
 
         const sourceSnapshot = updatedPlan?.source_snapshot ? JSON.parse(updatedPlan.source_snapshot) : null;
-        expect(sourceSnapshot?.template).toEqual({
-            template_id: template.id,
-            updated_at: template.updated_at,
-            paths: ['技术开发', '技术开发/前端', '技术开发/后端', '学习资源', '学习资源/文档'],
-        });
-        expect(() => applyPlan(ctx.db, plan.id)).toThrow('plan is stale: target template changed');
+        expect(sourceSnapshot).not.toHaveProperty('template');
+        expect(() => applyPlan(ctx.db, plan.id)).toThrow('plan is stale: target categories changed');
         expect(harness.remainingSteps()).toBe(0);
     });
 });

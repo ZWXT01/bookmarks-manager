@@ -22,11 +22,6 @@ const tsxBinPath = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
 
 const SUITE: ScriptSpec[] = [
     {
-        issueIds: ['R1-QA-01', 'R2-E2E-01', 'R2-REL-03'],
-        script: 'scripts/playwright-release-journeys-validate.ts',
-        description: 'release journeys and core page navigation',
-    },
-    {
         issueIds: ['R8-QA-01'],
         script: 'scripts/backup-job-browser-validate.ts',
         description: 'backup create/restore and job detail live progress',
@@ -62,29 +57,14 @@ const SUITE: ScriptSpec[] = [
         description: 'category nav layout and scroll recovery',
     },
     {
-        issueIds: ['R3-QA-03', 'R4-QA-02'],
-        script: 'scripts/category-interaction-validate.ts',
-        description: 'cross-view category interaction consistency',
-    },
-    {
         issueIds: ['R5-AI-08'],
         script: 'scripts/settings-ai-diagnostic-validate.ts',
         description: 'settings AI diagnostic UI states',
     },
     {
-        issueIds: ['R6-UI-02'],
-        script: 'scripts/template-editor-validate.ts',
-        description: 'template editor long-tree modal reachability',
-    },
-    {
-        issueIds: ['R6-TPL-06'],
-        script: 'scripts/preset-template-validate.ts',
-        description: 'preset template copy/apply and active-template refresh',
-    },
-    {
-        issueIds: ['R6-AI-01', 'R7-AI-01', 'R7-AI-05', 'R7-AI-06'],
+        issueIds: ['R6-AI-01', 'R7-AI-01', 'R7-AI-05', 'R7-AI-06', 'R10-TPL-REMOVE'],
         script: 'scripts/ai-organize-ui-validate.ts',
-        description: 'ai organize assigning, failed/error recovery, and preview apply UI',
+        description: 'template-free ai organize, category filtering, cancellation, pagination, and preview apply UI',
     },
     {
         issueIds: ['R2-EXT-02'],

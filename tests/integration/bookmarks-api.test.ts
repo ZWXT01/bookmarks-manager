@@ -103,8 +103,9 @@ describe('integration: bookmarks API', () => {
     });
 
     it('filters bookmarks by category, uncategorized, search keywords, status, date range, and domain', async () => {
-        const categories = seedCategoryTree(ctx.db, ['Tech', 'Life']);
+        const categories = seedCategoryTree(ctx.db, [{ name: 'Tech', children: ['JS'] }, 'Life']);
         const techId = categories[0].id;
+        const jsId = categories[0].children[0].id;
         const lifeId = categories[1].id;
 
         const techMatchId = createBookmark(ctx.db, {
@@ -120,6 +121,13 @@ describe('integration: bookmarks API', () => {
             categoryId: techId,
             createdAt: '2026-01-15T08:00:00.000Z',
             checkStatus: 'fail',
+        });
+        const jsChildId = createBookmark(ctx.db, {
+            url: 'https://js.example.com/child',
+            title: 'Child Category Bookmark',
+            categoryId: jsId,
+            createdAt: '2026-01-20T08:00:00.000Z',
+            checkStatus: 'ok',
         });
         const lifeId1 = createBookmark(ctx.db, {
             url: 'https://life.test/beta-only',
@@ -141,8 +149,17 @@ describe('integration: bookmarks API', () => {
             headers: authHeaders,
         });
         expect(categoryResponse.statusCode).toBe(200);
-        expect(categoryResponse.json().total).toBe(2);
-        expect(categoryResponse.json().bookmarks.every((bookmark: any) => bookmark.category_id === techId)).toBe(true);
+        expect(categoryResponse.json().total).toBe(3);
+        expect(sortNumbers(categoryResponse.json().bookmarks.map((bookmark: any) => bookmark.id))).toEqual(sortNumbers([techMatchId, techFailId, jsChildId]));
+
+        const childCategoryResponse = await ctx.app.inject({
+            method: 'GET',
+            url: `/api/bookmarks?category=${jsId}`,
+            headers: authHeaders,
+        });
+        expect(childCategoryResponse.statusCode).toBe(200);
+        expect(childCategoryResponse.json().total).toBe(1);
+        expect(childCategoryResponse.json().bookmarks[0].id).toBe(jsChildId);
 
         const uncategorizedResponse = await ctx.app.inject({
             method: 'GET',
@@ -185,7 +202,7 @@ describe('integration: bookmarks API', () => {
             headers: authHeaders,
         });
         expect(domainResponse.statusCode).toBe(200);
-        expect(sortNumbers(domainResponse.json().bookmarks.map((bookmark: any) => bookmark.id))).toEqual(sortNumbers([techMatchId, techFailId]));
+        expect(sortNumbers(domainResponse.json().bookmarks.map((bookmark: any) => bookmark.id))).toEqual(sortNumbers([techMatchId, techFailId, jsChildId]));
 
         expect(lifeId1).toBeGreaterThan(0);
     });

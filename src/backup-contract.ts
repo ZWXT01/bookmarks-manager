@@ -11,8 +11,6 @@ export const partialRestoreContract = {
     'api_tokens',
     'jobs',
     'job_failures',
-    'category_templates',
-    'template_snapshots',
     'ai_organize_plans',
     'plan_state_logs',
     'snapshots',

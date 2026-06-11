@@ -128,25 +128,9 @@ function bookmarkApp() {
     currentJob: null,
     currentJobPollTimer: null,
 
-    // 模板管理
-    templates: [],
-    activeTemplate: null,
-    showTemplateSelectModal: false,
-    showTemplateEditModal: false,
-    templateEditTarget: null,
-    templateEditName: '',
-    templateEditTree: [],
-    templateApplying: false,
-    templateEditSnapshot: null,
-    templateEditSourceId: null,
-    templatePreviewId: null,
-    templatePreviewTree: [],
-
     // Race condition prevention: sequence numbers and abort controllers for async requests
     _categoryLoadSeq: 0,
-    _templateLoadSeq: 0,
     _categoryAbortController: null,
-    _templateAbortController: null,
     _categoryTabsDragging: false,
     _categoryTabsPointerId: null,
     _categoryTabsDragStartX: 0,
@@ -154,24 +138,10 @@ function bookmarkApp() {
     _suppressCategoryTabsClick: false,
     isMobileViewport: typeof window !== 'undefined' ? window.innerWidth < 768 : false,
 
-    get presetTemplates() { return this.templates.filter(t => t.type === 'preset'); },
-    get customTemplates() { return this.templates.filter(t => t.type === 'custom'); },
-    get templateEditRootCount() { return Array.isArray(this.templateEditTree) ? this.templateEditTree.length : 0; },
-    get templateEditChildCount() {
-      return (this.templateEditTree || []).reduce((total, node) => total + ((node.children || []).length), 0);
-    },
-    get templateEditSummary() {
-      const roots = this.templateEditRootCount;
-      const children = this.templateEditChildCount;
-      if (!roots && !children) return '暂无分类，先添加一级分类或从现有模板复制。';
-      return `${roots} 个一级分类 · ${children} 个子分类`;
-    },
-
     // 多入口 AI 分类
     showBatchSizeModal: false,
     classifyBatchIds: [],
     classifyBatchSize: 20,
-    classifyBatchTemplateId: null,
 
     async init() {
       this.initTheme();
@@ -179,7 +149,6 @@ function bookmarkApp() {
       await this.loadCategories();
       await this.loadBookmarks();
       await this.loadSettings();
-      await this.loadTemplates();
       this.restoreLastJob();
       this.pollCurrentJob();
 
@@ -835,19 +804,11 @@ function bookmarkApp() {
     },
 
     handleCategoryClick(cat) {
-      // On touch-primary devices with subcategories: first tap opens dropdown, second tap navigates
+      // Clicking a top-level category always filters to that full category scope.
+      // On touch devices, keep the child panel open after filtering so subcategories remain reachable.
+      this.loadCategory(cat.id);
       if (this.isTouchPrimaryDevice() && cat.children && cat.children.length > 0) {
-        if (this.categoryDropdownVisible && this.activeParentCategory === cat.id) {
-          // Already open, navigate to category
-          this.loadCategory(cat.id);
-          this.closeCategoryDropdown();
-        } else {
-          // Open dropdown
-          this.openCategoryDropdown(cat.id);
-        }
-      } else {
-        // Desktop or no subcategories: navigate directly
-        this.loadCategory(cat.id);
+        this.openCategoryDropdown(cat.id);
       }
     },
 
@@ -2092,389 +2053,9 @@ function bookmarkApp() {
       this.openCheckModalForSelected();
     },
 
-    async loadTemplates() {
-      // Abort previous request if still pending
-      if (this._templateAbortController) {
-        this._templateAbortController.abort();
-      }
-
-      // Create new abort controller for this request
-      this._templateAbortController = new AbortController();
-      const currentSeq = ++this._templateLoadSeq;
-
-      try {
-        const res = await fetch('/api/templates', {
-          headers: { 'Accept': 'application/json' },
-          signal: this._templateAbortController.signal
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data) return;
-
-        // Discard stale responses: only apply if this is still the latest request
-        if (currentSeq !== this._templateLoadSeq) {
-          console.log(`[loadTemplates] Discarding stale response (seq ${currentSeq}, current ${this._templateLoadSeq})`);
-          return;
-        }
-
-        this.templates = data.templates || [];
-        this.activeTemplate = this.templates.find(t => t.is_active === 1) || null;
-      } catch (e) {
-        // Don't log error for aborted requests
-        if (e.name === 'AbortError') {
-          return;
-        }
-        // Silently fail for template loading errors
-      }
-    },
-
-    async applyTemplate(id, options = {}) {
-      const managed = Boolean(options.managed);
-      if (!managed && this.templateApplying) return false;
-      if (!managed) {
-        this.templateApplying = true;
-      }
-      try {
-        const res = await fetch(`/api/templates/${id}/apply`, {
-          method: 'POST', headers: { 'Accept': 'application/json' },
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data?.success) {
-          if (res.status === 403) {
-            this.showToast(data?.error || '预置模板为只读参考，请先基于此创建自定义模板', 'error');
-          } else {
-            this.showToast(data?.error || '应用模板失败', 'error');
-          }
-          return false;
-        }
-        await this.loadTemplates();
-        await this.loadCategories();
-        await this.loadBookmarks();
-        if (!options.silentSuccess) {
-          this.showToast(options.successMessage || '模板已应用', 'success');
-        }
-        return true;
-      } catch {
-        this.showToast('应用模板失败', 'error');
-        return false;
-      } finally {
-        if (!managed) {
-          this.templateApplying = false;
-        }
-      }
-    },
-
-    async createTemplate(name, tree, options = {}) {
-      try {
-        const res = await fetch('/api/templates', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, tree }),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data) {
-          this.showToast(data?.error || '创建模板失败', 'error');
-          return null;
-        }
-        await this.loadTemplates();
-        if (!options.silentSuccess) {
-          this.showToast(options.successMessage || '模板已创建', 'success');
-        }
-        return data.template || null;
-      } catch {
-        this.showToast('创建模板失败', 'error');
-        return null;
-      }
-    },
-
-    async updateTemplate(id, patch) {
-      try {
-        const res = await fetch(`/api/templates/${id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(patch),
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data) {
-          this.showToast(data?.error || '更新模板失败', 'error');
-          return null;
-        }
-        await this.loadTemplates();
-        // 如果更新的是活动模板，刷新分类和书签以同步 UI
-        if (data.template && data.template.is_active === 1) {
-          await this.loadCategories();
-          await this.loadBookmarks();
-        }
-        this.showToast('模板已更新', 'success');
-        return data.template || null;
-      } catch {
-        this.showToast('更新模板失败', 'error');
-        return null;
-      }
-    },
-
-    async deleteTemplate(id) {
-      try {
-        const res = await fetch(`/api/templates/${id}`, {
-          method: 'DELETE', headers: { 'Accept': 'application/json' },
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data?.success) {
-          this.showToast(data?.error || '删除模板失败', 'error');
-          return;
-        }
-        await this.loadTemplates();
-        this.showToast('模板已删除', 'success');
-      } catch {
-        this.showToast('删除模板失败', 'error');
-      }
-    },
-
-    async resetPresetTemplate(id) {
-      if (!await AppDialog.confirm('确定要重置此预置模板？所有书签将变为未分类，分类树将恢复为模板默认状态。')) return;
-      try {
-        const res = await fetch(`/api/templates/${id}/reset`, {
-          method: 'POST',
-          headers: { 'Accept': 'application/json' },
-        });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data?.success) {
-          this.showToast(data?.error || '重置模板失败', 'error');
-          return;
-        }
-        await this.loadTemplates();
-        await this.loadCategories();
-        await this.loadBookmarks();
-        this.showToast('模板已重置', 'success');
-      } catch {
-        this.showToast('重置模板失败', 'error');
-      }
-    },
-
-    async openTemplateEditor(tplId) {
-      try {
-        const res = await fetch(`/api/templates/${tplId}`, { headers: { 'Accept': 'application/json' } });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data?.template) {
-          this.showToast('加载模板详情失败', 'error');
-          return;
-        }
-        this.templateEditTarget = data.template;
-        this.templateEditName = data.template.name;
-        this.templateEditTree = (data.template.tree || []).map(n => ({
-          name: n.name,
-          children: (n.children || []).map(c => ({ name: c.name })),
-        }));
-        this.templateEditSourceId = null;
-        this.templateEditSnapshot = JSON.stringify({ name: this.templateEditName, tree: this.templateEditTree });
-        this.showTemplateEditModal = true;
-      } catch {
-        this.showToast('加载模板详情失败', 'error');
-      }
-    },
-
-    async copyTemplateAsCustom(tplId) {
-      try {
-        const res = await fetch(`/api/templates/${tplId}`, { headers: { 'Accept': 'application/json' } });
-        const data = await res.json().catch(() => null);
-        if (!res.ok || !data?.template) {
-          this.showToast('加载模板详情失败', 'error');
-          return;
-        }
-        this.templateEditTarget = null;
-        this.templateEditName = this.buildCustomTemplateCopyName(data.template.name);
-        this.templateEditTree = (data.template.tree || []).map(n => ({
-          name: n.name,
-          children: (n.children || []).map(c => ({ name: c.name })),
-        }));
-        this.templateEditSourceId = null;
-        this.templateEditSnapshot = JSON.stringify({
-          name: this.templateEditName,
-          tree: this.templateEditTree
-        });
-        this.showTemplateSelectModal = false;
-        this.showTemplateEditModal = true;
-      } catch {
-        this.showToast('加载模板详情失败', 'error');
-      }
-    },
-
-    buildCustomTemplateCopyName(baseName) {
-      const normalizedBase = (baseName || '').trim().replace(/\s*(?:（自定义(?:\s+\d+)?）|\(自定义(?:\s+\d+)?\))\s*$/, '');
-      const seedName = `${normalizedBase || '模板'}（自定义）`;
-      const names = new Set((this.templates || []).map((tpl) => tpl.name));
-      if (!names.has(seedName)) return seedName;
-
-      let index = 2;
-      while (names.has(`${seedName} ${index}`)) {
-        index += 1;
-      }
-      return `${seedName} ${index}`;
-    },
-
-    async instantiatePresetTemplate(tplId, options = {}) {
-      const applyAfterCreate = Boolean(options.applyAfterCreate);
-      if (this.templateApplying) return null;
-
-      this.templateApplying = true;
-      try {
-        const detailResponse = await fetch(`/api/templates/${tplId}`, { headers: { 'Accept': 'application/json' } });
-        const detailData = await detailResponse.json().catch(() => null);
-        if (!detailResponse.ok || !detailData?.template) {
-          this.showToast(detailData?.error || '加载模板详情失败', 'error');
-          return null;
-        }
-
-        const templateName = this.buildCustomTemplateCopyName(detailData.template.name);
-        const templateTree = (detailData.template.tree || []).map((node) => ({
-          name: node.name,
-          children: (node.children || []).map((child) => ({ name: child.name })),
-        }));
-        const created = await this.createTemplate(templateName, templateTree, {
-          silentSuccess: true,
-        });
-        if (!created) return null;
-
-        if (applyAfterCreate) {
-          const applied = await this.applyTemplate(created.id, {
-            managed: true,
-            silentSuccess: true,
-          });
-          if (!applied) return null;
-          this.showTemplateSelectModal = false;
-          this.showToast(`已基于「${detailData.template.name}」创建并应用自定义模板`, 'success');
-        } else {
-          this.showToast(`已基于「${detailData.template.name}」创建自定义副本`, 'success');
-        }
-
-        return created;
-      } catch {
-        this.showToast(applyAfterCreate ? '创建并应用模板失败' : '创建模板副本失败', 'error');
-        return null;
-      } finally {
-        this.templateApplying = false;
-      }
-    },
-
-    openNewTemplateEditor() {
-      this.templateEditTarget = null;
-      this.templateEditName = '';
-      this.templateEditTree = [];
-      this.templateEditSourceId = null;
-      this.templateEditSnapshot = JSON.stringify({ name: '', tree: [] });
-      this.showTemplateEditModal = true;
-    },
-
-    async confirmCloseTemplateEditor() {
-      if (!this.showTemplateEditModal) return;
-      if (this.hasUnsavedTemplateChanges()) {
-        const confirmed = await AppDialog.confirm('有未保存的修改，确定要关闭吗？');
-        if (!confirmed) return;
-      }
-      this.showTemplateEditModal = false;
-    },
-
-    hasUnsavedTemplateChanges() {
-      if (!this.templateEditSnapshot) return false;
-      return JSON.stringify({ name: this.templateEditName, tree: this.templateEditTree }) !== this.templateEditSnapshot;
-    },
-
-    async loadTemplateForEdit(sourceId) {
-      if (!sourceId) {
-        this.templateEditTree = [];
-        this.templateEditName = '';
-        return;
-      }
-      try {
-        const res = await fetch(`/api/templates/${sourceId}`, { headers: { 'Accept': 'application/json' } });
-        const data = await res.json().catch(() => null);
-        if (res.ok && data?.template) {
-          this.templateEditTree = (data.template.tree || []).map(n => ({
-            name: n.name,
-            children: (n.children || []).map(c => ({ name: c.name })),
-          }));
-          this.templateEditName = this.buildCustomTemplateCopyName(data.template.name);
-        }
-      } catch {
-        this.showToast('加载模板失败', 'error');
-      }
-    },
-
-    toggleTemplatePreview(tplId) {
-      if (this.templatePreviewId === tplId) {
-        this.templatePreviewId = null;
-        this.templatePreviewTree = [];
-      } else {
-        this.loadTemplatePreview(tplId);
-      }
-    },
-
-    async loadTemplatePreview(tplId) {
-      try {
-        const res = await fetch(`/api/templates/${tplId}`, { headers: { 'Accept': 'application/json' } });
-        const data = await res.json().catch(() => null);
-        if (res.ok && data?.template?.tree) {
-          this.templatePreviewId = tplId;
-          this.templatePreviewTree = data.template.tree;
-        }
-      } catch {
-        this.showToast('加载模板详情失败', 'error');
-      }
-    },
-
-    async startClassifyWithTemplate(templateId) {
-      if (!this.isAIConfigured()) {
-        this.showToast('请先在设置页配置 AI', 'error');
-        return;
-      }
-      const uncategorized = this.bookmarks.filter(b => !b.category_id);
-      if (uncategorized.length === 0) {
-        this.showToast('没有未分类的书签', 'info');
-        return;
-      }
-      this.classifyBatchIds = uncategorized.map(b => b.id);
-      this.classifyBatchSize = 20;
-      this.classifyBatchTemplateId = templateId;
-      this.showBatchSizeModal = true;
-    },
-
-    addTemplateTreeNode(parentIndex) {
-      if (parentIndex === undefined) {
-        this.templateEditTree.push({ name: '新分类', children: [] });
-      } else {
-        if (!this.templateEditTree[parentIndex].children) this.templateEditTree[parentIndex].children = [];
-        this.templateEditTree[parentIndex].children.push({ name: '新子分类' });
-      }
-    },
-
-    removeTemplateTreeNode(parentIndex, childIndex) {
-      if (childIndex === undefined) {
-        this.templateEditTree.splice(parentIndex, 1);
-      } else {
-        this.templateEditTree[parentIndex].children.splice(childIndex, 1);
-      }
-    },
-
-    async saveTemplateEdit() {
-      const name = this.templateEditName.trim();
-      if (!name) { this.showToast('模板名称不能为空', 'error'); return; }
-      let result;
-      if (this.templateEditTarget) {
-        result = await this.updateTemplate(this.templateEditTarget.id, { name, tree: this.templateEditTree });
-      } else {
-        result = await this.createTemplate(name, this.templateEditTree);
-      }
-      if (result) {
-        this.showTemplateEditModal = false;
-      }
-    },
-
     promptClassifyBatch(bookmarkIds) {
       if (!this.isAIConfigured()) {
         this.showToast('请先在设置页配置 AI（Base URL、API Key、Model）', 'error');
-        return;
-      }
-      if (!this.activeTemplate) {
-        this.showToast('请先选择分类模板', 'error');
         return;
       }
       if (!bookmarkIds || bookmarkIds.length === 0) {
@@ -2482,7 +2063,6 @@ function bookmarkApp() {
         return;
       }
       this.classifyBatchIds = bookmarkIds;
-      this.classifyBatchTemplateId = null;
       this.classifyBatchSize = 20;
       this.showBatchSizeModal = true;
     },
@@ -2491,9 +2071,6 @@ function bookmarkApp() {
       this.showBatchSizeModal = false;
       try {
         const body = { bookmark_ids: bookmarkIds, batch_size: batchSize };
-        if (this.classifyBatchTemplateId) {
-          body.template_id = this.classifyBatchTemplateId;
-        }
         const res = await fetch('/api/ai/classify-batch', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -2508,7 +2085,6 @@ function bookmarkApp() {
           this.showToast(data?.error || '启动 AI 分类失败', 'error');
           return;
         }
-        this.classifyBatchTemplateId = null;
         this.organizePlan = { id: data.planId, job_id: data.jobId };
         this.organizePhase = 'assigning';
         this.organizePreviewGuardActive = false;
@@ -2518,8 +2094,6 @@ function bookmarkApp() {
         this.showToast(`AI 分类已启动 (${bookmarkIds.length} 个书签)`, 'info');
       } catch {
         this.showToast('启动 AI 分类失败', 'error');
-      } finally {
-        this.classifyBatchTemplateId = null;
       }
     },
 
@@ -2672,7 +2246,6 @@ function bookmarkApp() {
       return {
         scope,
         batch_size: this.classifyBatchSize || 20,
-        template_id: this.activeTemplate?.id || null,
       };
     },
 

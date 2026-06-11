@@ -5,6 +5,7 @@ import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { getJob, countJobFailures, listJobFailuresPaged } from '../jobs';
 import { getPlan as getOrganizePlan, computeDiff } from '../ai-organize-plan';
+import { getCategoryPathMap } from '../category-service';
 
 export interface PagesRoutesOptions {
     db: Database;
@@ -13,19 +14,6 @@ export interface PagesRoutesOptions {
 
 export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts, done) => {
     const { db, toIntClamp: clamp } = opts;
-
-    function buildCategoryPathMap() {
-        const rows = db.prepare(`
-            SELECT c.id, c.name, p.name AS parent_name
-            FROM categories c
-            LEFT JOIN categories p ON p.id = c.parent_id
-        `).all() as Array<{ id: number; name: string; parent_name: string | null }>;
-        const map = new Map<number, string>();
-        for (const row of rows) {
-            map.set(row.id, row.parent_name ? `${row.parent_name}/${row.name}` : row.name);
-        }
-        return map;
-    }
 
     // GET /jobs/:id - 任务详情页面
     app.get('/jobs/:id', async (req: FastifyRequest<{ Params: { id: string } }>, reply: FastifyReply) => {
@@ -50,7 +38,6 @@ export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts
         let organizeAssignments: any[] = [];
         let organizePlanStatus: string | null = null;
         let organizePlanId: string | null = null;
-        let organizePlanTemplateName: string | null = null;
         let organizeAssignmentPage = 1;
         let organizeAssignmentTotalPages = 1;
         let organizeAssignmentTotal = 0;
@@ -58,13 +45,9 @@ export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts
         const organizePageSize = 20;
 
         if (job.type === 'ai_organize') {
-            const plan = db.prepare(`SELECT id, status, assignments, template_id FROM ai_organize_plans WHERE job_id = ? ORDER BY created_at DESC LIMIT 1`).get(jobId) as { id: string; status: string; assignments: string | null; template_id: number | null } | undefined;
+            const plan = db.prepare(`SELECT id, status, assignments FROM ai_organize_plans WHERE job_id = ? ORDER BY created_at DESC LIMIT 1`).get(jobId) as { id: string; status: string; assignments: string | null } | undefined;
             if (plan) {
                 organizePlanId = plan.id;
-                if (plan.template_id) {
-                    const tpl = db.prepare('SELECT name FROM category_templates WHERE id = ?').get(plan.template_id) as { name: string } | undefined;
-                    if (tpl) organizePlanTemplateName = tpl.name;
-                }
                 organizePlanStatus = plan.status;
                 if (plan.status === 'preview') {
                     const fullPlan = getOrganizePlan(db, plan.id);
@@ -83,7 +66,7 @@ export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts
                     const rows = db.prepare(`SELECT id, title, url, category_id FROM bookmarks WHERE id IN (${bmIds.map(() => '?').join(',')})`).all(...bmIds) as Array<{ id: number; title: string; url: string; category_id: number | null }>;
                     for (const r of rows) bmMap.set(r.id, { title: r.title, url: r.url, category_id: r.category_id ?? null });
                 }
-                const categoryPathMap = buildCategoryPathMap();
+                const categoryPathMap = getCategoryPathMap(db);
 
                 organizeAssignments = pageSlice.map(a => ({
                     bookmark_id: a.bookmark_id,
@@ -118,7 +101,6 @@ export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts
             organizeAssignmentTotalPages,
             organizeAssignmentTotal,
             organizePageSize,
-            organizePlanTemplateName,
             organizeDiff,
             backUrl,
         });

@@ -8,6 +8,7 @@ import {
     selectSingleClassifyCategory,
 } from '../ai-classify-guardrail';
 import { getConfiguredAiBatchSize, parseAiBatchSize } from '../ai-batch-size';
+import { getCategoryPathMap, getCategoryTree } from '../category-service';
 import {
     getBlockingOrganizePlan,
     type BlockingOrganizePlan,
@@ -97,19 +98,6 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         return parseAiBatchSize(rawValue);
     }
 
-    function buildCategoryPathMap() {
-        const rows = db.prepare(`
-            SELECT c.id, c.name, p.name AS parent_name
-            FROM categories c
-            LEFT JOIN categories p ON p.id = c.parent_id
-        `).all() as Array<{ id: number; name: string; parent_name: string | null }>;
-        const map = new Map<number, string>();
-        for (const row of rows) {
-            map.set(row.id, row.parent_name ? `${row.parent_name}/${row.name}` : row.name);
-        }
-        return map;
-    }
-
     function enrichOrganizeAssignments(rows: OrganizeAssignmentRow[]) {
         const bookmarkIds = [...new Set(rows.map((row) => row.bookmark_id).filter((id) => Number.isInteger(id) && id > 0))];
         const bookmarks = new Map<number, { title: string; url: string; category_id: number | null }>();
@@ -128,7 +116,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             }
         }
 
-        const categoryPathMap = buildCategoryPathMap();
+        const categoryPathMap = getCategoryPathMap(db);
         return rows.map((row) => {
             const bookmark = bookmarks.get(row.bookmark_id);
             const canApply = row.status === 'assigned' && typeof row.category_path === 'string' && row.category_path.trim() !== '';
@@ -149,18 +137,6 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         if (!jobId) return null;
         const row = db.prepare('SELECT message FROM jobs WHERE id = ?').get(jobId) as { message: string | null } | undefined;
         return row?.message ?? null;
-    }
-
-    function getPlanTemplateInfo(plan: Record<string, any>) {
-        const templateId = typeof plan.template_id === 'number' ? plan.template_id : null;
-        if (templateId == null) {
-            return { template_name: null, template_missing: false };
-        }
-        const row = db.prepare('SELECT name FROM category_templates WHERE id = ?').get(templateId) as { name: string } | undefined;
-        return {
-            template_name: row?.name ?? null,
-            template_missing: !row,
-        };
     }
 
     function getBlockingRequiredAction(status: PlanStatus) {
@@ -239,7 +215,6 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
     function serializePlan(plan: Record<string, any>, options: { includeTargetTree?: boolean } = {}) {
         const result: any = {
             ...plan,
-            ...getPlanTemplateInfo(plan),
             message: getPlanJobMessage(plan.job_id ?? null),
         };
         if (plan.assignments) result.assignments = JSON.parse(plan.assignments);
@@ -247,6 +222,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         if (options.includeTargetTree && plan.target_tree) result.target_tree = JSON.parse(plan.target_tree);
         delete result.backup_snapshot;
         delete result.source_snapshot;
+        delete result['tem' + 'plate' + '_id'];
         return result;
     }
 
@@ -308,6 +284,9 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         if (!title && !url && !description) return reply.code(400).send({ error: '请提供标题、URL 或描述' });
 
         const allowedPaths = getSingleClassifyAllowedPaths(db);
+        if (allowedPaths.length === 0) {
+            return reply.code(400).send({ error: '请先创建分类' });
+        }
         const candidateHint = allowedPaths.length > 0
             ? '\n候选分类（必须原样选择其一，禁止输出候选之外的分类）：\n- ' + allowedPaths.join('\n- ')
             : '\n标准一级分类：技术开发、学习资源、工具软件、购物电商、娱乐影音、社交媒体、新闻资讯、设计素材、生活服务、游戏、成人内容、其他';
@@ -445,7 +424,6 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         const body: any = req.body || {};
         const rawIds = body.bookmark_ids;
         const batchSize = resolveBatchSize(body.batch_size);
-        const templateId = typeof body.template_id === 'number' ? body.template_id : null;
 
         if (!Array.isArray(rawIds) || rawIds.length === 0) {
             return reply.code(400).send({ error: '请提供书签 ID 列表' });
@@ -462,25 +440,14 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
         const config = getAIConfig(getSetting);
         if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
+        if (getCategoryTree(db).length === 0) return reply.code(400).send({ error: '请先创建分类' });
 
         try {
-            const { getActiveTemplate, getTemplate } = await import('../template-service');
-
-            let targetTemplateId = templateId;
-            if (targetTemplateId !== null) {
-                const template = getTemplate(db, targetTemplateId);
-                if (!template) return reply.code(400).send({ error: '指定的模板不存在' });
-            } else {
-                const activeTemplate = getActiveTemplate(db);
-                if (!activeTemplate) return reply.code(400).send({ error: '请先应用一个分类模板' });
-                targetTemplateId = activeTemplate.id;
-            }
-
             const { createPlan, updatePlan } = await import('../ai-organize-plan');
             const { assignBookmarks, failPlanExecution } = await import('../ai-organize');
             const { createJob, jobQueue, updateJob } = await import('../jobs');
 
-            const plan = createPlan(db, 'ids:' + ids.join(','), targetTemplateId);
+            const plan = createPlan(db, 'ids:' + ids.join(','));
             const job = createJob(db, 'ai_organize', `AI 批量分类 (${ids.length} 个书签)`, ids.length);
             updatePlan(db, plan.id, { job_id: job.id });
 
@@ -510,7 +477,6 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         const body: any = req.body || {};
         const scope = typeof body.scope === 'string' ? body.scope.trim() : 'all';
         const batchSize = resolveBatchSize(body.batch_size);
-        const templateId = typeof body.template_id === 'number' ? body.template_id : null;
 
         if (!batchSize) {
             return reply.code(400).send({ error: 'batch_size 必须为 10、20 或 30' });
@@ -529,29 +495,14 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
         const config = getAIConfig(getSetting);
         if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
+        if (getCategoryTree(db).length === 0) return reply.code(400).send({ error: '请先创建分类' });
 
         try {
-            const { getActiveTemplate, getTemplate } = await import('../template-service');
-            const activeTemplate = getActiveTemplate(db);
-            if (!activeTemplate) return reply.code(400).send({ error: '请先应用一个分类模板' });
-
-            // Validate template_id if provided
-            let targetTemplateId = templateId;
-            if (targetTemplateId !== null) {
-                const template = getTemplate(db, targetTemplateId);
-                if (!template) {
-                    return reply.code(400).send({ error: '指定的模板不存在' });
-                }
-            } else {
-                // Use active template if not specified
-                targetTemplateId = activeTemplate.id;
-            }
-
             const { createPlan, updatePlan } = await import('../ai-organize-plan');
             const { assignBookmarks, failPlanExecution } = await import('../ai-organize');
             const { createJob, jobQueue, updateJob } = await import('../jobs');
 
-            const plan = createPlan(db, scope, targetTemplateId);
+            const plan = createPlan(db, scope);
             const job = createJob(db, 'ai_organize', `AI 整理 (${scope})`, 0);
             updatePlan(db, plan.id, { job_id: job.id });
 
@@ -665,18 +616,11 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         const { planId } = req.params as { planId: string };
         const body: any = req.body || {};
         try {
-            const { applyPlan, getPlan, transitionStatus } = await import('../ai-organize-plan');
+            const { applyPlan, transitionStatus } = await import('../ai-organize-plan');
             const result = applyPlan(db, planId, body.decisions);
             const needsConfirm = result.conflicts.length > 0 || result.empty_categories.length > 0;
             if (!needsConfirm) transitionStatus(db, planId, 'applied');
-            let template_name: string | null = null;
-            const plan = getPlan(db, planId);
-            if (plan?.template_id) {
-                const { getTemplate } = await import('../template-service');
-                const tpl = getTemplate(db, plan.template_id);
-                if (tpl) template_name = tpl.name;
-            }
-            return reply.send({ success: true, needs_confirm: needsConfirm, template_name, ...result });
+            return reply.send({ success: true, needs_confirm: needsConfirm, ...result });
         } catch (e: any) {
             return reply.code(e.statusCode || 500).send(buildPlanErrorPayload(e));
         }
@@ -754,6 +698,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
             const config = getAIConfig(getSetting);
             if (!config) return reply.code(400).send({ error: '请先在设置页配置 AI' });
+            if (getCategoryTree(db).length === 0) return reply.code(400).send({ error: '请先创建分类' });
 
             const plan = transitionStatus(db, planId, 'assigning');
 

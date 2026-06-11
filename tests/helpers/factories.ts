@@ -71,7 +71,6 @@ export interface SeedPlanOptions {
     batches_total?: number;
     failed_batch_ids?: unknown;
     needs_review_count?: number;
-    template_id?: number | null;
     created_at?: string;
     applied_at?: string | null;
 }
@@ -216,8 +215,8 @@ export function seedPlan(db: Db, options: SeedPlanOptions = {}): PlanRow {
         `INSERT INTO ai_organize_plans (
             id, job_id, status, scope, target_tree, assignments, diff_summary, backup_snapshot, source_snapshot,
             phase, batches_done, batches_total, failed_batch_ids, needs_review_count,
-            template_id, created_at, applied_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            created_at, applied_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     ).run(
         id,
         options.job_id ?? null,
@@ -233,7 +232,6 @@ export function seedPlan(db: Db, options: SeedPlanOptions = {}): PlanRow {
         options.batches_total ?? 0,
         serializeJson(options.failed_batch_ids),
         options.needs_review_count ?? 0,
-        options.template_id ?? null,
         createdAt,
         appliedAt,
     );

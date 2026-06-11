@@ -92,7 +92,7 @@ describe('integration: page assets', () => {
         expect(jobPage).not.toMatch(bodylessJsonPost);
     });
 
-    it('renders template modal shells with stable selectors and explicit viewport height bounds', async () => {
+    it('does not render removed category template management UI', async () => {
         const session = await ctx.login();
         const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
 
@@ -103,23 +103,10 @@ describe('integration: page assets', () => {
         });
 
         expect(response.statusCode).toBe(200);
-        expect(response.body).toContain('data-testid="template-select-modal"');
-        expect(response.body).toContain('data-testid="template-select-panel"');
-        expect(response.body).toContain('data-testid="template-tab-custom"');
-        expect(response.body).toContain('data-testid="template-tab-preset"');
-        expect(response.body).toContain('data-testid="preset-template-card"');
-        expect(response.body).toContain('data-testid="copy-preset-template-button"');
-        expect(response.body).toContain('data-testid="use-preset-template-button"');
-        expect(response.body).toContain('data-testid="template-edit-modal"');
-        expect(response.body).toContain('data-testid="template-edit-panel"');
-        expect(response.body).toContain('data-testid="template-edit-body"');
-        expect(response.body).toContain('data-testid="template-edit-footer"');
-        expect(response.body).toContain('data-testid="template-edit-save"');
-        expect(response.body).toContain('data-testid="template-edit-cancel"');
-        expect(response.body).toContain('data-testid="template-edit-name-input"');
-        expect(response.body).toContain('style="max-height: calc(100vh - 2rem);"');
-        expect(response.body).not.toContain('max-h-[80vh]');
-        expect(response.body).not.toContain('max-h-[85vh]');
+        expect(response.body).not.toContain('分类模板');
+        expect(response.body).not.toContain('data-testid="template-select-modal"');
+        expect(response.body).not.toContain('data-testid="template-edit-modal"');
+        expect(response.body).not.toContain('data-testid="organize-template-info"');
     });
 
     it('renders the ai organize modal shell with stable selectors for browser regression', async () => {
@@ -148,7 +135,7 @@ describe('integration: page assets', () => {
         expect(response.body).toContain("organizePhase === 'error' ? 'organize-error-cancel' : 'organize-failed-cancel'");
         expect(response.body).toContain("organizePhase === 'error' ? 'organize-error-retry' : 'organize-failed-retry'");
         expect(response.body).toContain("organizePhase === 'applied' ? 'organize-phase-applied' : 'organize-phase-preview'");
-        expect(response.body).toContain('data-testid="organize-template-info"');
+        expect(response.body).toContain('AI 将基于当前分类列表');
         expect(response.body).toContain('data-testid="organize-resolution-guard"');
         expect(response.body).toContain('data-testid="organize-preview-guard"');
         expect(response.body).toContain('x-text="getOrganizePreviewGuardTitle()"');

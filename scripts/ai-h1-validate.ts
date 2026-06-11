@@ -16,7 +16,9 @@ import {
     type ValidationProviderName,
     type ValidationProviderSource,
 } from '../src/provider-validation-config';
-import { applyTemplate, createTemplate, type CategoryNode } from '../src/template-service';
+import { getOrCreateCategoryByPath } from '../src/category-service';
+
+interface CategoryNode { name: string; children: { name: string }[] }
 
 interface SampleBookmark {
     id: string;
@@ -32,6 +34,15 @@ interface ValidationDataset {
     };
     singleClassify: string[];
     bookmarks: SampleBookmark[];
+}
+
+function seedCategoryTree(db: Db, tree: CategoryNode[]): void {
+    for (const node of tree) {
+        getOrCreateCategoryByPath(db, node.name);
+        for (const child of node.children ?? []) {
+            getOrCreateCategoryByPath(db, `${node.name}/${child.name}`);
+        }
+    }
 }
 
 interface ClassifiedSampleResult {
@@ -375,8 +386,7 @@ async function main() {
         })) {
             upsertSetting(db, key, value);
         }
-        const template = createTemplate(db, dataset.template.name, dataset.template.tree);
-        applyTemplate(db, template.id);
+        seedCategoryTree(db, dataset.template.tree);
 
         const bookmarkIds = insertBookmarks(db, dataset.bookmarks);
         const sampleByBookmarkId = new Map<number, SampleBookmark>();
@@ -449,7 +459,6 @@ async function main() {
                 headers,
                 payload: {
                     bookmark_ids: dataset.bookmarks.map((bookmark) => bookmarkIds.get(bookmark.id)),
-                    template_id: template.id,
                 },
             });
             report.steps.classifyBatch.statusCode = classifyBatchResponse.statusCode;

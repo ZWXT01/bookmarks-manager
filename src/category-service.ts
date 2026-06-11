@@ -45,6 +45,29 @@ export interface FlatCategory {
     level: number; // 0 = 一级, 1 = 二级
 }
 
+function normalizeName(name: string): string {
+    return name.trim();
+}
+
+function childDisplayName(name: string, parentName?: string | null): string {
+    const trimmed = normalizeName(name);
+    if (parentName && trimmed.startsWith(parentName + '/')) {
+        return trimmed.slice(parentName.length + 1).trim();
+    }
+    return trimmed.includes('/') ? trimmed.split('/').pop()!.trim() : trimmed;
+}
+
+function uniqueNumbers(values: number[]): number[] {
+    const seen = new Set<number>();
+    const result: number[] = [];
+    for (const value of values) {
+        if (!Number.isInteger(value) || value <= 0 || seen.has(value)) continue;
+        seen.add(value);
+        result.push(value);
+    }
+    return result;
+}
+
 // ==================== 查询函数 ====================
 
 /**
@@ -93,16 +116,15 @@ export function getCategoryTree(db: Db): CategoryTreeNode[] {
     for (const cat of secondLevel) {
         const parent = categoryMap.get(cat.parent_id!);
         if (parent) {
-            // 子分类的 name 已经是完整路径（如 "技术/编程"），直接使用
-            // 同时提供简短名称用于 UI 显示
-            const displayName = cat.name.includes('/') ? cat.name.split('/').pop()! : cat.name;
-            const fullPath = cat.name.includes('/') ? cat.name : `${parent.name}/${cat.name}`;
+            const displayName = childDisplayName(cat.name, parent.name);
+            const fullPath = `${parent.name}/${displayName}`;
             parent.children.push({
                 ...cat,
                 children: [], // 强制 2 级，不会有更深的子分类
                 fullPath,
                 displayName,         // 用于 UI 显示的简短名称
             });
+            parent.count += cat.count;
         } else {
             // 孤立的二级分类（parent_id 对应的一级不存在），作为一级处理
             topLevel.push({
@@ -152,7 +174,7 @@ export function getFlatCategories(db: Db): FlatCategory[] {
         for (const child of node.children) {
             result.push({
                 id: child.id,
-                name: child.name,
+                name: child.fullPath,
                 fullPath: child.fullPath,
                 parent_id: child.parent_id,
                 icon: child.icon,
@@ -212,7 +234,7 @@ export function getCategoryByPath(db: Db, path: string): CategoryRow | null {
     return db.prepare(`
         SELECT id, name, parent_id, icon, color, sort_order, created_at
         FROM categories WHERE parent_id = ? AND (name = ? OR name = ?)
-    `).get(topCat.id, fullSubName, subName) as CategoryRow | undefined ?? null;
+    `).get(topCat.id, subName, fullSubName) as CategoryRow | undefined ?? null;
 }
 
 /**
@@ -232,11 +254,14 @@ export function getCategoryByName(db: Db, name: string): CategoryRow | null {
 export function getTopLevelCategories(db: Db): CategoryWithCount[] {
     return db.prepare(`
     SELECT c.id, c.name, c.parent_id, c.icon, c.color, c.sort_order, c.created_at,
-           COUNT(b.id) as count
+           (
+               SELECT COUNT(1)
+               FROM bookmarks b
+               WHERE b.category_id = c.id
+                  OR b.category_id IN (SELECT child.id FROM categories child WHERE child.parent_id = c.id)
+           ) as count
     FROM categories c
-    LEFT JOIN bookmarks b ON b.category_id = c.id
     WHERE c.parent_id IS NULL
-    GROUP BY c.id
     ORDER BY c.sort_order, c.name
   `).all() as CategoryWithCount[];
 }
@@ -272,12 +297,50 @@ export function getCategoryFullPath(db: Db, categoryId: number): string | null {
         return cat.name;
     }
 
-    if (cat.name.startsWith(parent.name + '/')) {
-        return cat.name;
-    }
-
-    const simple = cat.name.includes('/') ? cat.name.split('/').pop()! : cat.name;
+    const simple = childDisplayName(cat.name, parent.name);
     return `${parent.name}/${simple}`;
+}
+
+/**
+ * 获取分类 ID 到完整路径的映射。
+ */
+export function getCategoryPathMap(db: Db): Map<number, string> {
+    const map = new Map<number, string>();
+    for (const node of getCategoryTree(db)) {
+        map.set(node.id, node.fullPath);
+        for (const child of node.children) {
+            map.set(child.id, child.fullPath);
+        }
+    }
+    return map;
+}
+
+/**
+ * 获取一个分类筛选范围内应包含的分类 ID。
+ *
+ * 规则：
+ * - 一级分类：包含自身和全部二级子分类。
+ * - 二级分类：只包含自身。
+ * - 不存在：返回空数组。
+ */
+export function getCategoryIdsForScope(db: Db, categoryId: number): number[] {
+    const cat = getCategoryById(db, categoryId);
+    if (!cat) return [];
+    if (cat.parent_id !== null) return [cat.id];
+    const children = db.prepare('SELECT id FROM categories WHERE parent_id = ? ORDER BY sort_order, name')
+        .all(cat.id) as Array<{ id: number }>;
+    return uniqueNumbers([cat.id, ...children.map(child => child.id)]);
+}
+
+/**
+ * 批量展开分类筛选范围，去重并保序。
+ */
+export function expandCategoryIdsForScope(db: Db, categoryIds: number[]): number[] {
+    const result: number[] = [];
+    for (const id of categoryIds) {
+        result.push(...getCategoryIdsForScope(db, id));
+    }
+    return uniqueNumbers(result);
 }
 
 // ==================== 创建/修改函数 ====================
@@ -306,7 +369,7 @@ export function createTopCategory(db: Db, name: string, options?: {
 }
 
 /**
- * 创建一级分类（带模板同步）
+ * 创建一级分类（事务包装）
  */
 export function createTopCategoryWithSync(db: Db, name: string, options?: {
     icon?: string;
@@ -320,7 +383,7 @@ export function createTopCategoryWithSync(db: Db, name: string, options?: {
 }
 
 /**
- * 创建二级分类（带模板同步）
+ * 创建二级分类（事务包装）
  */
 export function createSubCategoryWithSync(db: Db, name: string, parentId: number, options?: {
     icon?: string;
@@ -364,10 +427,9 @@ export function createSubCategory(db: Db, name: string, parentId: number, option
     SELECT id FROM categories
     WHERE parent_id = ? AND (name = ? OR name = ?)
     LIMIT 1
-  `).get(parentId, fullName, simpleName) as { id: number } | undefined;
+  `).get(parentId, simpleName, fullName) as { id: number } | undefined;
     if (existing) {
-        // 规范化旧格式（simpleName -> fullName）
-        db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(fullName, existing.id);
+        db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(simpleName, existing.id);
         return existing.id;
     }
 
@@ -375,7 +437,7 @@ export function createSubCategory(db: Db, name: string, parentId: number, option
     const result = db.prepare(`
     INSERT INTO categories (name, parent_id, icon, color, sort_order, created_at)
     VALUES (?, ?, ?, ?, 0, ?)
-  `).run(fullName, parentId, options?.icon ?? null, options?.color ?? null, now);
+  `).run(simpleName, parentId, options?.icon ?? null, options?.color ?? null, now);
     return Number(result.lastInsertRowid);
 }
 
@@ -400,7 +462,7 @@ export function getOrCreateCategoryByPath(db: Db, path: string): number {
     const topName = parts[0];
 
     // 查找或创建一级分类
-    let topCat = getCategoryByName(db, topName);
+    let topCat = getCategoryByPath(db, topName);
     if (!topCat) {
         const topId = createTopCategory(db, topName);
         topCat = getCategoryById(db, topId);
@@ -424,10 +486,10 @@ export function getOrCreateCategoryByPath(db: Db, path: string): number {
       SELECT id, name, parent_id FROM categories
       WHERE parent_id = ? AND (name = ? OR name = ?)
       LIMIT 1
-    `).get(topCat.id, fullSubName, subName) as CategoryRow | undefined;
+    `).get(topCat.id, subName, fullSubName) as CategoryRow | undefined;
     if (existingSub) {
-        if (existingSub.name !== fullSubName) {
-            db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(fullSubName, existingSub.id);
+        if (existingSub.name !== subName) {
+            db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(subName, existingSub.id);
         }
         return existingSub.id;
     }
@@ -435,9 +497,7 @@ export function getOrCreateCategoryByPath(db: Db, path: string): number {
     // 兜底：按全路径查找并修正 parent_id
     const subCat = getCategoryByName(db, fullSubName);
     if (subCat) {
-        if (subCat.parent_id !== topCat.id) {
-            db.prepare('UPDATE categories SET parent_id = ? WHERE id = ?').run(topCat.id, subCat.id);
-        }
+        db.prepare('UPDATE categories SET parent_id = ?, name = ? WHERE id = ?').run(topCat.id, subName, subCat.id);
         return subCat.id;
     }
 
@@ -445,7 +505,7 @@ export function getOrCreateCategoryByPath(db: Db, path: string): number {
 }
 
 /**
- * 根据路径创建或获取分类（带模板同步）
+ * 根据路径创建或获取分类（事务包装）
  */
 export function getOrCreateCategoryByPathWithSync(db: Db, path: string, syncFn?: (db: Db) => void): number {
     return db.transaction(() => {
@@ -456,7 +516,7 @@ export function getOrCreateCategoryByPathWithSync(db: Db, path: string, syncFn?:
 }
 
 /**
- * 重命名分类（带模板同步）
+ * 重命名分类（事务包装）
  */
 export function renameCategoryWithSync(db: Db, categoryId: number, newName: string, syncFn?: (db: Db) => void): void {
     db.transaction(() => {
@@ -474,30 +534,17 @@ export function renameCategory(db: Db, categoryId: number, newName: string): voi
         throw new Error('分类不存在');
     }
 
-    const trimmedName = newName.trim();
+    const trimmedName = childDisplayName(newName);
+    if (!trimmedName) {
+        throw new Error('分类名称不能为空');
+    }
 
     if (cat.parent_id === null) {
-        // 一级分类：直接更新名称，并更新所有子分类的名称前缀
-        const oldName = cat.name;
+        // 一级分类：只更新自身名称。二级分类 name 始终保存短名，完整路径在读取时拼接。
         db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(trimmedName, categoryId);
-
-        // 更新子分类的名称前缀（旧格式兼容）
-        db.prepare(`
-      UPDATE categories 
-      SET name = ? || substr(name, ?)
-      WHERE parent_id = ? AND name LIKE ?
-    `).run(trimmedName, oldName.length + 1, categoryId, oldName + '/%');
     } else {
-        // 二级分类：更新名称（需要包含父分类前缀）
-        const parent = getCategoryById(db, cat.parent_id);
-        if (parent) {
-            db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(
-                `${parent.name}/${trimmedName}`,
-                categoryId
-            );
-        } else {
-            db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(trimmedName, categoryId);
-        }
+        // 二级分类：只保存短名。
+        db.prepare('UPDATE categories SET name = ? WHERE id = ?').run(trimmedName, categoryId);
     }
 }
 
@@ -519,7 +566,7 @@ function reorderTopLevelCategories(db: Db): void {
 }
 
 /**
- * 移动分类（带模板同步）
+ * 移动分类（事务包装）
  */
 export function moveCategoryWithSync(db: Db, categoryId: number, newParentId: number | null, syncFn?: (db: Db) => void): void {
     db.transaction(() => {
@@ -579,14 +626,11 @@ export function moveCategory(db: Db, categoryId: number, newParentId: number | n
             db.prepare('UPDATE categories SET parent_id = ?, sort_order = ?, name = ? WHERE id = ?')
                 .run(null, nextSortOrder, simpleName, categoryId);
         } else {
-            // 更新名称：添加父分类前缀
-            const newParent = getCategoryById(db, newParentId)!;
             const nameParts = cat.name.split('/');
             const simpleName = nameParts[nameParts.length - 1];
-            const newName = `${newParent.name}/${simpleName}`;
 
             db.prepare('UPDATE categories SET parent_id = ?, name = ? WHERE id = ?')
-                .run(newParentId, newName, categoryId);
+                .run(newParentId, simpleName, categoryId);
 
             // 如果原来是一级分类，降级为二级分类后需要压缩剩余一级分类的 sort_order
             if (cat.parent_id === null) {
@@ -599,7 +643,7 @@ export function moveCategory(db: Db, categoryId: number, newParentId: number | n
 }
 
 /**
- * 删除分类（带模板同步）
+ * 删除分类（事务包装）
  */
 export function deleteCategoryWithSync(db: Db, categoryId: number, syncFn?: (db: Db) => void): { movedBookmarks: number } {
     return db.transaction(() => {
@@ -654,7 +698,7 @@ export function deleteCategory(db: Db, categoryId: number): { movedBookmarks: nu
 }
 
 /**
- * 批量删除分类（带模板同步）
+ * 批量删除分类（事务包装）
  */
 export function deleteCategoriesWithSync(db: Db, categoryIds: number[], syncFn?: (db: Db) => void): { movedBookmarks: number } {
     return db.transaction(() => {

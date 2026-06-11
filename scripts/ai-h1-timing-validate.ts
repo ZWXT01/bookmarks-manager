@@ -15,7 +15,9 @@ import {
     type ValidationProviderName,
     type ValidationProviderSource,
 } from '../src/provider-validation-config';
-import { applyTemplate, createTemplate, type CategoryNode } from '../src/template-service';
+import { getOrCreateCategoryByPath } from '../src/category-service';
+
+interface CategoryNode { name: string; children: { name: string }[] }
 
 interface SampleBookmark {
     id: string;
@@ -31,6 +33,15 @@ interface ValidationDataset {
     };
     singleClassify: string[];
     bookmarks: SampleBookmark[];
+}
+
+function seedCategoryTree(db: Db, tree: CategoryNode[]): void {
+    for (const node of tree) {
+        getOrCreateCategoryByPath(db, node.name);
+        for (const child of node.children ?? []) {
+            getOrCreateCategoryByPath(db, `${node.name}/${child.name}`);
+        }
+    }
 }
 
 interface RouteAttemptResult {
@@ -764,8 +775,7 @@ async function runProviderValidation(args: {
             upsertSetting(db, key, value);
         }
 
-        const template = createTemplate(db, `${args.dataset.template.name} (${args.provider})`, args.dataset.template.tree);
-        applyTemplate(db, template.id);
+        seedCategoryTree(db, args.dataset.template.tree);
         const bookmarkIds = insertBookmarks(db, args.dataset.bookmarks);
         const sampleByBookmarkId = new Map<number, SampleBookmark>();
         for (const sample of args.dataset.bookmarks) {
@@ -856,7 +866,6 @@ async function runProviderValidation(args: {
                 headers,
                 payload: {
                     bookmark_ids: args.dataset.bookmarks.map((sample) => bookmarkIds.get(sample.id)),
-                    template_id: template.id,
                 },
             });
             const batchBody = batch.body as Record<string, unknown>;
