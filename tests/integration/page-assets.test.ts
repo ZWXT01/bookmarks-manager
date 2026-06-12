@@ -70,6 +70,9 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('基础连通正常，聊天补全未通过');
         expect(response.body).toContain('https://grok2api.1018666.xyz/v1');
         expect(response.body).not.toContain('grop2api.1018666.xyz');
+        expect(response.body).toContain('data-testid="settings-toast"');
+        expect(response.body).toContain('style="left: 50%; transform: translateX(-50%); max-width: min(92vw, 32rem);"');
+        expect(response.body).not.toContain('id="settings-toast" class="fixed top-4 right-4');
     });
 
     it('serves the generated tailwind asset as a static file', async () => {
@@ -161,6 +164,12 @@ describe('integration: page assets', () => {
         });
 
         expect(response.statusCode).toBe(200);
+        expect(response.body).toContain("container.id = 'toast-container';");
+        expect(response.body).toContain("container.setAttribute('data-testid', 'toast-container');");
+        expect(response.body).toContain("toast.setAttribute('data-testid', 'app-toast');");
+        expect(response.body).toContain("container.style.left = '50%';");
+        expect(response.body).toContain("container.style.transform = 'translateX(-50%)';");
+        expect(response.body).not.toContain('fixed top-4 right-4 z-50 rounded-lg');
         expect(response.body).toContain('organizePreviewGuardActive: false,');
         expect(response.body).toContain('organizeQueuedStart: null,');
         expect(response.body).toContain('organizeResolutionRequired: false,');
