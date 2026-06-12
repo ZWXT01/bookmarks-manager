@@ -271,12 +271,16 @@ describe('integration: page assets', () => {
         expect(response.body).not.toContain('data-testid="category-batch-search"');
         expect(response.body).not.toContain('data-testid="category-batch-list"');
         expect(response.body).not.toContain('data-testid="category-batch-panel"');
-        expect(response.body).not.toContain('data-testid="open-category-manager"');
-        expect(response.body).not.toContain('data-testid="category-manager-modal"');
-        expect(response.body).not.toContain('data-testid="category-manager-search"');
-        expect(response.body).not.toContain('data-testid="category-manager-add-root"');
-        expect(response.body).not.toContain('data-testid="category-bulk-actions-shell"');
-        expect(response.body).not.toContain('data-testid="category-bulk-actions"');
+        expect(response.body).toContain('data-testid="open-category-manager"');
+        expect(response.body).toContain('data-testid="category-manager-modal"');
+        expect(response.body).toContain('data-testid="category-manager-search"');
+        expect(response.body).toContain('data-testid="category-manager-add-root"');
+        expect(response.body).toContain('data-testid="close-category-manager"');
+        expect(response.body).toContain('data-testid="category-drag-card"');
+        expect(response.body).toContain('data-testid="rename-category-button"');
+        expect(response.body).toContain('data-testid="delete-category-button"');
+        expect(response.body).toContain('data-testid="category-bulk-actions-shell"');
+        expect(response.body).toContain('data-testid="category-bulk-actions"');
         expect(response.body).toContain('data-testid="add-bookmark-modal"');
         expect(response.body).toContain('data-testid="add-bookmark-url-input"');
         expect(response.body).toContain('data-testid="add-bookmark-title-input"');
@@ -318,6 +322,20 @@ describe('integration: page assets', () => {
         expect(response.body).not.toContain('categoryColor');
         expect(response.body).not.toContain('createCategoryColor');
         expect(response.body).not.toContain('color in [');
+    });
+
+    it('serves category bulk action centering styles without transform-based positioning', async () => {
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: '/public/app.css',
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('.category-bulk-actions-shell');
+        expect(response.body).toContain('justify-content: center');
+        expect(response.body).toContain('pointer-events: none');
+        expect(response.body).toContain('.category-bulk-actions');
+        expect(response.body).toContain('pointer-events: auto');
     });
 
     it('renders backup modal shells and job detail selectors for browser regression', async () => {
