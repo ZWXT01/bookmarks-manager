@@ -235,7 +235,15 @@ describe('integration: page assets', () => {
         });
 
         expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('data-testid="quick-actions-card"');
         expect(response.body).toContain('data-testid="open-add-bookmark"');
+        expect(response.body).toContain('data-testid="open-check-modal"');
+        expect(response.body).toContain('data-testid="open-ai-organize"');
+        expect(response.body).toContain('data-testid="open-export-modal"');
+        expect(response.body).toContain('data-testid="open-backup-modal"');
+        expect(response.body).not.toContain('data-testid="open-backup-modal" class="btn-secondary btn-sm hidden md:inline-flex');
+        expect(response.body).not.toContain('@click="openCategoryManager()" class="flex flex-col items-center justify-center p-3 rounded-xl');
+        expect(response.body).not.toContain('@click="openCreateCategoryModal(null)" class="flex flex-col items-center justify-center p-3 rounded-xl');
         expect(response.body).toContain('data-testid="add-bookmark-modal"');
         expect(response.body).toContain('data-testid="add-bookmark-url-input"');
         expect(response.body).toContain('data-testid="add-bookmark-title-input"');
