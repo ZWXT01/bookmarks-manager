@@ -262,6 +262,11 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="category-nav-uncategorized-tab"');
         expect(response.body).toContain('data-testid="category-manager-search"');
         expect(response.body).toContain('data-testid="category-manager-add-root"');
+        expect(response.body).toContain('data-testid="rename-category-button"');
+        expect(response.body).toContain('data-testid="rename-category-modal"');
+        expect(response.body).toContain('data-testid="rename-category-name-input"');
+        expect(response.body).toContain('data-testid="rename-category-cancel"');
+        expect(response.body).toContain('data-testid="rename-category-confirm"');
         expect(response.body).toContain('data-testid="category-bulk-actions-shell"');
         expect(response.body).toContain('data-testid="category-bulk-actions"');
         expect(response.body).toContain('category-bulk-actions-shell');

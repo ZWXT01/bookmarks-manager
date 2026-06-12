@@ -728,6 +728,35 @@
             </div>
         </div>
 
+        <!-- Rename Category Modal -->
+        <div x-cloak x-show="showRenameCategoryModal" data-testid="rename-category-modal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+            @click.self="closeRenameCategoryModal()"
+            @keydown.escape.window="if(showRenameCategoryModal) closeRenameCategoryModal()">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl">
+                <h3 class="text-lg font-semibold mb-3"
+                    x-text="renameCategoryTarget && renameCategoryTarget.parent_id ? '编辑子分类名称' : '编辑分类名称'"></h3>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs text-slate-600">名称</label>
+                        <input type="text" x-model="renameCategoryName" placeholder="分类名称"
+                            data-testid="rename-category-name-input"
+                            class="w-full rounded border px-3 py-2 text-sm mt-1"
+                            @keyup.enter="confirmRenameCategory()">
+                    </div>
+                    <p class="text-xs text-slate-500">只修改分类名称，不改变层级或书签归属。</p>
+                </div>
+                <div class="flex justify-end gap-2 mt-4">
+                    <button @click="closeRenameCategoryModal()" data-testid="rename-category-cancel"
+                        class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                    <button @click="confirmRenameCategory()"
+                        :disabled="!renameCategoryName.trim()"
+                        data-testid="rename-category-confirm"
+                        class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800 disabled:opacity-40 disabled:cursor-not-allowed">保存</button>
+                </div>
+            </div>
+        </div>
+
         <!-- Category Style Modal -->
         <div x-cloak x-show="showCategoryStyleModal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
@@ -1531,6 +1560,11 @@
                                 </div>
                                 <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                                     <button @click="openCreateCategoryModal(cat.id)" class="p-1.5 text-slate-400 hover:text-blue-500" title="添加子分类">➕</button>
+                                    <button @click="openRenameCategoryModal(cat)"
+                                            data-testid="rename-category-button"
+                                            :data-category-id="cat.id"
+                                            class="p-1.5 text-slate-400 hover:text-blue-500"
+                                            title="编辑名称">✏️</button>
                                     <button @click="openCategoryStyleModal(cat)" class="p-1.5 text-slate-400 hover:text-blue-500" title="设置样式">🎨</button>
                                     <button @click="deleteCategory(cat.id)"
                                             data-testid="delete-category-button"
@@ -1556,6 +1590,11 @@
                                                 <span class="text-[10px] text-slate-400" x-text="'(' + child.count + ')'"></span>
                                             </div>
                                             <div class="flex items-center gap-1 opacity-0 group-hover/child:opacity-100 transition-opacity">
+                                                <button @click="openRenameCategoryModal(child)"
+                                                        data-testid="rename-category-button"
+                                                        :data-category-id="child.id"
+                                                        class="p-1 text-slate-400 hover:text-blue-500"
+                                                        title="编辑名称">✏️</button>
                                                 <button @click="openCategoryStyleModal(child)" class="p-1 text-slate-400 hover:text-blue-500" title="设置样式">🎨</button>
                                                 <button @click="deleteCategory(child.id)"
                                                         data-testid="delete-category-button"

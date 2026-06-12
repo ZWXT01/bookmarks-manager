@@ -150,6 +150,7 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
     }
 
     try {
+      validateStringLength(newName, 200, '分类名称');
       renameCategoryWithSync(db, categoryId, newName);
       const cat = getCategoryById(db, categoryId);
       const fullPath = getCategoryFullPath(db, categoryId);
@@ -162,6 +163,9 @@ export const categoryRoutes: FastifyPluginCallback<CategoryRoutesOptions> = (app
       });
     } catch (e: any) {
       const message = typeof e?.message === 'string' ? e.message : '重命名失败';
+      if (message.includes('UNIQUE')) {
+        return reply.code(409).send({ error: '分类已存在' });
+      }
       req.log.error({ err: e }, 'rename category failed');
       return reply.code(400).send({ error: message });
     }

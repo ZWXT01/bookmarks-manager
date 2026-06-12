@@ -53,6 +53,10 @@ function bookmarkApp() {
     createCategoryName: '',
     createCategoryIcon: '',
 
+    showRenameCategoryModal: false,
+    renameCategoryTarget: null,
+    renameCategoryName: '',
+
     // 视图模式
     viewMode: localStorage.getItem('viewMode') || 'table', // 'table' or 'card'
 
@@ -1523,6 +1527,58 @@ function bookmarkApp() {
         }
       } catch {
         this.showToast('创建分类失败', 'error');
+      }
+    },
+
+    getCategoryEditableName(category) {
+      if (!category) return '';
+      return String(category.displayName || category.name || '').trim();
+    },
+
+    openRenameCategoryModal(category) {
+      if (!category) return;
+      this.closeMobileSidebar();
+      this.renameCategoryTarget = category;
+      this.renameCategoryName = this.getCategoryEditableName(category);
+      this.showRenameCategoryModal = true;
+      this.$nextTick(() => {
+        const input = document.querySelector('[data-testid="rename-category-name-input"]');
+        if (input) {
+          input.focus();
+          input.select();
+        }
+      });
+    },
+
+    closeRenameCategoryModal() {
+      this.showRenameCategoryModal = false;
+      this.renameCategoryTarget = null;
+      this.renameCategoryName = '';
+    },
+
+    async confirmRenameCategory() {
+      const category = this.renameCategoryTarget;
+      const name = this.renameCategoryName.trim();
+      if (!category || !name) return;
+
+      try {
+        const id = category.id;
+        const response = await fetch(`/api/categories/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify({ name }),
+        });
+        const data = await response.json().catch(() => null);
+        if (response.ok && data?.category) {
+          this.showToast('分类名称已更新', 'success');
+          this.closeRenameCategoryModal();
+          await this.loadCategories();
+          await this.loadBookmarks();
+        } else {
+          this.showToast(data?.error || '重命名失败', 'error');
+        }
+      } catch {
+        this.showToast('重命名失败', 'error');
       }
     },
 

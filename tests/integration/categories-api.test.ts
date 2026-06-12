@@ -185,6 +185,35 @@ describe('integration: categories API', () => {
         expect(missingCategory.json()).toEqual({ error: '分类不存在' });
     });
 
+    it('renames top-level and child categories via API', async () => {
+        const tree = seedCategoryTree(ctx.db, [
+            { name: 'Tech', children: ['JS'] },
+        ]);
+        const techId = tree[0].id;
+        const jsId = tree[0].children[0].id;
+
+        const renameTop = await ctx.app.inject({
+            method: 'PATCH',
+            url: `/api/categories/${techId}`,
+            headers: authHeaders,
+            payload: { name: 'Engineering' },
+        });
+        expect(renameTop.statusCode).toBe(200);
+        expect(renameTop.json().category.fullPath).toBe('Engineering');
+
+        const renameChild = await ctx.app.inject({
+            method: 'PATCH',
+            url: `/api/categories/${jsId}`,
+            headers: authHeaders,
+            payload: { name: 'Engineering/Frontend' },
+        });
+        expect(renameChild.statusCode).toBe(200);
+        expect(renameChild.json().category.fullPath).toBe('Engineering/Frontend');
+
+        const childRow = ctx.db.prepare('SELECT name FROM categories WHERE id = ?').get(jsId) as { name: string };
+        expect(childRow.name).toBe('Frontend');
+    });
+
     it('rejects rename conflicts, guards against cyclic moves, and supports moving a child to top level', async () => {
         const tree = seedCategoryTree(ctx.db, [
             { name: 'Tech', children: ['JS'] },
@@ -200,8 +229,8 @@ describe('integration: categories API', () => {
             headers: authHeaders,
             payload: { name: 'Tech' },
         });
-        expect(renameConflict.statusCode).toBe(400);
-        expect(renameConflict.json().error).toContain('UNIQUE');
+        expect(renameConflict.statusCode).toBe(409);
+        expect(renameConflict.json()).toEqual({ error: '分类已存在' });
 
         const cycleMove = await ctx.app.inject({
             method: 'PATCH',
