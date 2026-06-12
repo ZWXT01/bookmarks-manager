@@ -269,6 +269,7 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="category-batch-export"');
         expect(response.body).toContain('data-testid="category-batch-delete"');
         expect(response.body).toContain('data-testid="category-batch-clear"');
+        expect(response.body).toContain('data-testid="check-scope-categories-option"');
         expect(response.body).not.toContain('data-testid="category-nav-all-tab"');
         expect(response.body).not.toContain('data-testid="category-nav-uncategorized-tab"');
         expect(response.body).not.toContain('data-testid="category-nav-tab"');
