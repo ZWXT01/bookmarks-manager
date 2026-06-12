@@ -25,6 +25,11 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
 
         const { transitionStatus } = await import('../ai-organize-plan');
         transitionStatus(db, plan.id, 'canceled', 'job_cancel');
+        const job = getJob(db, jobId);
+        if (job && job.status !== 'canceled') {
+            jobQueue.cancelJob(jobId);
+            updateJob(db, jobId, { status: 'canceled', message: 'plan canceled' });
+        }
         return true;
     }
 
@@ -134,16 +139,16 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
                 return reply.code(404).send({ error: 'Operation failed' });
             }
 
-            if (job.status === 'done' || job.status === 'failed' || job.status === 'canceled') {
-                return reply.send({ success: true, status: job.status });
-            }
-
             if (job.type === 'ai_organize') {
                 const planCanceled = await cancelLinkedAiOrganizePlan(jobId);
                 const nextJob = getJob(db, jobId);
                 if (planCanceled) {
                     return reply.send({ success: true, status: nextJob?.status ?? 'canceled' });
                 }
+            }
+
+            if (job.status === 'done' || job.status === 'failed' || job.status === 'canceled') {
+                return reply.send({ success: true, status: job.status });
             }
 
             jobQueue.cancelJob(jobId);

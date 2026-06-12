@@ -733,6 +733,37 @@ function collectSoftApplyConflicts(
   return conflicts;
 }
 
+function computeProjectedEmptyCategories(
+  db: Db,
+  assignments: Assignment[],
+  lookup: PathLookup,
+  bookmarks: Map<number, BookmarkRow>,
+  conflicts: Map<number, ConflictItem>,
+): { id: number; name: string }[] {
+  const usage = getCatUsage(db);
+  const counts = new Map(usage.map(u => [u.id, u.bookmark_count]));
+
+  for (const assignment of assignments) {
+    if (conflicts.has(assignment.bookmark_id)) continue;
+    const bookmark = bookmarks.get(assignment.bookmark_id);
+    if (!bookmark) throw new PlanError(409, 'plan is stale: bookmarks changed', { discardRecommended: true });
+
+    const targetPath = normalizePath(assignment.category_path);
+    if (!targetPath) continue;
+    const targetId = getExistingCategoryId(targetPath, lookup);
+    if (bookmark.category_id === targetId) continue;
+
+    if (bookmark.category_id != null) {
+      counts.set(bookmark.category_id, Math.max(0, (counts.get(bookmark.category_id) ?? 0) - 1));
+    }
+    counts.set(targetId, (counts.get(targetId) ?? 0) + 1);
+  }
+
+  return usage
+    .filter(u => u.bookmark_count > 0 && (counts.get(u.id) ?? 0) === 0 && u.has_children === 0)
+    .map(u => ({ id: u.id, name: u.name }));
+}
+
 // ==================== CRUD ====================
 
 export function createPlan(db: Db, scope: string): PlanRow {
@@ -831,10 +862,14 @@ export function transitionStatus(db: Db, planId: string, target: PlanStatus, rea
     // sync job status
     if (next.job_id) {
       const job = getJob(db, next.job_id);
-      if (job && (job.status === 'queued' || job.status === 'running')) {
-        if (target === 'canceled') { jobQueue.cancelJob(next.job_id); updateJob(db, next.job_id, { status: 'canceled', message: 'plan canceled' }); }
-        else if (target === 'failed' || target === 'error') updateJob(db, next.job_id, { status: 'failed', message: 'plan failed' });
-        else if (target === 'preview' || target === 'applied') updateJob(db, next.job_id, { status: 'done', message: 'plan done' });
+      if (job) {
+        const jobIsActive = job.status === 'queued' || job.status === 'running';
+        const shouldCancelJob = target === 'canceled' && (jobIsActive || (plan.status === 'preview' && job.status === 'done'));
+        if (shouldCancelJob) { jobQueue.cancelJob(next.job_id); updateJob(db, next.job_id, { status: 'canceled', message: 'plan canceled' }); }
+        else if (jobIsActive) {
+          if (target === 'failed' || target === 'error') updateJob(db, next.job_id, { status: 'failed', message: 'plan failed' });
+          else if (target === 'preview' || target === 'applied') updateJob(db, next.job_id, { status: 'done', message: 'plan done' });
+        }
       }
     }
     return next;
@@ -942,15 +977,24 @@ export function applyPlan(db: Db, planId: string, decisionsInput?: unknown): App
     if (selectedAssignments.length === 0) return { conflicts: [], empty_categories: [], applied_count: 0 };
     const validation = validatePlanApplySafety(db, plan, selectedAssignments);
 
-    // Snapshot BEFORE any mutations
-    if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
-
     const lookup = ensureLiveTargetsAvailable(db, plan, selectedAssignments);
 
     const bookmarks = getBookmarkMap(db);
     const softConflicts = collectSoftApplyConflicts(db, plan, selectedAssignments, validation, bookmarks);
+    const projectedEmptyCategories = computeProjectedEmptyCategories(db, selectedAssignments, lookup, bookmarks, softConflicts);
+    if (softConflicts.size > 0 || projectedEmptyCategories.length > 0) {
+      return {
+        conflicts: [...softConflicts.values()],
+        empty_categories: projectedEmptyCategories,
+        applied_count: 0,
+      };
+    }
+
+    // Snapshot BEFORE any mutations. This is only reached once the apply can finish
+    // without extra confirmation; confirmation flows apply later via resolveAndApply().
+    if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
+
     const moveStmt = db.prepare('UPDATE bookmarks SET category_id = ?, updated_at = ? WHERE id = ?');
-    const conflicts: ConflictItem[] = [];
     let applied = 0;
     const now = nowIso();
 
@@ -964,12 +1008,6 @@ export function applyPlan(db: Db, planId: string, decisionsInput?: unknown): App
       if (!tp) continue;
       const from = bm.category_path ? normalizePath(bm.category_path) : null;
       if (from && casefold(from) === casefold(tp)) continue;
-
-      const conflict = softConflicts.get(a.bookmark_id);
-      if (conflict) {
-        conflicts.push(conflict);
-        continue;
-      }
 
       const catId = getExistingCategoryId(tp, lookup);
       if (bm.category_id === catId) continue;
@@ -992,7 +1030,7 @@ export function applyPlan(db: Db, planId: string, decisionsInput?: unknown): App
       `).all(...sourceCatIds) as { id: number; name: string }[];
     }
 
-    return { conflicts, empty_categories: empty, applied_count: applied };
+    return { conflicts: [], empty_categories: empty, applied_count: applied };
   })();
 }
 
@@ -1161,6 +1199,29 @@ export function confirmEmpty(db: Db, planId: string, decisions: { id: number; ac
   return db.transaction(() => {
     const plan = getPlan(db, planId);
     if (!plan || plan.status !== 'preview') throw new Error('plan must be in preview status');
+
+    const assignments = parseAssignments(plan.assignments);
+    const selectedAssignments = selectAssignmentsForApply(assignments);
+    const validation = validatePlanApplySafety(db, plan, selectedAssignments);
+    const lookup = ensureLiveTargetsAvailable(db, plan, selectedAssignments);
+    const bookmarks = getBookmarkMap(db);
+    const softConflicts = collectSoftApplyConflicts(db, plan, selectedAssignments, validation, bookmarks);
+    if (softConflicts.size > 0) {
+      throw new PlanError(409, 'plan conflicts changed; rerun apply');
+    }
+
+    if (!plan.backup_snapshot) updatePlan(db, planId, { backup_snapshot: createBackupSnapshot(db) });
+
+    const moveStmt = db.prepare('UPDATE bookmarks SET category_id = ?, updated_at = ? WHERE id = ?');
+    const now = nowIso();
+    for (const assignment of selectedAssignments) {
+      const bookmark = bookmarks.get(assignment.bookmark_id);
+      if (!bookmark) throw new PlanError(409, 'plan is stale: bookmarks changed', { discardRecommended: true });
+      const targetPath = normalizePath(assignment.category_path);
+      if (!targetPath) continue;
+      const targetId = getExistingCategoryId(targetPath, lookup);
+      if (bookmark.category_id !== targetId) moveStmt.run(targetId, now, bookmark.id);
+    }
 
     const decisionMap = new Map(decisions.map(d => [d.id, d.action]));
 

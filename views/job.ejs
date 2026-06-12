@@ -39,6 +39,14 @@
       job.type === 'ai_organize' ? 'bg-gradient-to-r from-blue-500 to-blue-700'
       : isLegacyAiTask ? 'bg-gradient-to-r from-amber-500 to-amber-700'
       : 'bg-gradient-to-r from-slate-700 to-slate-900';
+    const cancelableJobStatuses = ['queued', 'pending', 'running'];
+    const cancelablePlanStatuses = ['assigning', 'preview', 'failed', 'error'];
+    const hasCancelableOrganizePlan = job.type === 'ai_organize' && cancelablePlanStatuses.includes(organizePlanStatus || '');
+    const canCancelFromDetail = cancelableJobStatuses.includes(job.status) || hasCancelableOrganizePlan;
+    const cancelButtonText =
+      hasCancelableOrganizePlan && organizePlanStatus === 'preview' ? '放弃整理'
+      : hasCancelableOrganizePlan && (organizePlanStatus === 'failed' || organizePlanStatus === 'error') ? '放弃任务'
+      : '取消任务';
   %>
   <!-- Header - 统一风格 -->
   <div class="glass-header border-b sticky top-0 z-40">
@@ -112,10 +120,11 @@
                 <%= job.failed %>
               </span></span>
           </div>
-          <% if (job.status==='running' || job.status==='pending' ) { %>
+          <% if (canCancelFromDetail) { %>
             <button id="cancel-job-btn" data-testid="cancel-job-btn"
-              class="rounded border border-rose-300 px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50">取消任务</button>
-            <% } %>
+              data-default-text="<%= cancelButtonText %>"
+              class="rounded border border-rose-300 px-3 py-1 text-xs font-medium text-rose-600 hover:bg-rose-50"><%= cancelButtonText %></button>
+          <% } %>
         </div>
       </div>
     </div>
@@ -144,7 +153,7 @@
         支持逐条选择应用或放弃。已匹配分类的书签默认应用，未匹配到分类的书签默认放弃；完成本次计划前，不能开始下一次整理。
       </div>
       <div id="plan-actions" class="flex justify-end gap-2 pt-3 border-t">
-        <button id="discard-plan-btn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃</button>
+        <button id="discard-plan-btn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃整理</button>
         <button id="apply-all-plan-btn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">全部应用</button>
         <button id="apply-plan-btn" class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">应用已选</button>
       </div>
@@ -296,7 +305,7 @@
                       <td class="px-3 py-2">
                         <% if (organizePlanStatus === 'preview') { %>
                           <div class="flex items-center gap-2">
-                            <button class="assign-action-btn rounded border px-3 py-1 text-xs <%= a.default_action === 'apply' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-600' %>"
+                            <button class="assign-action-btn rounded border px-3 py-1 text-xs <%= a.default_action === 'apply' ? 'border-emerald-200 bg-emerald-500 text-white' : 'border-slate-300 bg-white text-slate-600' %>"
                               data-bookmark-id="<%= a.bookmark_id %>" data-action="apply" data-category-path="<%= a.category_path || '' %>" data-status="<%= a.status %>" <%=a.can_apply ? '' : 'disabled' %>>应用</button>
                             <button class="assign-action-btn rounded border px-3 py-1 text-xs <%= a.default_action === 'discard' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-600' %>"
                               data-bookmark-id="<%= a.bookmark_id %>" data-action="discard" data-category-path="<%= a.category_path || '' %>" data-status="<%= a.status %>">放弃</button>
@@ -684,7 +693,7 @@
               html += '</td><td class="px-3 py-2">';
               if (planStatus === 'preview') {
                 html += '<div class="flex items-center gap-2">';
-                html += '<button class="assign-action-btn rounded border px-3 py-1 text-xs ' + (selectedAction === 'apply' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white text-slate-600') + '"' +
+                html += '<button class="assign-action-btn rounded border px-3 py-1 text-xs ' + (selectedAction === 'apply' ? 'border-emerald-200 bg-emerald-500 text-white' : 'border-slate-300 bg-white text-slate-600') + '"' +
                   ' data-bookmark-id="' + a.bookmark_id + '" data-action="apply" data-category-path="' + escapeHtml(a.category_path || '') + '" data-status="' + escapeHtml(a.status || '') + '"' + (a.can_apply ? '' : ' disabled') + '>应用</button>';
                 html += '<button class="assign-action-btn rounded border px-3 py-1 text-xs ' + (selectedAction === 'discard' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-600') + '"' +
                   ' data-bookmark-id="' + a.bookmark_id + '" data-action="discard" data-category-path="' + escapeHtml(a.category_path || '') + '" data-status="' + escapeHtml(a.status || '') + '">放弃</button>';
@@ -734,6 +743,7 @@
     var cancelBtn = document.getElementById('cancel-job-btn');
     if (cancelBtn) {
       cancelBtn.addEventListener('click', function () {
+        var defaultCancelText = cancelBtn.dataset.defaultText || '取消任务';
         cancelBtn.disabled = true;
         cancelBtn.textContent = '取消中...';
 
@@ -751,12 +761,12 @@
             location.reload();
           } else {
             cancelBtn.disabled = false;
-            cancelBtn.textContent = '取消任务';
+            cancelBtn.textContent = defaultCancelText;
             AppDialog.alert('取消失败：' + (data.error || '未知错误'));
           }
         }).catch(function () {
           cancelBtn.disabled = false;
-          cancelBtn.textContent = '取消任务';
+          cancelBtn.textContent = defaultCancelText;
           AppDialog.alert('取消失败');
         });
       });
@@ -829,15 +839,17 @@
         if (!ok) return;
         discardBtn.disabled = true;
         try {
-          await fetch('/api/ai/organize/' + planId + '/cancel', {
+          var res = await fetch('/api/ai/organize/' + planId + '/cancel', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({})
           });
+          var data = await res.json().catch(function () { return {}; });
+          if (!res.ok || !data.success) throw new Error(data.error || '取消失败');
           setPlanUiStatus('canceled');
           document.getElementById('plan-actions').classList.add('hidden');
           document.getElementById('plan-canceled').classList.remove('hidden');
         } catch (e) {
-          await AppDialog.alert('取消失败');
+          await AppDialog.alert(e && e.message ? e.message : '取消失败');
           discardBtn.disabled = false;
         }
       });

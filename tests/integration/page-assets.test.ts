@@ -4,7 +4,7 @@ import fs from 'fs';
 import { addJobFailure } from '../../src/jobs';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import { createSessionHeaders } from '../helpers/auth';
-import { seedJob } from '../helpers/factories';
+import { seedJob, seedPlan } from '../helpers/factories';
 
 const staticCssHref = '/public/tailwind.generated.css';
 const runtimeTailwindHref = '/public/lib/tailwind.js';
@@ -327,6 +327,35 @@ describe('integration: page assets', () => {
         expect(jobResponse.body).toContain('data-testid="failure-total-pages"');
         expect(jobResponse.body).toContain('data-testid="failure-prev-btn"');
         expect(jobResponse.body).toContain('data-testid="failure-next-btn"');
+    });
+
+    it('renders a discard entry for preview ai organize plans on job details', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+        const job = seedJob(ctx.db, {
+            id: 'page-preview-plan-job',
+            type: 'ai_organize',
+            status: 'done',
+            total: 1,
+            processed: 1,
+            inserted: 1,
+        });
+        seedPlan(ctx.db, {
+            id: 'page-preview-plan',
+            job_id: job.id,
+            status: 'preview',
+            assignments: [],
+        });
+
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: `/jobs/${job.id}`,
+            headers,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('data-testid="cancel-job-btn"');
+        expect(response.body).toContain('放弃整理');
     });
 
     it('renders jobs list and snapshots destructive-action selectors for browser regression', async () => {

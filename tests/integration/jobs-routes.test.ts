@@ -181,6 +181,22 @@ describe('integration: jobs routes', () => {
         expect(getPlan(ctx.db, aiPlan.id)?.status).toBe('canceled');
     });
 
+    it('can discard a preview AI organize plan from job details even after the job is done', async () => {
+        const aiJob = seedJob(ctx.db, { id: 'job-ai-preview-cancel', type: 'ai_organize', status: 'done' });
+        const aiPlan = seedPlan(ctx.db, { id: 'plan-ai-preview-cancel', job_id: aiJob.id, status: 'preview', assignments: [] });
+
+        const response = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/jobs/${aiJob.id}/cancel`,
+            headers: authHeaders,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.json()).toEqual({ success: true, status: 'canceled' });
+        expect(getJob(ctx.db, aiJob.id)).toMatchObject({ status: 'canceled', message: 'plan canceled' });
+        expect(getPlan(ctx.db, aiPlan.id)?.status).toBe('canceled');
+    });
+
     it('clears completed jobs and removes orphaned failures', async () => {
         const runningJob = seedJob(ctx.db, { id: 'job-running', type: 'import', status: 'running' });
         const doneJob = seedJob(ctx.db, { id: 'job-done-clear', type: 'import', status: 'done' });

@@ -321,11 +321,11 @@ describe('integration: ai organize route contracts', () => {
         expect(applyResponse.json()).toMatchObject({
             success: true,
             needs_confirm: true,
-            applied_count: 1,
+            applied_count: 0,
             empty_categories: [{ id: sourceCategory!.id, name: getCategoryFullPath(ctx.db, sourceCategory!.id) ?? '' }],
         });
         expect(getPlan(ctx.db, plan.id)?.status).toBe('preview');
-        expect(getBookmarkCategoryId(ctx, movingBookmarkId)).toBe(targetCategory!.id);
+        expect(getBookmarkCategoryId(ctx, movingBookmarkId)).toBe(sourceCategory!.id);
 
         const confirmResponse = await ctx.app.inject({
             method: 'POST',
@@ -355,6 +355,56 @@ describe('integration: ai organize route contracts', () => {
         expect(getCategoryByPath(ctx.db, '学习资源/文档')).toBeTruthy();
         expect(getBookmarkCategoryId(ctx, movingBookmarkId)).toBe(sourceCategory!.id);
         expect(getBookmarkCategoryId(ctx, stableBookmarkId)).toBe(occupiedCategory!.id);
+    });
+
+    it('does not keep partial bookmark moves when a needs-confirm plan is discarded', async () => {
+        ctx = await createTestApp();
+        const session = await ctx.login();
+        const authHeaders = session.headers;
+        seedAiTestCategories(ctx.db);
+        const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
+        const targetCategory = getCategoryByPath(ctx.db, '技术开发/前端');
+
+        expect(sourceCategory).toBeTruthy();
+        expect(targetCategory).toBeTruthy();
+
+        const [bookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Discard After Confirm Needed', url: 'https://discard-after-confirm-needed.example.test', categoryId: sourceCategory!.id },
+        ]);
+
+        const plan = seedPlan(ctx.db, {
+            status: 'preview',
+            created_at: new Date(Date.now() - 60_000).toISOString(),
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '技术开发/前端', status: 'assigned' },
+            ],
+        });
+
+        const applyResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${plan.id}/apply`,
+            headers: authHeaders,
+        });
+
+        expect(applyResponse.statusCode).toBe(200);
+        expect(applyResponse.json()).toMatchObject({
+            success: true,
+            needs_confirm: true,
+            applied_count: 0,
+        });
+        expect(getPlan(ctx.db, plan.id)?.status).toBe('preview');
+        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
+
+        const cancelResponse = await ctx.app.inject({
+            method: 'POST',
+            url: `/api/ai/organize/${plan.id}/cancel`,
+            headers: authHeaders,
+        });
+
+        expect(cancelResponse.statusCode).toBe(200);
+        expect(getPlan(ctx.db, plan.id)?.status).toBe('canceled');
+        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
+        expect(getCategoryByPath(ctx.db, '学习资源/文档')).toBeTruthy();
     });
 
     it('applies only selected bookmark suggestions and leaves unmatched suggestions discarded by default', async () => {
