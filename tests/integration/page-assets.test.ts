@@ -4,7 +4,7 @@ import fs from 'fs';
 import { addJobFailure } from '../../src/jobs';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import { createSessionHeaders } from '../helpers/auth';
-import { seedJob, seedPlan } from '../helpers/factories';
+import { seedBookmarks, seedCategory, seedJob, seedPlan } from '../helpers/factories';
 
 const staticCssHref = '/public/tailwind.generated.css';
 const runtimeTailwindHref = '/public/lib/tailwind.js';
@@ -143,7 +143,9 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="organize-preview-list"');
         expect(response.body).toContain('data-testid="organize-preview-mobile-list"');
         expect(response.body).toContain('data-testid="organize-preview-desktop-table"');
-        expect(response.body).toContain('data-testid="organize-preview-apply-all"');
+        expect(response.body).toContain('data-testid="organize-assignment-checkbox"');
+        expect(response.body).not.toContain('data-testid="organize-preview-apply-all"');
+        expect(response.body).not.toContain('全部应用');
         expect(response.body).toContain('data-testid="organize-preview-prev-page"');
         expect(response.body).toContain('data-testid="organize-preview-next-page"');
         expect(response.body).toContain('data-testid="organize-preview-discard"');
@@ -181,6 +183,9 @@ describe('integration: page assets', () => {
         expect(body).toContain('id="assign-total-count"');
         expect(body).toContain("document.getElementById('assign-total-count')");
         expect(body).toContain('totalCountEl.textContent = data.total');
+        expect(body).toContain('assign-action-checkbox');
+        expect(body).not.toContain('apply-all-plan-btn');
+        expect(body).not.toContain('全部应用');
     });
 
     it('renders import and export shells with stable selectors for browser regression', async () => {
@@ -356,6 +361,46 @@ describe('integration: page assets', () => {
         expect(response.statusCode).toBe(200);
         expect(response.body).toContain('data-testid="cancel-job-btn"');
         expect(response.body).toContain('放弃整理');
+    });
+
+    it('renders organize suggestions as default-checked checkboxes on job details', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+        const parentId = seedCategory(ctx.db, '页面验证');
+        const sourceId = seedCategory(ctx.db, '来源', parentId);
+        seedCategory(ctx.db, '目标', parentId);
+        const [bookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Checkbox Suggestion', url: 'https://checkbox-suggestion.example.test', categoryId: sourceId },
+        ]);
+        const job = seedJob(ctx.db, {
+            id: 'page-checkbox-plan-job',
+            type: 'ai_organize',
+            status: 'done',
+            total: 1,
+            processed: 1,
+            inserted: 1,
+        });
+        seedPlan(ctx.db, {
+            id: 'page-checkbox-plan',
+            job_id: job.id,
+            status: 'preview',
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '页面验证/目标', status: 'assigned' },
+            ],
+        });
+
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: `/jobs/${job.id}`,
+            headers,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('assign-action-checkbox');
+        expect(response.body).toContain('checked');
+        expect(response.body).toContain('应用此建议');
+        expect(response.body).not.toContain('assign-action-btn');
+        expect(response.body).not.toContain('全部应用');
     });
 
     it('renders jobs list and snapshots destructive-action selectors for browser regression', async () => {

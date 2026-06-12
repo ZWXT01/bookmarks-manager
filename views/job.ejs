@@ -150,11 +150,10 @@
         </div>
       </div>
       <div class="mb-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs leading-5 text-slate-600">
-        支持逐条选择应用或放弃。已匹配分类的书签默认应用，未匹配到分类的书签默认放弃；完成本次计划前，不能开始下一次整理。
+        勾选表示应用该书签的建议分类，取消勾选表示放弃该条建议。可应用建议默认勾选；未匹配到分类的建议无法勾选。完成本次计划前，不能开始下一次整理。
       </div>
       <div id="plan-actions" class="flex justify-end gap-2 pt-3 border-t">
         <button id="discard-plan-btn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">放弃整理</button>
-        <button id="apply-all-plan-btn" class="rounded border px-4 py-2 text-sm hover:bg-slate-50">全部应用</button>
         <button id="apply-plan-btn" class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">应用已选</button>
       </div>
       <!-- Conflict resolution (hidden by default, shown after apply returns conflicts) -->
@@ -299,17 +298,19 @@
                         <% if (a.category_path) { %>
                           <span class="inline-block rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs"><%= a.category_path %></span>
                         <% } else { %>
-                          <span class="text-xs text-amber-600">未匹配到分类，默认放弃</span>
+                          <span class="text-xs text-amber-600">未匹配到分类，无法应用</span>
                         <% } %>
                       </td>
                       <td class="px-3 py-2">
                         <% if (organizePlanStatus === 'preview') { %>
-                          <div class="flex items-center gap-2">
-                            <button class="assign-action-btn rounded border px-3 py-1 text-xs <%= a.default_action === 'apply' ? 'border-emerald-200 bg-emerald-500 text-white' : 'border-slate-300 bg-white text-slate-600' %>"
-                              data-bookmark-id="<%= a.bookmark_id %>" data-action="apply" data-category-path="<%= a.category_path || '' %>" data-status="<%= a.status %>" <%=a.can_apply ? '' : 'disabled' %>>应用</button>
-                            <button class="assign-action-btn rounded border px-3 py-1 text-xs <%= a.default_action === 'discard' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-600' %>"
-                              data-bookmark-id="<%= a.bookmark_id %>" data-action="discard" data-category-path="<%= a.category_path || '' %>" data-status="<%= a.status %>">放弃</button>
-                          </div>
+                          <label class="inline-flex items-center gap-2 rounded border px-3 py-1.5 text-xs <%= a.default_action === 'apply' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500' %>">
+                            <input class="assign-action-checkbox h-4 w-4 flex-shrink-0"
+                              type="checkbox"
+                              data-bookmark-id="<%= a.bookmark_id %>" data-category-path="<%= a.category_path || '' %>" data-status="<%= a.status %>"
+                              <%= a.default_action === 'apply' ? 'checked' : '' %>
+                              <%= a.can_apply ? '' : 'disabled' %> />
+                            <span><%= a.can_apply ? '应用此建议' : '无法应用' %></span>
+                          </label>
                         <% } else { %>
                           <% if (a.status === 'assigned') { %>
                             <span class="text-xs text-green-600">已分配</span>
@@ -648,10 +649,10 @@
     }
 
     function bindAssignmentDecisionButtons() {
-      document.querySelectorAll('.assign-action-btn').forEach(function (btn) {
-        btn.addEventListener('click', function () {
+      document.querySelectorAll('.assign-action-checkbox').forEach(function (input) {
+        input.addEventListener('change', function () {
           var bookmarkId = Number(this.dataset.bookmarkId);
-          var action = this.dataset.action === 'apply' ? 'apply' : 'discard';
+          var action = this.checked ? 'apply' : 'discard';
           var assignment = {
             bookmark_id: bookmarkId,
             category_path: this.dataset.categoryPath || '',
@@ -688,16 +689,14 @@
               if (a.category_path) {
                 html += '<span class="inline-block rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs">' + escapeHtml(a.category_path) + '</span>';
               } else {
-                html += '<span class="text-xs text-amber-600">未匹配到分类，默认放弃</span>';
+                html += '<span class="text-xs text-amber-600">未匹配到分类，无法应用</span>';
               }
               html += '</td><td class="px-3 py-2">';
               if (planStatus === 'preview') {
-                html += '<div class="flex items-center gap-2">';
-                html += '<button class="assign-action-btn rounded border px-3 py-1 text-xs ' + (selectedAction === 'apply' ? 'border-emerald-200 bg-emerald-500 text-white' : 'border-slate-300 bg-white text-slate-600') + '"' +
-                  ' data-bookmark-id="' + a.bookmark_id + '" data-action="apply" data-category-path="' + escapeHtml(a.category_path || '') + '" data-status="' + escapeHtml(a.status || '') + '"' + (a.can_apply ? '' : ' disabled') + '>应用</button>';
-                html += '<button class="assign-action-btn rounded border px-3 py-1 text-xs ' + (selectedAction === 'discard' ? 'border-slate-900 bg-slate-900 text-white' : 'border-slate-300 bg-white text-slate-600') + '"' +
-                  ' data-bookmark-id="' + a.bookmark_id + '" data-action="discard" data-category-path="' + escapeHtml(a.category_path || '') + '" data-status="' + escapeHtml(a.status || '') + '">放弃</button>';
-                html += '</div>';
+                html += '<label class="inline-flex items-center gap-2 rounded border px-3 py-1.5 text-xs ' + (selectedAction === 'apply' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500') + '">';
+                html += '<input class="assign-action-checkbox h-4 w-4 flex-shrink-0" type="checkbox"' +
+                  ' data-bookmark-id="' + a.bookmark_id + '" data-category-path="' + escapeHtml(a.category_path || '') + '" data-status="' + escapeHtml(a.status || '') + '"' + (selectedAction === 'apply' ? ' checked' : '') + (a.can_apply ? '' : ' disabled') + ' />';
+                html += '<span>' + (a.can_apply ? '应用此建议' : '无法应用') + '</span></label>';
               } else {
                 html += a.status === 'assigned' ? '<span class="text-xs text-green-600">已分配</span>' : '<span class="text-xs text-amber-600">待审核</span>';
               }
@@ -775,7 +774,6 @@
     // Plan apply/discard handlers (11.2 & 11.3)
     (function () {
       var applyBtn = document.getElementById('apply-plan-btn');
-      var applyAllBtn = document.getElementById('apply-all-plan-btn');
       var discardBtn = document.getElementById('discard-plan-btn');
       var resolveBackBtn = document.getElementById('resolve-back-btn');
       var resolveConfirmBtn = document.getElementById('resolve-confirm-btn');
@@ -785,12 +783,11 @@
       var planEmptyCategories = [];
       var firstApplyCount = 0;
 
-      async function submitPlanApply(mode) {
+      async function submitPlanApply() {
         applyBtn.disabled = true;
-        if (applyAllBtn) applyAllBtn.disabled = true;
-        applyBtn.textContent = mode === 'all' ? '应用全部中...' : '应用中...';
+        applyBtn.textContent = '应用中...';
         try {
-          var payload = { decisions: mode === 'all' ? [] : collectPlanDecisionOverrides() };
+          var payload = { decisions: collectPlanDecisionOverrides() };
           var res = await fetch('/api/ai/organize/' + planId + '/apply', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -801,7 +798,6 @@
             await AppDialog.alert(data.error || '应用失败');
             applyBtn.disabled = false;
             applyBtn.textContent = '应用已选';
-            if (applyAllBtn) applyAllBtn.disabled = false;
             return;
           }
           firstApplyCount = data.applied_count || 0;
@@ -821,17 +817,11 @@
           await AppDialog.alert('应用失败');
           applyBtn.disabled = false;
           applyBtn.textContent = '应用已选';
-          if (applyAllBtn) applyAllBtn.disabled = false;
         }
       }
 
       applyBtn.addEventListener('click', function () {
-        submitPlanApply('selected');
-      });
-
-      if (applyAllBtn) applyAllBtn.addEventListener('click', function () {
-        planSelectionOverrides = {};
-        submitPlanApply('all');
+        submitPlanApply();
       });
 
       discardBtn.addEventListener('click', async function () {
@@ -920,7 +910,6 @@
         document.getElementById('plan-actions').classList.remove('hidden');
         applyBtn.disabled = false;
         applyBtn.textContent = '应用已选';
-        if (applyAllBtn) applyAllBtn.disabled = false;
       });
 
       if (resolveConfirmBtn) resolveConfirmBtn.addEventListener('click', async function () {

@@ -2159,19 +2159,6 @@ function bookmarkApp() {
       this.organizeSelectionOverrides = overrides;
     },
 
-    markAllOrganizeSelections(action) {
-      const overrides = {};
-      const assignments = Array.isArray(this.organizePlan?.assignments) ? this.organizePlan.assignments : [];
-      for (const assignment of assignments) {
-        const nextAction = action === 'apply' && this.canApplyOrganizeAssignment(assignment) ? 'apply' : 'discard';
-        const defaultAction = this.getOrganizeDefaultAction(assignment);
-        if (nextAction !== defaultAction) {
-          overrides[assignment.bookmark_id] = nextAction;
-        }
-      }
-      this.organizeSelectionOverrides = overrides;
-    },
-
     getOrganizeSelectedApplyCount() {
       const assignments = Array.isArray(this.organizePlan?.assignments) ? this.organizePlan.assignments : [];
       return assignments.reduce((count, assignment) => {
@@ -2680,11 +2667,6 @@ function bookmarkApp() {
       } catch {
         this.showToast('应用失败', 'error');
       }
-    },
-
-    async applyAllOrganizePlan() {
-      this.markAllOrganizeSelections('apply');
-      await this.applyOrganizePlan();
     },
 
     async rollbackOrganize() {
