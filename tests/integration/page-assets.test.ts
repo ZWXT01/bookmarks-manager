@@ -262,10 +262,28 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="category-nav-uncategorized-tab"');
         expect(response.body).toContain('data-testid="category-manager-search"');
         expect(response.body).toContain('data-testid="category-manager-add-root"');
+        expect(response.body).toContain('data-testid="category-bulk-actions-shell"');
+        expect(response.body).toContain('data-testid="category-bulk-actions"');
+        expect(response.body).toContain('category-bulk-actions-shell');
+        expect(response.body).not.toContain('fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900');
         expect(response.body).toContain('data-testid="create-category-modal"');
         expect(response.body).toContain('data-testid="create-category-name-input"');
         expect(response.body).toContain('data-testid="create-category-cancel"');
         expect(response.body).toContain('data-testid="create-category-confirm"');
+    });
+
+    it('serves category bulk action centering styles without transform-based positioning', async () => {
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: '/public/app.css',
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('.category-bulk-actions-shell');
+        expect(response.body).toContain('justify-content: center');
+        expect(response.body).toContain('pointer-events: none');
+        expect(response.body).toContain('.category-bulk-actions');
+        expect(response.body).toContain('pointer-events: auto');
     });
 
     it('renders backup modal shells and job detail selectors for browser regression', async () => {

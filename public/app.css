@@ -861,6 +861,25 @@ input[type="checkbox"] {
   margin: 0 auto;
 }
 
+.category-bulk-actions-shell {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: calc(2rem + var(--safe-area-bottom));
+  z-index: 50;
+  display: flex;
+  justify-content: center;
+  padding: 0 1rem;
+  pointer-events: none;
+}
+
+.category-bulk-actions {
+  max-width: calc(100vw - 2rem);
+  flex-wrap: wrap;
+  justify-content: center;
+  pointer-events: auto;
+}
+
 .category-card {
   width: 100%;
 }

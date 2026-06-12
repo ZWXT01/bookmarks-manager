@@ -1598,17 +1598,19 @@
 
             <!-- Selection Actions Overlay -->
             <template x-if="selectedCategories.length > 0">
-                <div class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 z-50 animate-fade-in"
-                     data-testid="category-bulk-actions">
-                    <span class="text-sm font-medium">已选择 <span x-text="selectedCategories.length" class="text-blue-400"></span> 个分类</span>
-                    <div class="h-4 w-[1px] bg-slate-700"></div>
-                    <div class="flex items-center gap-4">
-                        <button @click="batchDeleteCategories()" class="text-sm text-rose-400 hover:text-rose-300 font-medium">🗑️ 批量删除</button>
-                        <button @click="checkSelectedCategories()" class="text-sm text-blue-400 hover:text-blue-300 font-medium">🔍 批量检查</button>
-                        <button @click="openExportSelectedCategories()" class="text-sm text-emerald-400 hover:text-emerald-300 font-medium">📤 批量导出</button>
+                <div class="category-bulk-actions-shell" data-testid="category-bulk-actions-shell">
+                    <div class="category-bulk-actions bg-slate-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 animate-fade-in"
+                         data-testid="category-bulk-actions">
+                        <span class="text-sm font-medium">已选择 <span x-text="selectedCategories.length" class="text-blue-400"></span> 个分类</span>
+                        <div class="h-4 w-[1px] bg-slate-700"></div>
+                        <div class="flex items-center gap-4">
+                            <button @click="batchDeleteCategories()" class="text-sm text-rose-400 hover:text-rose-300 font-medium">🗑️ 批量删除</button>
+                            <button @click="checkSelectedCategories()" class="text-sm text-blue-400 hover:text-blue-300 font-medium">🔍 批量检查</button>
+                            <button @click="openExportSelectedCategories()" class="text-sm text-emerald-400 hover:text-emerald-300 font-medium">📤 批量导出</button>
+                        </div>
+                        <div class="h-4 w-[1px] bg-slate-700"></div>
+                        <button @click="selectedCategories = []" class="text-xs text-slate-400 hover:text-white">取消选择</button>
                     </div>
-                    <div class="h-4 w-[1px] bg-slate-700"></div>
-                    <button @click="selectedCategories = []" class="text-xs text-slate-400 hover:text-white">取消选择</button>
                 </div>
             </template>
         </div>
