@@ -274,7 +274,7 @@
                                             :data-category-id="cat.id"
                                             class="category-tab"
                                             :class="currentCategory == cat.id ? 'active' : ''">
-                                        <span class="category-tab-icon" x-text="cat.icon || '📁'" :style="cat.color ? 'color:' + cat.color : ''"></span>
+                                        <span class="category-tab-icon" x-text="cat.icon || '📁'"></span>
                                         <span x-text="cat.name"></span>
                                     </button>
                                 </div>
@@ -331,7 +331,7 @@
                                             :data-category-id="child.id"
                                             class="subcategory-item focus:outline-none focus:ring-2 focus:ring-blue-500"
                                             :class="currentCategory == child.id ? 'active' : ''">
-                                        <span class="subcategory-item-icon" x-text="child.icon || '📄'" :style="child.color ? 'color:' + child.color : ''"></span>
+                                        <span class="subcategory-item-icon" x-text="child.icon || '📄'"></span>
                                         <span class="subcategory-item-text" x-text="child.displayName || child.name"></span>
                                         <span class="subcategory-item-count text-[10px] opacity-50" x-text="child.count"></span>
                                     </button>
@@ -747,18 +747,6 @@
                             </template>
                         </div>
                     </div>
-                    <div>
-                        <label class="text-xs text-slate-600">颜色</label>
-                        <div class="flex flex-wrap gap-2 mt-1">
-                            <template
-                                x-for="color in ['', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899']">
-                                <button @click="categoryColor = color" class="w-8 h-8 rounded border hover:opacity-80"
-                                    :class="categoryColor === color ? 'ring-2 ring-blue-500' : ''"
-                                    :style="color ? 'background-color:' + color : ''"
-                                    x-text="color ? '' : '✕'"></button>
-                            </template>
-                        </div>
-                    </div>
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
                     <button @click="closeCategoryStyleModal()"
@@ -791,18 +779,6 @@
                                     class="w-8 h-8 rounded border hover:bg-slate-50 flex items-center justify-center"
                                     :class="createCategoryIcon === icon ? 'border-blue-500 bg-blue-50' : ''"
                                     x-text="icon"></button>
-                            </template>
-                        </div>
-                    </div>
-                    <div>
-                        <label class="text-xs text-slate-600">颜色</label>
-                        <div class="flex flex-wrap gap-2 mt-1">
-                            <template
-                                x-for="color in ['', '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6', '#3b82f6', '#8b5cf6', '#ec4899']">
-                                <button @click="createCategoryColor = color" class="w-8 h-8 rounded border hover:opacity-80"
-                                    :class="createCategoryColor === color ? 'ring-2 ring-blue-500' : ''"
-                                    :style="color ? 'background-color:' + color : ''"
-                                    x-text="color ? '' : '✕'"></button>
                             </template>
                         </div>
                     </div>
@@ -1547,7 +1523,7 @@
                                            x-model="selectedCategories"
                                            class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                            :aria-label="'选择 ' + cat.name">
-                                    <span class="text-2xl" x-text="cat.icon || '📁'" :style="cat.color ? 'color:' + cat.color : ''"></span>
+                                    <span class="text-2xl" x-text="cat.icon || '📁'"></span>
                                     <div class="min-w-0">
                                         <h3 class="font-bold text-slate-800 truncate" x-text="cat.name" :class="cat.isMatch ? 'bg-amber-100' : ''"></h3>
                                         <p class="text-xs text-slate-400" x-text="cat.count + ' 个书签'"></p>
@@ -1575,7 +1551,7 @@
                                                        x-model="selectedCategories"
                                                        class="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                                                        :aria-label="'选择 ' + (child.displayName || child.name)">
-                                                <span x-text="child.icon || '📄'" :style="child.color ? 'color:' + child.color : ''"></span>
+                                                <span x-text="child.icon || '📄'"></span>
                                                 <span class="truncate text-slate-600" x-text="child.displayName || child.name" :class="child.isMatch ? 'bg-amber-100' : ''"></span>
                                                 <span class="text-[10px] text-slate-400" x-text="'(' + child.count + ')'"></span>
                                             </div>

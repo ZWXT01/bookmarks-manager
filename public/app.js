@@ -47,13 +47,11 @@ function bookmarkApp() {
     showCategoryStyleModal: false,
     styleCategory: null,
     categoryIcon: '',
-    categoryColor: '',
 
     showCreateCategoryModal: false,
     createCategoryParentId: null,
     createCategoryName: '',
     createCategoryIcon: '',
-    createCategoryColor: '',
 
     // 视图模式
     viewMode: localStorage.getItem('viewMode') || 'table', // 'table' or 'card'
@@ -432,7 +430,6 @@ function bookmarkApp() {
       if (!category) return;
       this.styleCategory = category;
       this.categoryIcon = category.icon || '';
-      this.categoryColor = category.color || '';
       this.showCategoryStyleModal = true;
     },
 
@@ -440,7 +437,6 @@ function bookmarkApp() {
       this.showCategoryStyleModal = false;
       this.styleCategory = null;
       this.categoryIcon = '';
-      this.categoryColor = '';
     },
 
     async saveCategoryStyle() {
@@ -451,7 +447,7 @@ function bookmarkApp() {
         const res = await fetch(`/api/categories/${id}/style`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ icon: this.categoryIcon, color: this.categoryColor }),
+          body: JSON.stringify({ icon: this.categoryIcon }),
         });
 
         if (res.ok) {
@@ -1499,7 +1495,6 @@ function bookmarkApp() {
       this.createCategoryParentId = parentId;
       this.createCategoryName = '';
       this.createCategoryIcon = '';
-      this.createCategoryColor = '';
       this.showCreateCategoryModal = true;
     },
 
@@ -1513,7 +1508,6 @@ function bookmarkApp() {
         const body = { name: this.createCategoryName.trim() };
         if (this.createCategoryParentId !== null) body.parent_id = this.createCategoryParentId;
         if (this.createCategoryIcon) body.icon = this.createCategoryIcon;
-        if (this.createCategoryColor) body.color = this.createCategoryColor;
         const response = await fetch('/api/categories', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },

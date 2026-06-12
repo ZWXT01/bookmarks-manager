@@ -270,6 +270,12 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="create-category-name-input"');
         expect(response.body).toContain('data-testid="create-category-cancel"');
         expect(response.body).toContain('data-testid="create-category-confirm"');
+        expect(response.body).toContain('分类样式');
+        expect(response.body).toContain('图标');
+        expect(response.body).not.toContain('>颜色</label>');
+        expect(response.body).not.toContain('categoryColor');
+        expect(response.body).not.toContain('createCategoryColor');
+        expect(response.body).not.toContain('color in [');
     });
 
     it('serves category bulk action centering styles without transform-based positioning', async () => {
