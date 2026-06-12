@@ -11,6 +11,7 @@ function bookmarkApp() {
     categories: [],
     categoryTree: [], // 树状分类数据
     categorySearch: '',
+    categoryFilterValue: 'all',
     totalCount: 0,
     uncategorizedCount: 0,
     bookmarksAbortController: null, // 用于取消请求
@@ -739,9 +740,12 @@ function bookmarkApp() {
         const currentId = Number(this.currentCategory);
         if (!Number.isFinite(currentId) || !existingIds.has(currentId)) {
           this.currentCategory = null;
+          this.categoryFilterValue = 'all';
           this.page = 1;
         }
       }
+
+      this.syncCategoryFilterValue();
 
       if (this.activeParentCategory !== null) {
         const parentId = Number(this.activeParentCategory);
@@ -1355,9 +1359,42 @@ function bookmarkApp() {
 
     async loadCategory(categoryId) {
       this.currentCategory = categoryId;
+      this.syncCategoryFilterValue();
       this.page = 1;
       this.closeCategoryDropdown();
       await this.loadBookmarks();
+    },
+
+    syncCategoryFilterValue() {
+      if (this.currentCategory === null) {
+        this.categoryFilterValue = 'all';
+      } else {
+        this.categoryFilterValue = String(this.currentCategory);
+      }
+    },
+
+    async applyCategoryFilter(value) {
+      const next = String(value || 'all');
+      if (next === 'all') {
+        await this.loadCategory(null);
+      } else if (next === 'uncategorized') {
+        await this.loadCategory('uncategorized');
+      } else {
+        const id = Number(next);
+        if (!Number.isFinite(id)) {
+          await this.loadCategory(null);
+        } else {
+          await this.loadCategory(id);
+        }
+      }
+    },
+
+    currentCategoryLabel() {
+      if (this.currentCategory === null) return '全部书签';
+      if (this.currentCategory === 'uncategorized') return '未分类';
+      const id = Number(this.currentCategory);
+      const cat = (this.categories || []).find((item) => Number(item.id) === id);
+      return cat ? cat.name : '分类';
     },
 
     searchBookmarks() {

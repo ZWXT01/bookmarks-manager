@@ -149,156 +149,94 @@
                                 <span class="text-[10px] text-slate-500 font-medium">备份还原</span>
                             </button>
                         </div>
+
+                        <div class="mt-4 border-t border-slate-100 pt-4" data-testid="quick-category-filter">
+                            <div class="mb-2 flex items-center justify-between">
+                                <h3 class="text-xs font-bold text-slate-600">分类筛选</h3>
+                                <button type="button" @click="applyCategoryFilter('all')"
+                                    class="text-[11px] text-blue-600 hover:underline">全部</button>
+                            </div>
+                            <label for="quick-category-filter-select" class="sr-only">分类筛选</label>
+                            <select id="quick-category-filter-select"
+                                x-model="categoryFilterValue"
+                                @change="applyCategoryFilter($event.target.value)"
+                                data-testid="category-filter-select"
+                                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs">
+                                <option value="all">全部书签</option>
+                                <option value="uncategorized">未分类</option>
+                                <template x-for="cat in categories" :key="'filter-' + cat.id">
+                                    <option :value="String(cat.id)" x-text="cat.name"></option>
+                                </template>
+                            </select>
+                            <p class="mt-1 text-[11px] text-slate-400" x-text="'当前：' + currentCategoryLabel()"></p>
+                        </div>
+
+                        <div class="mt-4 border-t border-slate-100 pt-4" data-testid="category-batch-panel">
+                            <div class="mb-2 flex items-center justify-between gap-2">
+                                <h3 class="text-xs font-bold text-slate-600">分类批量操作</h3>
+                                <span class="text-[11px] text-slate-400">
+                                    已选 <span x-text="selectedCategories.length"></span>
+                                </span>
+                            </div>
+                            <input type="text"
+                                x-model="categorySearch"
+                                placeholder="搜索分类..."
+                                data-testid="category-batch-search"
+                                class="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs">
+                            <label class="mb-2 flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
+                                <input type="checkbox"
+                                    data-testid="category-batch-select-all"
+                                    :checked="allCategoriesSelected"
+                                    @change="toggleAllCategories($event)"
+                                    class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                全选分类
+                            </label>
+                            <div class="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-100 p-2 custom-scrollbar"
+                                data-testid="category-batch-list">
+                                <template x-if="filteredCategories.length === 0">
+                                    <div class="py-3 text-center text-xs text-slate-400">暂无分类</div>
+                                </template>
+                                <template x-for="cat in filteredCategories" :key="'batch-' + cat.id">
+                                    <label class="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-slate-50"
+                                        :style="cat.level === 1 ? 'padding-left: 1.5rem;' : ''">
+                                        <input type="checkbox"
+                                            :value="String(cat.id)"
+                                            x-model="selectedCategories"
+                                            data-testid="category-batch-checkbox"
+                                            :data-category-id="cat.id"
+                                            class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
+                                        <span x-text="cat.icon || (cat.level === 1 ? '📄' : '📁')"></span>
+                                        <span class="min-w-0 flex-1 truncate" x-text="cat.name"></span>
+                                        <span class="text-[10px] text-slate-400" x-text="cat.count"></span>
+                                    </label>
+                                </template>
+                            </div>
+                            <div class="mt-2 grid grid-cols-3 gap-2">
+                                <button type="button"
+                                    @click="checkSelectedCategories()"
+                                    data-testid="category-batch-check"
+                                    class="rounded border border-blue-200 px-2 py-1.5 text-xs text-blue-600 hover:bg-blue-50">检查</button>
+                                <button type="button"
+                                    @click="openExportSelectedCategories()"
+                                    data-testid="category-batch-export"
+                                    class="rounded border border-emerald-200 px-2 py-1.5 text-xs text-emerald-600 hover:bg-emerald-50">导出</button>
+                                <button type="button"
+                                    @click="batchDeleteCategories()"
+                                    data-testid="category-batch-delete"
+                                    class="rounded border border-rose-200 px-2 py-1.5 text-xs text-rose-600 hover:bg-rose-50">删除</button>
+                            </div>
+                            <button type="button"
+                                x-show="selectedCategories.length > 0"
+                                @click="selectedCategories = []"
+                                data-testid="category-batch-clear"
+                                class="mt-2 w-full rounded border px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-50">取消选择</button>
+                        </div>
                     </div>
 
                 </aside>
 
                 <!-- Main Content -->
                 <main class="flex-1 min-w-0 flex flex-col overflow-y-auto overflow-x-hidden">
-                    <!-- UI Redesign: Category Navigation moved from Sidebar to Top of Main Content -->
-                    <!-- Category Tabs with Dropdown Container -->
-                    <div class="relative z-30 mb-4">
-                    <div class="category-tabs-container rounded-lg shadow-sm border">
-                        <!-- Left Scroll Button -->
-                        <button @click="scrollCategoryTabs('left')"
-                                class="category-tabs-scroll-btn mr-2"
-                                aria-label="向左滚动"
-                                title="向左滚动">
-                            ◀
-                        </button>
-
-                        <div class="category-tabs"
-                             :class="{ 'is-dragging': _categoryTabsDragging }"
-                             role="tablist"
-                             aria-label="分类导航"
-                             x-ref="categoryTabsContainer"
-                             @pointerdown="startCategoryTabsDrag($event)"
-                             @pointermove="handleCategoryTabsDrag($event)"
-                             @pointerup="stopCategoryTabsDrag($event)"
-                             @pointercancel="stopCategoryTabsDrag($event)"
-                             @lostpointercapture="stopCategoryTabsDrag($event)"
-                             @click.capture="handleCategoryTabsClickCapture($event)"
-                             @wheel="handleCategoryTabsWheel($event)">
-                            <!-- All -->
-                            <button @click="loadCategory(null)"
-                                    @focus="closeCategoryDropdown()"
-                                    type="button"
-                                    role="tab"
-                                    data-testid="category-nav-all-tab"
-                                    :aria-selected="currentCategory === null"
-                                    aria-label="全部书签"
-                                    class="category-tab"
-                                    :class="currentCategory === null ? 'active' : ''">
-                                <span class="category-tab-icon">📚</span>
-                                <span>全部</span>
-                                <span class="text-[10px] opacity-70" x-text="totalCount"></span>
-                            </button>
-
-                            <!-- Uncategorized -->
-                            <button @click="loadCategory('uncategorized')"
-                                    @focus="closeCategoryDropdown()"
-                                    type="button"
-                                    role="tab"
-                                    data-testid="category-nav-uncategorized-tab"
-                                    :aria-selected="currentCategory === 'uncategorized'"
-                                    aria-label="未分类书签"
-                                    class="category-tab"
-                                    :class="currentCategory === 'uncategorized' ? 'active' : ''">
-                                <span class="category-tab-icon">📂</span>
-                                <span>未分类</span>
-                                <span class="text-[10px] opacity-70" x-text="uncategorizedCount"></span>
-                            </button>
-
-                            <!-- Parent Categories -->
-                            <template x-for="cat in categoryTree" :key="cat.id">
-                                <div class="relative group flex items-center gap-1"
-                                     role="presentation"
-                                     @mouseenter="cat.children && cat.children.length > 0 ? handleCategoryHover(cat.id) : null"
-                                     @mouseleave="cat.children && cat.children.length > 0 ? handleCategoryLeave() : null">
-                                    <button @click="handleCategoryClick(cat)"
-                                            @focus="if (cat.children && cat.children.length > 0) { if (skipNextFocusOpen) { skipNextFocusOpen = false; } else { openCategoryDropdown(cat.id); } } else { closeCategoryDropdown(); }"
-                                            @blur="cat.children && cat.children.length > 0 ? handleCategoryBlur($event) : null"
-                                            @keydown.arrow-down.prevent="cat.children && cat.children.length > 0 ? focusFirstSubcategory(cat.id) : null"
-                                            @keydown.escape.prevent="closeCategoryDropdown(true)"
-                                            type="button"
-                                            :id="'category-tab-' + cat.id"
-                                            role="tab"
-                                            :aria-selected="currentCategory == cat.id"
-                                            :aria-haspopup="cat.children && cat.children.length > 0 ? 'true' : null"
-                                            :aria-expanded="cat.children && cat.children.length > 0 ? (categoryDropdownVisible && activeParentCategory == cat.id) : null"
-                                            :aria-controls="cat.children && cat.children.length > 0 ? 'subcategory-panel-' + cat.id : null"
-                                            :aria-label="cat.name + '分类'"
-                                            data-testid="category-nav-tab"
-                                            :data-category-id="cat.id"
-                                            class="category-tab"
-                                            :class="currentCategory == cat.id ? 'active' : ''">
-                                        <span class="category-tab-icon" x-text="cat.icon || '📁'"></span>
-                                        <span x-text="cat.name"></span>
-                                    </button>
-                                </div>
-                            </template>
-                        </div>
-
-                        <!-- Right Scroll Button -->
-                        <button @click="scrollCategoryTabs('right')"
-                                class="category-tabs-scroll-btn ml-2"
-                                aria-label="向右滚动"
-                                title="向右滚动">
-                            ▶
-                        </button>
-
-                        <!-- Manage Button -->
-                        <button @click="openCategoryManager()"
-                                @focus="closeCategoryDropdown()"
-                                class="ml-2 p-2 text-slate-400 hover:text-blue-500 transition-colors flex-shrink-0"
-                                data-testid="open-category-manager"
-                                aria-label="管理分类"
-                                title="管理分类">
-                            <span class="text-lg" aria-hidden="true">⚙️</span>
-                        </button>
-                    </div>
-
-                    <!-- Subcategory Dropdown Panel (Phase 2) - Absolute positioned overlay -->
-                    <div x-show="categoryDropdownVisible"
-                         x-ref="subcategoryPanel"
-                         data-testid="subcategory-panel"
-                         :id="'subcategory-panel-' + activeParentCategory"
-                         role="region"
-                         :aria-label="activeParentCategory ? (categoryTree.find(c => c.id == activeParentCategory)?.name + ' 的子分类') : '子分类'"
-                         x-transition:enter="transition ease-out duration-200"
-                         x-transition:enter-start="opacity-0 translate-y-1"
-                         x-transition:enter-end="opacity-100 translate-y-0"
-                         x-transition:leave="transition ease-in duration-150"
-                         x-transition:leave-start="opacity-100 translate-y-0"
-                         x-transition:leave-end="opacity-0 translate-y-1"
-                         @click.away="closeCategoryDropdown()"
-                         @keydown.escape.prevent="closeCategoryDropdown(true)"
-                         @mouseenter="handleDropdownPanelEnter()"
-                         @mouseleave="handleDropdownPanelLeave()"
-                         @focusin="handleDropdownPanelEnter()"
-                         @focusout="handleDropdownPanelFocusOut($event)"
-                         class="absolute top-full left-0 right-0 z-50 category-dropdown-panel-external rounded-b-lg border shadow-lg"
-                         style="max-height: 70vh; overflow-y: auto;">
-                        <template x-if="activeParentCategory">
-                            <div class="col-span-full grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
-                                <template x-for="child in (categoryTree.find(c => c.id == activeParentCategory)?.children || [])" :key="child.id">
-                                    <button @click="loadCategory(child.id); closeCategoryDropdown()"
-                                            type="button"
-                                            :aria-label="(child.displayName || child.name) + '子分类'"
-                                            data-testid="subcategory-nav-item"
-                                            :data-category-id="child.id"
-                                            class="subcategory-item focus:outline-none focus:ring-2 focus:ring-blue-500"
-                                            :class="currentCategory == child.id ? 'active' : ''">
-                                        <span class="subcategory-item-icon" x-text="child.icon || '📄'"></span>
-                                        <span class="subcategory-item-text" x-text="child.displayName || child.name"></span>
-                                        <span class="subcategory-item-count text-[10px] opacity-50" x-text="child.count"></span>
-                                    </button>
-                                </template>
-                            </div>
-                        </template>
-                    </div>
-                    </div>
-
                     <!-- Search & Filters -->
                     <div class="rounded-lg border bg-white p-3 shadow-sm mb-4 bookmark-toolbar-card">
                         <div class="flex flex-wrap items-center gap-2 bookmark-toolbar-row">
@@ -1498,151 +1436,6 @@
             </div>
         </div>
 
-        <!-- Category Manager Modal (Phase 2) -->
-        <div x-cloak x-show="showCategoryManager"
-             x-transition:enter="transition ease-out duration-300"
-             x-transition:enter-start="opacity-0 translate-y-4"
-             x-transition:enter-end="opacity-100 translate-y-0"
-             data-testid="category-manager-modal"
-             class="category-manager-modal custom-scrollbar">
-            
-            <div class="category-manager-header sticky top-0 z-10">
-                <div class="flex items-center gap-4 flex-1">
-                    <h2 class="text-xl font-bold flex items-center gap-2">
-                        <span class="p-1.5 rounded-lg bg-blue-100 text-blue-600">📁</span>
-                        分类管理
-                    </h2>
-                    <div class="relative flex-1 max-w-md">
-                        <input type="text"
-                               id="category-manager-search"
-                               x-model="categoryManagerSearch"
-                               @input="$nextTick(() => syncCategoryManagerSortState())"
-                               data-testid="category-manager-search"
-                               placeholder="搜索分类名称..."
-                               aria-label="搜索分类"
-                               class="w-full pl-10 pr-4 py-2 rounded-full border border-slate-200 focus:ring-2 focus:ring-blue-500/20 text-sm">
-                        <span class="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" aria-hidden="true">🔍</span>
-                    </div>
-                </div>
-                
-                <div class="flex items-center gap-3">
-                    <button @click="openCreateCategoryModal(null)" data-testid="category-manager-add-root" class="btn-primary btn-sm flex items-center gap-1">
-                        <span>➕</span> 添加一级分类
-                    </button>
-                    <button @click="closeCategoryManager()"
-                        data-testid="close-category-manager"
-                        class="p-2 rounded-full hover:bg-slate-100 text-slate-500 transition-colors">
-                        <span class="text-xl">✕</span>
-                    </button>
-                </div>
-            </div>
-
-            <div class="category-manager-content bg-slate-50">
-                <div class="mb-4 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-                    <p>拖拽卡片可调整一级分类顺序，导航栏会按相同顺序显示。</p>
-                    <p x-show="categoryManagerSearch.trim()" class="text-amber-600">搜索时已禁用拖拽排序</p>
-                </div>
-
-                <template x-if="filteredCategoryTree.length === 0">
-                    <div class="flex flex-col items-center justify-center py-20 text-slate-400">
-                        <span class="text-4xl mb-4">🔍</span>
-                        <p>未找到相关分类</p>
-                    </div>
-                </template>
-
-                <div class="category-manager-grid" x-ref="categoryManagerGrid">
-                    <template x-for="cat in filteredCategoryTree" :key="cat.id">
-                        <div class="card p-4 hover:shadow-md transition-all group overflow-visible flex flex-col category-card"
-                             data-testid="category-drag-card" :data-category-id="cat.id">
-                            <div class="flex items-center justify-between mb-4">
-                                <div class="flex items-center gap-3 min-w-0">
-                                    <div class="drag-handle"
-                                         :class="categoryManagerSearch.trim() ? 'pointer-events-none opacity-30' : 'cursor-move text-slate-300 hover:text-slate-500'"
-                                         :title="categoryManagerSearch.trim() ? '清空搜索后可拖拽排序' : '拖拽排序'">
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="12" r="1"/><circle cx="9" cy="5" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="15" cy="19" r="1"/></svg>
-                                    </div>
-                                    <input type="checkbox"
-                                           :value="cat.id"
-                                           x-model="selectedCategories"
-                                           class="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                           :aria-label="'选择 ' + cat.name">
-                                    <span class="text-2xl" x-text="cat.icon || '📁'"></span>
-                                    <div class="min-w-0">
-                                        <h3 class="font-bold text-slate-800 truncate" x-text="cat.name" :class="cat.isMatch ? 'bg-amber-100' : ''"></h3>
-                                        <p class="text-xs text-slate-400" x-text="cat.count + ' 个书签'"></p>
-                                    </div>
-                                </div>
-                                <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                    <button @click="openCreateCategoryModal(cat.id)" class="p-1.5 text-slate-400 hover:text-blue-500" title="添加子分类">➕</button>
-                                    <button @click="openRenameCategoryModal(cat)"
-                                            data-testid="rename-category-button"
-                                            :data-category-id="cat.id"
-                                            class="p-1.5 text-slate-400 hover:text-blue-500"
-                                            title="编辑名称">✏️</button>
-                                    <button @click="openCategoryStyleModal(cat)" class="p-1.5 text-slate-400 hover:text-blue-500" title="设置样式">🎨</button>
-                                    <button @click="deleteCategory(cat.id)"
-                                            data-testid="delete-category-button"
-                                            :data-category-id="cat.id"
-                                            class="p-1.5 text-slate-400 hover:text-rose-500"
-                                            title="删除分类">🗑️</button>
-                                </div>
-                            </div>
-
-                            <!-- Children -->
-                            <template x-if="cat.children && cat.children.length > 0">
-                                <div class="space-y-2 mt-2 pl-4 border-l-2 border-slate-100">
-                                    <template x-for="child in cat.children" :key="child.id">
-                                        <div class="flex items-center justify-between py-1 px-2 rounded hover:bg-slate-50 text-sm group/child">
-                                            <div class="flex items-center gap-2 min-w-0">
-                                                <input type="checkbox"
-                                                       :value="child.id"
-                                                       x-model="selectedCategories"
-                                                       class="w-3.5 h-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                                       :aria-label="'选择 ' + (child.displayName || child.name)">
-                                                <span x-text="child.icon || '📄'"></span>
-                                                <span class="truncate text-slate-600" x-text="child.displayName || child.name" :class="child.isMatch ? 'bg-amber-100' : ''"></span>
-                                                <span class="text-[10px] text-slate-400" x-text="'(' + child.count + ')'"></span>
-                                            </div>
-                                            <div class="flex items-center gap-1 opacity-0 group-hover/child:opacity-100 transition-opacity">
-                                                <button @click="openRenameCategoryModal(child)"
-                                                        data-testid="rename-category-button"
-                                                        :data-category-id="child.id"
-                                                        class="p-1 text-slate-400 hover:text-blue-500"
-                                                        title="编辑名称">✏️</button>
-                                                <button @click="openCategoryStyleModal(child)" class="p-1 text-slate-400 hover:text-blue-500" title="设置样式">🎨</button>
-                                                <button @click="deleteCategory(child.id)"
-                                                        data-testid="delete-category-button"
-                                                        :data-category-id="child.id"
-                                                        class="p-1 text-slate-400 hover:text-rose-500"
-                                                        title="删除">🗑️</button>
-                                            </div>
-                                        </div>
-                                    </template>
-                                </div>
-                            </template>
-                        </div>
-                    </template>
-                </div>
-            </div>
-
-            <!-- Selection Actions Overlay -->
-            <template x-if="selectedCategories.length > 0">
-                <div class="category-bulk-actions-shell" data-testid="category-bulk-actions-shell">
-                    <div class="category-bulk-actions bg-slate-900 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-6 animate-fade-in"
-                         data-testid="category-bulk-actions">
-                        <span class="text-sm font-medium">已选择 <span x-text="selectedCategories.length" class="text-blue-400"></span> 个分类</span>
-                        <div class="h-4 w-[1px] bg-slate-700"></div>
-                        <div class="flex items-center gap-4">
-                            <button @click="batchDeleteCategories()" class="text-sm text-rose-400 hover:text-rose-300 font-medium">🗑️ 批量删除</button>
-                            <button @click="checkSelectedCategories()" class="text-sm text-blue-400 hover:text-blue-300 font-medium">🔍 批量检查</button>
-                            <button @click="openExportSelectedCategories()" class="text-sm text-emerald-400 hover:text-emerald-300 font-medium">📤 批量导出</button>
-                        </div>
-                        <div class="h-4 w-[1px] bg-slate-700"></div>
-                        <button @click="selectedCategories = []" class="text-xs text-slate-400 hover:text-white">取消选择</button>
-                    </div>
-                </div>
-            </template>
-        </div>
     </div>
     <script src="/public/lib/alpine.min.js"></script>
 </body>

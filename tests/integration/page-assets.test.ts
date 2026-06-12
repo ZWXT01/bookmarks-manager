@@ -237,7 +237,7 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('data-testid="export-download"');
     });
 
-    it('renders repo playwright smoke selectors for search, bookmark editing, and category management', async () => {
+    it('renders repo playwright smoke selectors for search, bookmark editing, and category quick controls', async () => {
         const session = await ctx.login();
         const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
 
@@ -258,6 +258,28 @@ describe('integration: page assets', () => {
         expect(response.body).not.toContain('data-testid="open-backup-modal" class="btn-secondary btn-sm hidden md:inline-flex');
         expect(response.body).not.toContain('@click="openCategoryManager()" class="flex flex-col items-center justify-center p-3 rounded-xl');
         expect(response.body).not.toContain('@click="openCreateCategoryModal(null)" class="flex flex-col items-center justify-center p-3 rounded-xl');
+        expect(response.body).toContain('data-testid="quick-category-filter"');
+        expect(response.body).toContain('data-testid="category-filter-select"');
+        expect(response.body).toContain('data-testid="category-batch-panel"');
+        expect(response.body).toContain('data-testid="category-batch-search"');
+        expect(response.body).toContain('data-testid="category-batch-select-all"');
+        expect(response.body).toContain('data-testid="category-batch-list"');
+        expect(response.body).toContain('data-testid="category-batch-checkbox"');
+        expect(response.body).toContain('data-testid="category-batch-check"');
+        expect(response.body).toContain('data-testid="category-batch-export"');
+        expect(response.body).toContain('data-testid="category-batch-delete"');
+        expect(response.body).toContain('data-testid="category-batch-clear"');
+        expect(response.body).not.toContain('data-testid="category-nav-all-tab"');
+        expect(response.body).not.toContain('data-testid="category-nav-uncategorized-tab"');
+        expect(response.body).not.toContain('data-testid="category-nav-tab"');
+        expect(response.body).not.toContain('data-testid="subcategory-nav-item"');
+        expect(response.body).not.toContain('data-testid="open-category-manager"');
+        expect(response.body).not.toContain('data-testid="category-manager-modal"');
+        expect(response.body).not.toContain('data-testid="category-manager-search"');
+        expect(response.body).not.toContain('data-testid="category-manager-add-root"');
+        expect(response.body).not.toContain('data-testid="category-bulk-actions-shell"');
+        expect(response.body).not.toContain('data-testid="category-bulk-actions"');
+        expect(response.body).not.toContain('category-tabs-container');
         expect(response.body).toContain('data-testid="add-bookmark-modal"');
         expect(response.body).toContain('data-testid="add-bookmark-url-input"');
         expect(response.body).toContain('data-testid="add-bookmark-title-input"');
@@ -285,18 +307,10 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('@keyup.enter="saveEditBookmark()"');
         expect(response.body).toContain('data-testid="bookmark-row-edit-button"');
         expect(response.body).toContain('data-testid="bookmark-row-delete-button"');
-        expect(response.body).toContain('data-testid="category-nav-uncategorized-tab"');
-        expect(response.body).toContain('data-testid="category-manager-search"');
-        expect(response.body).toContain('data-testid="category-manager-add-root"');
-        expect(response.body).toContain('data-testid="rename-category-button"');
         expect(response.body).toContain('data-testid="rename-category-modal"');
         expect(response.body).toContain('data-testid="rename-category-name-input"');
         expect(response.body).toContain('data-testid="rename-category-cancel"');
         expect(response.body).toContain('data-testid="rename-category-confirm"');
-        expect(response.body).toContain('data-testid="category-bulk-actions-shell"');
-        expect(response.body).toContain('data-testid="category-bulk-actions"');
-        expect(response.body).toContain('category-bulk-actions-shell');
-        expect(response.body).not.toContain('fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900');
         expect(response.body).toContain('data-testid="create-category-modal"');
         expect(response.body).toContain('data-testid="create-category-name-input"');
         expect(response.body).toContain('data-testid="create-category-cancel"');
@@ -307,20 +321,6 @@ describe('integration: page assets', () => {
         expect(response.body).not.toContain('categoryColor');
         expect(response.body).not.toContain('createCategoryColor');
         expect(response.body).not.toContain('color in [');
-    });
-
-    it('serves category bulk action centering styles without transform-based positioning', async () => {
-        const response = await ctx.app.inject({
-            method: 'GET',
-            url: '/public/app.css',
-        });
-
-        expect(response.statusCode).toBe(200);
-        expect(response.body).toContain('.category-bulk-actions-shell');
-        expect(response.body).toContain('justify-content: center');
-        expect(response.body).toContain('pointer-events: none');
-        expect(response.body).toContain('.category-bulk-actions');
-        expect(response.body).toContain('pointer-events: auto');
     });
 
     it('renders backup modal shells and job detail selectors for browser regression', async () => {
