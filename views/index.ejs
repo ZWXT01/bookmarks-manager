@@ -150,39 +150,111 @@
                             </button>
                         </div>
 
-                        <div class="mt-4 border-t border-slate-100 pt-4" data-testid="quick-category-filter">
-                            <div class="mb-2 flex items-center justify-between">
-                                <h3 class="text-xs font-bold text-slate-600">分类筛选</h3>
-                                <button type="button" @click="applyCategoryFilter('all')"
-                                    class="text-[11px] text-blue-600 hover:underline">全部</button>
-                            </div>
-                            <label for="quick-category-filter-select" class="sr-only">分类筛选</label>
-                            <select id="quick-category-filter-select"
-                                x-model="categoryFilterValue"
-                                @change="applyCategoryFilter($event.target.value)"
-                                data-testid="category-filter-select"
-                                class="w-full rounded-lg border border-slate-200 px-3 py-2 text-xs">
-                                <option value="all">全部书签</option>
-                                <option value="uncategorized">未分类</option>
-                                <template x-for="cat in categories" :key="'filter-' + cat.id">
-                                    <option :value="String(cat.id)" x-text="cat.name"></option>
-                                </template>
-                            </select>
-                            <p class="mt-1 text-[11px] text-slate-400" x-text="'当前：' + currentCategoryLabel()"></p>
+                    </div>
+
+                    <div class="card p-4 flex-shrink-0 animate-fade-in" data-testid="category-filter-card">
+                        <div class="mb-3 flex items-center justify-between gap-2">
+                            <h2 class="text-sm font-bold text-slate-700 flex items-center gap-2">
+                                <span class="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-xs">📂</span>
+                                分类筛查
+                            </h2>
+                            <span class="max-w-[8rem] truncate text-[11px] text-slate-400" x-text="currentCategoryLabel()"></span>
                         </div>
 
-                        <div class="mt-4 border-t border-slate-100 pt-4" data-testid="category-batch-panel">
+                        <div class="space-y-1" data-testid="category-filter-list">
+                            <button type="button"
+                                @click="loadCategory(null); closeMobileSidebar()"
+                                data-testid="category-filter-all"
+                                class="flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors"
+                                :class="currentCategory === null ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-slate-600 hover:bg-slate-50'">
+                                <span class="text-base">📚</span>
+                                <span class="min-w-0 flex-1 truncate">全部书签</span>
+                                <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500" x-text="totalCount"></span>
+                            </button>
+                            <button type="button"
+                                @click="loadCategory('uncategorized'); closeMobileSidebar()"
+                                data-testid="category-filter-uncategorized"
+                                class="flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors"
+                                :class="currentCategory === 'uncategorized' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-slate-600 hover:bg-slate-50'">
+                                <span class="text-base">📂</span>
+                                <span class="min-w-0 flex-1 truncate">未分类</span>
+                                <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500" x-text="uncategorizedCount"></span>
+                            </button>
+
+                            <template x-if="categoryTree.length === 0">
+                                <div class="py-4 text-center text-xs text-slate-400">暂无分类</div>
+                            </template>
+
+                            <template x-for="cat in categoryTree" :key="'filter-parent-' + cat.id">
+                                <div class="space-y-1" data-testid="category-filter-parent" :data-category-id="cat.id">
+                                    <div class="flex items-center gap-1 rounded-lg hover:bg-slate-50">
+                                        <input type="checkbox"
+                                            :value="String(cat.id)"
+                                            x-model="selectedCategories"
+                                            data-testid="category-batch-checkbox"
+                                            :data-category-id="cat.id"
+                                            :aria-label="'选择分类 ' + cat.name"
+                                            class="ml-2 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                            @click.stop>
+                                        <button type="button"
+                                            @click="loadCategory(cat.id); closeMobileSidebar()"
+                                            data-testid="category-filter-parent-button"
+                                            :data-category-id="cat.id"
+                                            class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2 py-2 text-left text-xs transition-colors"
+                                            :class="isCurrentCategory(cat.id) ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-slate-600 hover:bg-slate-50'">
+                                            <span class="text-base" x-text="cat.icon || '📁'"></span>
+                                            <span class="min-w-0 flex-1 truncate" x-text="cat.name"></span>
+                                            <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500" x-text="cat.count"></span>
+                                        </button>
+                                        <button type="button"
+                                            x-show="cat.children && cat.children.length > 0"
+                                            @click.stop="toggleCategoryExpanded(cat.id)"
+                                            data-testid="category-filter-expand"
+                                            :data-category-id="cat.id"
+                                            :aria-expanded="isCategoryExpanded(cat.id)"
+                                            class="mr-1 flex h-8 w-8 items-center justify-center rounded-lg text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                                            :title="isCategoryExpanded(cat.id) ? '收起二级分类' : '展开二级分类'">
+                                            <span x-text="isCategoryExpanded(cat.id) ? '▾' : '▸'"></span>
+                                        </button>
+                                    </div>
+                                    <div x-show="isCategoryExpanded(cat.id)"
+                                        class="ml-7 space-y-1 border-l border-slate-100 pl-2"
+                                        data-testid="category-filter-children"
+                                        :data-parent-id="cat.id">
+                                        <template x-for="child in (cat.children || [])" :key="'filter-child-' + child.id">
+                                            <div class="flex items-center gap-1 rounded-lg hover:bg-slate-50">
+                                                <input type="checkbox"
+                                                    :value="String(child.id)"
+                                                    x-model="selectedCategories"
+                                                    data-testid="category-batch-checkbox"
+                                                    :data-category-id="child.id"
+                                                    :aria-label="'选择分类 ' + (child.displayName || child.name)"
+                                                    class="ml-2 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                                    @click.stop>
+                                                <button type="button"
+                                                    @click="loadCategory(child.id); closeMobileSidebar()"
+                                                    data-testid="category-filter-child-button"
+                                                    :data-category-id="child.id"
+                                                    class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition-colors"
+                                                    :class="isCurrentCategory(child.id) ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-slate-600 hover:bg-slate-50'">
+                                                    <span x-text="child.icon || '📄'"></span>
+                                                    <span class="min-w-0 flex-1 truncate" x-text="child.displayName || child.name"></span>
+                                                    <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500" x-text="child.count"></span>
+                                                </button>
+                                            </div>
+                                        </template>
+                                    </div>
+                                </div>
+                            </template>
+                        </div>
+
+                        <div class="mt-4 border-t border-slate-100 pt-3" data-testid="category-batch-panel">
                             <div class="mb-2 flex items-center justify-between gap-2">
                                 <h3 class="text-xs font-bold text-slate-600">分类批量操作</h3>
                                 <span class="text-[11px] text-slate-400">
                                     已选 <span x-text="selectedCategories.length"></span>
                                 </span>
                             </div>
-                            <input type="text"
-                                x-model="categorySearch"
-                                placeholder="搜索分类..."
-                                data-testid="category-batch-search"
-                                class="mb-2 w-full rounded-lg border border-slate-200 px-3 py-2 text-xs">
                             <label class="mb-2 flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
                                 <input type="checkbox"
                                     data-testid="category-batch-select-all"
@@ -191,39 +263,22 @@
                                     class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
                                 全选分类
                             </label>
-                            <div class="max-h-56 space-y-1 overflow-y-auto rounded-lg border border-slate-100 p-2 custom-scrollbar"
-                                data-testid="category-batch-list">
-                                <template x-if="filteredCategories.length === 0">
-                                    <div class="py-3 text-center text-xs text-slate-400">暂无分类</div>
-                                </template>
-                                <template x-for="cat in filteredCategories" :key="'batch-' + cat.id">
-                                    <label class="flex items-center gap-2 rounded px-2 py-1.5 text-xs hover:bg-slate-50"
-                                        :style="cat.level === 1 ? 'padding-left: 1.5rem;' : ''">
-                                        <input type="checkbox"
-                                            :value="String(cat.id)"
-                                            x-model="selectedCategories"
-                                            data-testid="category-batch-checkbox"
-                                            :data-category-id="cat.id"
-                                            class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                                        <span x-text="cat.icon || (cat.level === 1 ? '📄' : '📁')"></span>
-                                        <span class="min-w-0 flex-1 truncate" x-text="cat.name"></span>
-                                        <span class="text-[10px] text-slate-400" x-text="cat.count"></span>
-                                    </label>
-                                </template>
-                            </div>
-                            <div class="mt-2 grid grid-cols-3 gap-2">
+                            <div class="grid grid-cols-3 gap-2">
                                 <button type="button"
                                     @click="checkSelectedCategories()"
                                     data-testid="category-batch-check"
-                                    class="rounded border border-blue-200 px-2 py-1.5 text-xs text-blue-600 hover:bg-blue-50">检查</button>
+                                    :disabled="selectedCategories.length === 0"
+                                    class="rounded border border-blue-200 px-2 py-1.5 text-xs text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">检查</button>
                                 <button type="button"
                                     @click="openExportSelectedCategories()"
                                     data-testid="category-batch-export"
-                                    class="rounded border border-emerald-200 px-2 py-1.5 text-xs text-emerald-600 hover:bg-emerald-50">导出</button>
+                                    :disabled="selectedCategories.length === 0"
+                                    class="rounded border border-emerald-200 px-2 py-1.5 text-xs text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40">导出</button>
                                 <button type="button"
                                     @click="batchDeleteCategories()"
                                     data-testid="category-batch-delete"
-                                    class="rounded border border-rose-200 px-2 py-1.5 text-xs text-rose-600 hover:bg-rose-50">删除</button>
+                                    :disabled="selectedCategories.length === 0"
+                                    class="rounded border border-rose-200 px-2 py-1.5 text-xs text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40">删除</button>
                             </div>
                             <button type="button"
                                 x-show="selectedCategories.length > 0"
