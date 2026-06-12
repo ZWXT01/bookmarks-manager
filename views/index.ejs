@@ -613,14 +613,22 @@
                         class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
                 </div>
                 <div class="space-y-3">
-                    <input type="text" x-model="editBookmark.url" placeholder="URL"
-                        data-testid="edit-bookmark-url-input"
-                        @keyup.enter="saveEditBookmark()"
-                        class="w-full rounded border px-3 py-2 text-sm">
-                    <input type="text" x-model="editBookmark.title" placeholder="标题"
-                        data-testid="edit-bookmark-title-input"
-                        @keyup.enter="saveEditBookmark()"
-                        class="w-full rounded border px-3 py-2 text-sm">
+                    <div>
+                        <label for="edit-bookmark-title-input" class="text-xs text-slate-600 block mb-1"
+                            data-testid="edit-bookmark-title-label">标题</label>
+                        <input id="edit-bookmark-title-input" type="text" x-model="editBookmark.title" placeholder="书签标题"
+                            data-testid="edit-bookmark-title-input"
+                            @keyup.enter="saveEditBookmark()"
+                            class="w-full rounded border px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label for="edit-bookmark-url-input" class="text-xs text-slate-600 block mb-1"
+                            data-testid="edit-bookmark-url-label">URL *</label>
+                        <input id="edit-bookmark-url-input" type="text" x-model="editBookmark.url" placeholder="https://example.com"
+                            data-testid="edit-bookmark-url-input"
+                            @keyup.enter="saveEditBookmark()"
+                            class="w-full rounded border px-3 py-2 text-sm">
+                    </div>
                 </div>
                 <div class="flex justify-end gap-2 mt-4">
                     <button @click="closeEditModal()" data-testid="edit-bookmark-cancel"
