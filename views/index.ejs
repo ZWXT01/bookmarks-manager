@@ -152,146 +152,139 @@
 
                     </div>
 
-                    <div class="card p-4 flex-shrink-0 animate-fade-in" data-testid="category-filter-card">
-                        <div class="mb-3 flex items-center justify-between gap-2">
-                            <h2 class="text-sm font-bold text-slate-700 flex items-center gap-2">
-                                <span class="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-indigo-500 flex items-center justify-center text-white text-xs">📂</span>
-                                分类筛查
-                            </h2>
-                            <span class="max-w-[8rem] truncate text-[11px] text-slate-400" x-text="currentCategoryLabel()"></span>
-                        </div>
 
-                        <div class="space-y-1" data-testid="category-filter-list">
-                            <button type="button"
-                                @click="loadCategory(null); closeMobileSidebar()"
-                                data-testid="category-filter-all"
-                                class="flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors"
-                                :class="currentCategory === null ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-slate-600 hover:bg-slate-50'">
-                                <span class="text-base">📚</span>
-                                <span class="min-w-0 flex-1 truncate">全部书签</span>
-                                <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500" x-text="totalCount"></span>
-                            </button>
-                            <button type="button"
-                                @click="loadCategory('uncategorized'); closeMobileSidebar()"
-                                data-testid="category-filter-uncategorized"
-                                class="flex w-full items-center gap-2 rounded-lg border px-2.5 py-2 text-left text-xs transition-colors"
-                                :class="currentCategory === 'uncategorized' ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-slate-600 hover:bg-slate-50'">
-                                <span class="text-base">📂</span>
-                                <span class="min-w-0 flex-1 truncate">未分类</span>
-                                <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500" x-text="uncategorizedCount"></span>
-                            </button>
-
-                            <template x-if="categoryTree.length === 0">
-                                <div class="py-4 text-center text-xs text-slate-400">暂无分类</div>
-                            </template>
-
-                            <template x-for="cat in categoryTree" :key="'filter-parent-' + cat.id">
-                                <div class="space-y-1" data-testid="category-filter-parent" :data-category-id="cat.id">
-                                    <div class="flex items-center gap-1 rounded-lg hover:bg-slate-50">
-                                        <input type="checkbox"
-                                            :value="String(cat.id)"
-                                            x-model="selectedCategories"
-                                            data-testid="category-batch-checkbox"
-                                            :data-category-id="cat.id"
-                                            :aria-label="'选择分类 ' + cat.name"
-                                            class="ml-2 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                            @click.stop>
-                                        <button type="button"
-                                            @click="loadCategory(cat.id); closeMobileSidebar()"
-                                            data-testid="category-filter-parent-button"
-                                            :data-category-id="cat.id"
-                                            class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2 py-2 text-left text-xs transition-colors"
-                                            :class="isCurrentCategory(cat.id) ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-slate-600 hover:bg-slate-50'">
-                                            <span class="text-base" x-text="cat.icon || '📁'"></span>
-                                            <span class="min-w-0 flex-1 truncate" x-text="cat.name"></span>
-                                            <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500" x-text="cat.count"></span>
-                                        </button>
-                                        <button type="button"
-                                            x-show="cat.children && cat.children.length > 0"
-                                            @click.stop="toggleCategoryExpanded(cat.id)"
-                                            data-testid="category-filter-expand"
-                                            :data-category-id="cat.id"
-                                            :aria-expanded="isCategoryExpanded(cat.id)"
-                                            class="mr-1 flex h-8 w-8 items-center justify-center rounded-lg text-xs text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                                            :title="isCategoryExpanded(cat.id) ? '收起二级分类' : '展开二级分类'">
-                                            <span x-text="isCategoryExpanded(cat.id) ? '▾' : '▸'"></span>
-                                        </button>
-                                    </div>
-                                    <div x-show="isCategoryExpanded(cat.id)"
-                                        class="ml-7 space-y-1 border-l border-slate-100 pl-2"
-                                        data-testid="category-filter-children"
-                                        :data-parent-id="cat.id">
-                                        <template x-for="child in (cat.children || [])" :key="'filter-child-' + child.id">
-                                            <div class="flex items-center gap-1 rounded-lg hover:bg-slate-50">
-                                                <input type="checkbox"
-                                                    :value="String(child.id)"
-                                                    x-model="selectedCategories"
-                                                    data-testid="category-batch-checkbox"
-                                                    :data-category-id="child.id"
-                                                    :aria-label="'选择分类 ' + (child.displayName || child.name)"
-                                                    class="ml-2 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
-                                                    @click.stop>
-                                                <button type="button"
-                                                    @click="loadCategory(child.id); closeMobileSidebar()"
-                                                    data-testid="category-filter-child-button"
-                                                    :data-category-id="child.id"
-                                                    class="flex min-w-0 flex-1 items-center gap-2 rounded-lg border px-2 py-1.5 text-left text-xs transition-colors"
-                                                    :class="isCurrentCategory(child.id) ? 'border-blue-200 bg-blue-50 text-blue-700' : 'border-transparent text-slate-600 hover:bg-slate-50'">
-                                                    <span x-text="child.icon || '📄'"></span>
-                                                    <span class="min-w-0 flex-1 truncate" x-text="child.displayName || child.name"></span>
-                                                    <span class="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500" x-text="child.count"></span>
-                                                </button>
-                                            </div>
-                                        </template>
-                                    </div>
-                                </div>
-                            </template>
-                        </div>
-
-                        <div class="mt-4 border-t border-slate-100 pt-3" data-testid="category-batch-panel">
-                            <div class="mb-2 flex items-center justify-between gap-2">
-                                <h3 class="text-xs font-bold text-slate-600">分类批量操作</h3>
-                                <span class="text-[11px] text-slate-400">
-                                    已选 <span x-text="selectedCategories.length"></span>
-                                </span>
-                            </div>
-                            <label class="mb-2 flex items-center gap-2 rounded-lg bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
-                                <input type="checkbox"
-                                    data-testid="category-batch-select-all"
-                                    :checked="allCategoriesSelected"
-                                    @change="toggleAllCategories($event)"
-                                    class="rounded border-slate-300 text-blue-600 focus:ring-blue-500">
-                                全选分类
-                            </label>
-                            <div class="grid grid-cols-3 gap-2">
-                                <button type="button"
-                                    @click="checkSelectedCategories()"
-                                    data-testid="category-batch-check"
-                                    :disabled="selectedCategories.length === 0"
-                                    class="rounded border border-blue-200 px-2 py-1.5 text-xs text-blue-600 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-40">检查</button>
-                                <button type="button"
-                                    @click="openExportSelectedCategories()"
-                                    data-testid="category-batch-export"
-                                    :disabled="selectedCategories.length === 0"
-                                    class="rounded border border-emerald-200 px-2 py-1.5 text-xs text-emerald-600 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-40">导出</button>
-                                <button type="button"
-                                    @click="batchDeleteCategories()"
-                                    data-testid="category-batch-delete"
-                                    :disabled="selectedCategories.length === 0"
-                                    class="rounded border border-rose-200 px-2 py-1.5 text-xs text-rose-600 hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-40">删除</button>
-                            </div>
-                            <button type="button"
-                                x-show="selectedCategories.length > 0"
-                                @click="selectedCategories = []"
-                                data-testid="category-batch-clear"
-                                class="mt-2 w-full rounded border px-2 py-1.5 text-xs text-slate-500 hover:bg-slate-50">取消选择</button>
-                        </div>
-                    </div>
 
                 </aside>
 
                 <!-- Main Content -->
                 <main class="flex-1 min-w-0 flex flex-col overflow-y-auto overflow-x-hidden">
+                    <!-- Category Navigation -->
+                    <div class="relative z-30 mb-4">
+                        <div class="category-tabs-container rounded-lg shadow-sm border">
+                            <button @click="scrollCategoryTabs('left')"
+                                    class="category-tabs-scroll-btn mr-2"
+                                    aria-label="向左滚动"
+                                    title="向左滚动">
+                                ◀
+                            </button>
+
+                            <div class="category-tabs"
+                                 :class="{ 'is-dragging': _categoryTabsDragging }"
+                                 role="tablist"
+                                 aria-label="分类导航"
+                                 x-ref="categoryTabsContainer"
+                                 @pointerdown="startCategoryTabsDrag($event)"
+                                 @pointermove="handleCategoryTabsDrag($event)"
+                                 @pointerup="stopCategoryTabsDrag($event)"
+                                 @pointercancel="stopCategoryTabsDrag($event)"
+                                 @lostpointercapture="stopCategoryTabsDrag($event)"
+                                 @click.capture="handleCategoryTabsClickCapture($event)"
+                                 @wheel="handleCategoryTabsWheel($event)">
+                                <button @click="loadCategory(null)"
+                                        @focus="closeCategoryDropdown()"
+                                        type="button"
+                                        role="tab"
+                                        data-testid="category-nav-all-tab"
+                                        :aria-selected="currentCategory === null"
+                                        aria-label="全部书签"
+                                        class="category-tab"
+                                        :class="currentCategory === null ? 'active' : ''">
+                                    <span class="category-tab-icon">📚</span>
+                                    <span>全部</span>
+                                    <span class="text-[10px] opacity-70" x-text="totalCount"></span>
+                                </button>
+
+                                <button @click="loadCategory('uncategorized')"
+                                        @focus="closeCategoryDropdown()"
+                                        type="button"
+                                        role="tab"
+                                        data-testid="category-nav-uncategorized-tab"
+                                        :aria-selected="currentCategory === 'uncategorized'"
+                                        aria-label="未分类书签"
+                                        class="category-tab"
+                                        :class="currentCategory === 'uncategorized' ? 'active' : ''">
+                                    <span class="category-tab-icon">📂</span>
+                                    <span>未分类</span>
+                                    <span class="text-[10px] opacity-70" x-text="uncategorizedCount"></span>
+                                </button>
+
+                                <template x-for="cat in categoryTree" :key="cat.id">
+                                    <div class="relative group flex items-center gap-1"
+                                         role="presentation"
+                                         @mouseenter="cat.children && cat.children.length > 0 ? handleCategoryHover(cat.id) : null"
+                                         @mouseleave="cat.children && cat.children.length > 0 ? handleCategoryLeave() : null">
+                                        <button @click="handleCategoryClick(cat)"
+                                                @focus="if (cat.children && cat.children.length > 0) { if (skipNextFocusOpen) { skipNextFocusOpen = false; } else { openCategoryDropdown(cat.id); } } else { closeCategoryDropdown(); }"
+                                                @blur="cat.children && cat.children.length > 0 ? handleCategoryBlur($event) : null"
+                                                @keydown.arrow-down.prevent="cat.children && cat.children.length > 0 ? focusFirstSubcategory(cat.id) : null"
+                                                @keydown.escape.prevent="closeCategoryDropdown(true)"
+                                                type="button"
+                                                :id="'category-tab-' + cat.id"
+                                                role="tab"
+                                                :aria-selected="currentCategory == cat.id"
+                                                :aria-haspopup="cat.children && cat.children.length > 0 ? 'true' : null"
+                                                :aria-expanded="cat.children && cat.children.length > 0 ? (categoryDropdownVisible && activeParentCategory == cat.id) : null"
+                                                :aria-controls="cat.children && cat.children.length > 0 ? 'subcategory-panel-' + cat.id : null"
+                                                :aria-label="cat.name + '分类'"
+                                                data-testid="category-nav-tab"
+                                                :data-category-id="cat.id"
+                                                class="category-tab"
+                                                :class="currentCategory == cat.id ? 'active' : ''">
+                                            <span class="category-tab-icon" x-text="cat.icon || '📁'"></span>
+                                            <span x-text="cat.name"></span>
+                                        </button>
+                                    </div>
+                                </template>
+                            </div>
+
+                            <button @click="scrollCategoryTabs('right')"
+                                    class="category-tabs-scroll-btn ml-2"
+                                    aria-label="向右滚动"
+                                    title="向右滚动">
+                                ▶
+                            </button>
+                        </div>
+
+                        <div x-show="categoryDropdownVisible"
+                             x-ref="subcategoryPanel"
+                             data-testid="subcategory-panel"
+                             :id="'subcategory-panel-' + activeParentCategory"
+                             role="region"
+                             :aria-label="activeParentCategory ? (categoryTree.find(c => c.id == activeParentCategory)?.name + ' 的子分类') : '子分类'"
+                             x-transition:enter="transition ease-out duration-200"
+                             x-transition:enter-start="opacity-0 translate-y-1"
+                             x-transition:enter-end="opacity-100 translate-y-0"
+                             x-transition:leave="transition ease-in duration-150"
+                             x-transition:leave-start="opacity-100 translate-y-0"
+                             x-transition:leave-end="opacity-0 translate-y-1"
+                             @click.away="closeCategoryDropdown()"
+                             @keydown.escape.prevent="closeCategoryDropdown(true)"
+                             @mouseenter="handleDropdownPanelEnter()"
+                             @mouseleave="handleDropdownPanelLeave()"
+                             @focusin="handleDropdownPanelEnter()"
+                             @focusout="handleDropdownPanelFocusOut($event)"
+                             class="absolute top-full left-0 right-0 z-50 category-dropdown-panel-external rounded-b-lg border shadow-lg"
+                             style="max-height: 70vh; overflow-y: auto;">
+                            <template x-if="activeParentCategory">
+                                <div class="col-span-full grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2">
+                                    <template x-for="child in (categoryTree.find(c => c.id == activeParentCategory)?.children || [])" :key="child.id">
+                                        <button @click="loadCategory(child.id); closeCategoryDropdown()"
+                                                type="button"
+                                                :aria-label="(child.displayName || child.name) + '子分类'"
+                                                data-testid="subcategory-nav-item"
+                                                :data-category-id="child.id"
+                                                class="subcategory-item focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                                :class="currentCategory == child.id ? 'active' : ''">
+                                            <span class="subcategory-item-icon" x-text="child.icon || '📄'"></span>
+                                            <span class="subcategory-item-text" x-text="child.displayName || child.name"></span>
+                                            <span class="subcategory-item-count text-[10px] opacity-50" x-text="child.count"></span>
+                                        </button>
+                                    </template>
+                                </div>
+                            </template>
+                        </div>
+                    </div>
+
                     <!-- Search & Filters -->
                     <div class="rounded-lg border bg-white p-3 shadow-sm mb-4 bookmark-toolbar-card">
                         <div class="flex flex-wrap items-center gap-2 bookmark-toolbar-row">

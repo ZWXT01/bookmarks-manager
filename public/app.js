@@ -12,7 +12,6 @@ function bookmarkApp() {
     categoryTree: [], // 树状分类数据
     categorySearch: '',
     categoryFilterValue: 'all',
-    expandedCategoryIds: [],
     totalCount: 0,
     uncategorizedCount: 0,
     bookmarksAbortController: null, // 用于取消请求
@@ -755,14 +754,6 @@ function bookmarkApp() {
         }
       }
 
-      if (Array.isArray(this.expandedCategoryIds) && this.expandedCategoryIds.length > 0) {
-        this.expandedCategoryIds = this.expandedCategoryIds
-          .map((id) => String(id))
-          .filter((id) => existingIdStrings.has(id));
-      } else if (!Array.isArray(this.expandedCategoryIds)) {
-        this.expandedCategoryIds = [];
-      }
-
       if (Array.isArray(this.selectedCategories) && this.selectedCategories.length > 0) {
         this.selectedCategories = this.selectedCategories
           .map((id) => String(id))
@@ -1372,26 +1363,6 @@ function bookmarkApp() {
       this.page = 1;
       this.closeCategoryDropdown();
       await this.loadBookmarks();
-    },
-
-    isCurrentCategory(categoryId) {
-      if (this.currentCategory === null || this.currentCategory === 'uncategorized') return false;
-      return Number(this.currentCategory) === Number(categoryId);
-    },
-
-    isCategoryExpanded(categoryId) {
-      const id = String(categoryId);
-      return Array.isArray(this.expandedCategoryIds) && this.expandedCategoryIds.includes(id);
-    },
-
-    toggleCategoryExpanded(categoryId) {
-      const id = String(categoryId);
-      const current = Array.isArray(this.expandedCategoryIds) ? this.expandedCategoryIds.map((item) => String(item)) : [];
-      if (current.includes(id)) {
-        this.expandedCategoryIds = current.filter((item) => item !== id);
-      } else {
-        this.expandedCategoryIds = [...current, id];
-      }
     },
 
     syncCategoryFilterValue() {
