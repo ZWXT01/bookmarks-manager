@@ -199,11 +199,15 @@ describe('integration: page assets', () => {
         });
 
         expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('data-testid="open-import-modal"');
+        expect(response.body).toContain('data-testid="import-modal"');
+        expect(response.body).toContain('data-testid="import-panel"');
         expect(response.body).toContain('data-testid="import-form"');
         expect(response.body).toContain('data-testid="import-file-input"');
         expect(response.body).toContain('data-testid="import-override-category"');
         expect(response.body).toContain('data-testid="import-default-category"');
         expect(response.body).toContain('data-testid="import-skip-duplicates"');
+        expect(response.body).toContain('data-testid="import-cancel"');
         expect(response.body).toContain('data-testid="import-submit"');
         expect(response.body).toContain('data-testid="import-progress-modal"');
         expect(response.body).toContain('data-testid="import-progress-panel"');
@@ -237,6 +241,7 @@ describe('integration: page assets', () => {
         expect(response.statusCode).toBe(200);
         expect(response.body).toContain('data-testid="quick-actions-card"');
         expect(response.body).toContain('data-testid="open-add-bookmark"');
+        expect(response.body).toContain('data-testid="open-import-modal"');
         expect(response.body).toContain('data-testid="open-check-modal"');
         expect(response.body).toContain('data-testid="open-ai-organize"');
         expect(response.body).toContain('data-testid="open-export-modal"');

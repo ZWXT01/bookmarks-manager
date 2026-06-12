@@ -77,6 +77,7 @@ function bookmarkApp() {
     checkJobId: null,
     checkStats: { processed: 0, total: 0, inserted: 0, failed: 0 },
     checkProgress: 0,
+    showImportModal: false,
     importJobId: null,
     importStats: { processed: 0, total: 0, inserted: 0, failed: 0 },
     importProgress: 0,
@@ -2046,6 +2047,19 @@ function bookmarkApp() {
       this.showImportProgressModal = false;
     },
 
+    openImportModal() {
+      this.closeMobileSidebar();
+      this.showImportModal = true;
+      this.$nextTick(() => {
+        const input = document.querySelector('[data-testid="import-file-input"]');
+        if (input) input.focus();
+      });
+    },
+
+    closeImportModal() {
+      this.showImportModal = false;
+    },
+
     async cancelImportJob() {
       if (!this.importJobId) return;
       try {
@@ -2084,6 +2098,7 @@ function bookmarkApp() {
           this.lastJobId = data.jobId;
           this.lastJobType = 'import';
           this.persistLastJob();
+          this.closeImportModal();
           this.showImportProgressModal = true;
           this.subscribeToImportProgress();
           // 清空文件选择

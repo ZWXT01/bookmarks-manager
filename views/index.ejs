@@ -114,39 +114,7 @@
                        class="mobile-sidebar-drawer fixed lg:static inset-y-0 left-0 w-72 bg-slate-50 lg:bg-transparent z-40 lg:z-auto transition-transform duration-300 ease-in-out
                               flex flex-col gap-4 p-4 lg:p-0 border-r lg:border-r-0 lg:max-h-[calc(100vh-100px)] overflow-y-auto custom-scrollbar">
                     
-                    <!-- UI Redesign: Sidebar contains Import and Quick Actions -->
-                    <!-- Import Section -->
-                    <div class="card p-4 flex-shrink-0 animate-fade-in">
-                        <h2 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
-                            <span
-                                class="w-6 h-6 rounded-md bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center text-white text-xs">📥</span>
-                            导入书签
-                        </h2>
-                        <form id="import-form" data-testid="import-form" @submit.prevent="startImport($el)">
-                            <input type="file" name="file" accept=".html,.htm,.json,.txt" required
-                                data-testid="import-file-input"
-                                class="w-full text-xs mb-3 file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
-                            <label class="flex items-center gap-2 text-xs text-slate-600 mb-2">
-                                <input type="checkbox" x-model="importOverrideCategory" data-testid="import-override-category">
-                                忽略原有分类，统一导入到：
-                            </label>
-                            <input type="hidden" name="overrideCategory" :value="importOverrideCategory ? '1' : ''">
-                            <div class="mb-3" x-show="importOverrideCategory">
-                                <select name="defaultCategoryId" data-testid="import-default-category" class="w-full rounded-lg border px-3 py-2 text-xs">
-                                    <option value="">未分类</option>
-                                    <template x-for="cat in categories" :key="cat.id">
-                                        <option :value="cat.id" x-text="cat.name"></option>
-                                    </template>
-                                </select>
-                            </div>
-                            <label class="flex items-center gap-2 text-xs text-slate-600 mb-3">
-                                <input type="checkbox" name="skipDuplicates" value="1" checked data-testid="import-skip-duplicates">
-                                跳过重复书签
-                            </label>
-                            <button type="submit" data-testid="import-submit" class="btn-primary w-full">开始导入</button>
-                        </form>
-                    </div>
-
+                    <!-- UI Redesign: Sidebar contains Quick Actions -->
                     <!-- Quick Actions -->
                     <div class="card p-4 flex-shrink-0 animate-fade-in" data-testid="quick-actions-card">
                         <h2 class="text-sm font-bold text-slate-700 mb-3 flex items-center gap-2">
@@ -157,6 +125,10 @@
                             <button @click="openAddBookmarkModal()" data-testid="open-add-bookmark" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-green-50 hover:border-green-200 transition-all group">
                                 <span class="text-xl mb-1 group-hover:scale-110 transition-transform">➕</span>
                                 <span class="text-[10px] text-slate-500 font-medium">添加书签</span>
+                            </button>
+                            <button @click="openImportModal()" data-testid="open-import-modal" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-cyan-50 hover:border-cyan-200 transition-all group">
+                                <span class="text-xl mb-1 group-hover:scale-110 transition-transform">📥</span>
+                                <span class="text-[10px] text-slate-500 font-medium">导入书签</span>
                             </button>
                             <button @click="openCheckModal()" data-testid="open-check-modal" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-purple-50 hover:border-purple-200 transition-all group">
                                 <span class="text-xl mb-1 group-hover:scale-110 transition-transform">🔍</span>
@@ -172,7 +144,7 @@
                                 <span class="text-xl mb-1 group-hover:scale-110 transition-transform">📤</span>
                                 <span class="text-[10px] text-slate-500 font-medium">导出书签</span>
                             </button>
-                            <button @click="openBackupModal()" data-testid="open-backup-modal" class="col-span-2 flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-rose-50 hover:border-rose-200 transition-all group">
+                            <button @click="openBackupModal()" data-testid="open-backup-modal" class="flex flex-col items-center justify-center p-3 rounded-xl border border-slate-100 hover:bg-rose-50 hover:border-rose-200 transition-all group">
                                 <span class="text-xl mb-1 group-hover:scale-110 transition-transform">💾</span>
                                 <span class="text-[10px] text-slate-500 font-medium">备份还原</span>
                             </button>
@@ -1333,6 +1305,54 @@
                 </div>
             </div>
         </div>
+
+        <!-- Import Modal -->
+        <div x-cloak x-show="showImportModal" data-testid="import-modal"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+            @click.self="closeImportModal()"
+            @keydown.escape.window="if(showImportModal) closeImportModal()">
+            <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl" data-testid="import-panel">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="text-lg font-semibold">📥 导入书签</h3>
+                    <button @click="closeImportModal()" data-testid="import-close"
+                        class="text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+                </div>
+                <form id="import-form" data-testid="import-form" @submit.prevent="startImport($el)" class="space-y-3">
+                    <div>
+                        <label class="text-xs text-slate-600">选择文件</label>
+                        <input type="file" name="file" accept=".html,.htm,.json,.txt" required
+                            data-testid="import-file-input"
+                            class="mt-1 w-full text-xs file:mr-2 file:py-1.5 file:px-3 file:rounded-md file:border-0 file:text-xs file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+                        <p class="mt-1 text-xs text-slate-400">支持 HTML / JSON / TXT 格式。</p>
+                    </div>
+                    <label class="flex items-center gap-2 text-xs text-slate-600">
+                        <input type="checkbox" x-model="importOverrideCategory" data-testid="import-override-category">
+                        忽略原有分类，统一导入到：
+                    </label>
+                    <input type="hidden" name="overrideCategory" :value="importOverrideCategory ? '1' : ''">
+                    <div x-show="importOverrideCategory">
+                        <select name="defaultCategoryId" data-testid="import-default-category"
+                            class="w-full rounded-lg border px-3 py-2 text-xs">
+                            <option value="">未分类</option>
+                            <template x-for="cat in categories" :key="cat.id">
+                                <option :value="cat.id" x-text="cat.name"></option>
+                            </template>
+                        </select>
+                    </div>
+                    <label class="flex items-center gap-2 text-xs text-slate-600">
+                        <input type="checkbox" name="skipDuplicates" value="1" checked data-testid="import-skip-duplicates">
+                        跳过重复书签
+                    </label>
+                    <div class="flex justify-end gap-2 pt-1">
+                        <button type="button" @click="closeImportModal()" data-testid="import-cancel"
+                            class="rounded border px-4 py-2 text-sm hover:bg-slate-50">取消</button>
+                        <button type="submit" data-testid="import-submit"
+                            class="rounded bg-slate-900 text-white px-4 py-2 text-sm hover:bg-slate-800">开始导入</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
         <div x-cloak x-show="showImportProgressModal" data-testid="import-progress-modal"
             class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
             <div class="w-full max-w-md rounded-lg bg-white p-4 shadow-xl" data-testid="import-progress-panel">
