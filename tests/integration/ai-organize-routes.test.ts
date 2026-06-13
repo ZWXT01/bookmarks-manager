@@ -614,30 +614,56 @@ describe('integration: ai organize route contracts', () => {
         expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(driftedCategory!.id);
     });
 
-    it('rejects stale apply when target categories changed instead of recreating them', async () => {
+    it('marks stale target suggestions invalid and still applies other selected suggestions', async () => {
         ctx = await createTestApp();
         const session = await ctx.login();
         const authHeaders = session.headers;
         seedAiTestCategories(ctx.db);
         const sourceCategory = getCategoryByPath(ctx.db, '学习资源/文档');
-        const targetCategory = getCategoryByPath(ctx.db, '技术开发/前端');
+        const staleTargetCategory = getCategoryByPath(ctx.db, '技术开发/前端');
+        const validTargetCategory = getCategoryByPath(ctx.db, '技术开发/后端');
 
         expect(sourceCategory).toBeTruthy();
-        expect(targetCategory).toBeTruthy();
+        expect(staleTargetCategory).toBeTruthy();
+        expect(validTargetCategory).toBeTruthy();
 
-        const [bookmarkId] = seedBookmarks(ctx.db, [
+        const [staleBookmarkId, validBookmarkId] = seedBookmarks(ctx.db, [
             { title: 'Target Drift Bookmark', url: 'https://target-drift.example.test', categoryId: sourceCategory!.id },
+            { title: 'Still Valid Bookmark', url: 'https://still-valid.example.test', categoryId: sourceCategory!.id },
         ]);
 
         const plan = seedPlan(ctx.db, {
             status: 'preview',
             created_at: new Date(Date.now() - 60_000).toISOString(),
             assignments: [
-                { bookmark_id: bookmarkId, category_path: '技术开发/前端', status: 'assigned' },
+                { bookmark_id: staleBookmarkId, category_path: '技术开发/前端', status: 'assigned' },
+                { bookmark_id: validBookmarkId, category_path: '技术开发/后端', status: 'assigned' },
             ],
         });
 
-        ctx.db.prepare('UPDATE categories SET name = ? WHERE id = ?').run('技术开发/前端新版', targetCategory!.id);
+        ctx.db.prepare('UPDATE categories SET name = ? WHERE id = ?').run('Web前端', staleTargetCategory!.id);
+
+        const assignmentsResponse = await ctx.app.inject({
+            method: 'GET',
+            url: `/api/ai/organize/${plan.id}/assignments?page=1&page_size=20`,
+            headers: authHeaders,
+        });
+        expect(assignmentsResponse.statusCode).toBe(200);
+        expect(assignmentsResponse.json().assignments).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                bookmark_id: staleBookmarkId,
+                can_apply: false,
+                default_action: 'discard',
+                invalid_reason: 'target_category_missing',
+                invalid_message: '分类已失效，无法应用',
+            }),
+            expect.objectContaining({
+                bookmark_id: validBookmarkId,
+                can_apply: true,
+                default_action: 'apply',
+                invalid_reason: null,
+            }),
+        ]));
 
         const applyResponse = await ctx.app.inject({
             method: 'POST',
@@ -647,12 +673,20 @@ describe('integration: ai organize route contracts', () => {
 
         const recreatedCount = ctx.db.prepare(
             `SELECT COUNT(*) AS count FROM categories WHERE parent_id = ? AND (name = ? OR name = ?)`
-        ).get(targetCategory!.parent_id, '技术开发/前端', '前端') as { count: number };
+        ).get(staleTargetCategory!.parent_id, '技术开发/前端', '前端') as { count: number };
 
-        expect(applyResponse.statusCode).toBe(409);
-        expect(applyResponse.json()).toMatchObject({ error: 'plan is stale: target categories changed', discard_recommended: true, recommended_action: 'discard' });
+        expect(applyResponse.statusCode).toBe(200);
+        expect(applyResponse.json()).toMatchObject({
+            success: true,
+            needs_confirm: false,
+            conflicts: [],
+            empty_categories: [],
+            applied_count: 1,
+        });
+        expect(getPlan(ctx.db, plan.id)?.status).toBe('applied');
         expect(recreatedCount.count).toBe(0);
-        expect(getBookmarkCategoryId(ctx, bookmarkId)).toBe(sourceCategory!.id);
+        expect(getBookmarkCategoryId(ctx, staleBookmarkId)).toBe(sourceCategory!.id);
+        expect(getBookmarkCategoryId(ctx, validBookmarkId)).toBe(validTargetCategory!.id);
     });
 
     it('allows overlapping preview plans to apply through explicit conflict resolution', async () => {

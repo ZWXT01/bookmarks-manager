@@ -18,6 +18,13 @@ export interface PlanRow {
 
 export interface CategoryNode { name: string; children: { name: string }[] }
 export interface Assignment { bookmark_id: number; category_path: string; status: 'assigned' | 'needs_review' }
+export type AssignmentInvalidReason = 'needs_review' | 'target_category_missing' | 'target_category_changed' | 'snapshot_missing';
+export interface AssignmentApplicability {
+  can_apply: boolean;
+  invalid_reason: AssignmentInvalidReason | null;
+  invalid_message: string | null;
+  target_category_id?: number;
+}
 
 export interface DiffSummary {
   empty_categories: { id: number; name: string }[];
@@ -172,6 +179,16 @@ function getExistingCategoryId(rawPath: string, lookup: PathLookup): number {
   const existing = lookup.get(key);
   if (!existing) throw new PlanError(409, 'plan is stale: target categories changed', { discardRecommended: true });
   return existing.id;
+}
+
+function buildSnapshotTargetMap(snapshot: PlanSourceSnapshot | null): Map<string, PlanLiveTargetSnapshot> {
+  const map = new Map<string, PlanLiveTargetSnapshot>();
+  for (const target of snapshot?.live_target_categories ?? []) {
+    const path = normalizePath(target.path);
+    if (!path) continue;
+    map.set(casefold(path), { ...target, path });
+  }
+  return map;
 }
 
 type BookmarkRow = { id: number; title: string; url: string; category_id: number | null; category_path: string | null; updated_at: string | null };
@@ -539,8 +556,15 @@ function requireSourceSnapshot(plan: PlanRow): PlanSourceSnapshot {
 
 function ensureLiveTargetsAvailable(db: Db, plan: PlanRow, assignments: Assignment[]): PathLookup {
   const lookup = buildPathLookup(db);
-  for (const path of collectTargetPaths(plan, assignments)) {
-    if (!lookup.has(casefold(path))) {
+  const snapshotTargets = buildSnapshotTargetMap(parseSourceSnapshot(plan.source_snapshot));
+
+  for (const assignment of assignments) {
+    if (!canApplyAssignment(assignment)) continue;
+    const path = normalizePath(assignment.category_path);
+    const key = casefold(path);
+    const current = lookup.get(key);
+    const snapshotted = snapshotTargets.get(key);
+    if (!current || !snapshotted || current.id !== snapshotted.category_id) {
       throw new PlanError(409, 'plan is stale: target categories changed', { discardRecommended: true });
     }
   }
@@ -565,6 +589,56 @@ function sameAssignmentIntent(left: Assignment | undefined, right: Assignment): 
 
 function canApplyAssignment(assignment: Assignment): boolean {
   return assignment.status === 'assigned' && !!normalizePath(assignment.category_path);
+}
+
+export function getAssignmentApplicability(
+  db: Db,
+  plan: Pick<PlanRow, 'source_snapshot'>,
+  assignment: Assignment,
+): AssignmentApplicability {
+  if (!canApplyAssignment(assignment)) {
+    return {
+      can_apply: false,
+      invalid_reason: 'needs_review',
+      invalid_message: '未匹配到分类，无法应用',
+    };
+  }
+
+  const path = normalizePath(assignment.category_path);
+  const key = casefold(path);
+  const current = buildPathLookup(db).get(key);
+  if (!current) {
+    return {
+      can_apply: false,
+      invalid_reason: 'target_category_missing',
+      invalid_message: '分类已失效，无法应用',
+    };
+  }
+
+  const snapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
+  if (!snapshot) {
+    return {
+      can_apply: false,
+      invalid_reason: 'snapshot_missing',
+      invalid_message: '计划安全快照缺失，无法应用',
+    };
+  }
+
+  const snapshotted = buildSnapshotTargetMap(snapshot).get(key);
+  if (!snapshotted || snapshotted.category_id !== current.id) {
+    return {
+      can_apply: false,
+      invalid_reason: 'target_category_changed',
+      invalid_message: '分类已失效，无法应用',
+    };
+  }
+
+  return {
+    can_apply: true,
+    invalid_reason: null,
+    invalid_message: null,
+    target_category_id: current.id,
+  };
 }
 
 function getDefaultBookmarkDecision(assignment: Assignment): BookmarkDecisionAction {
@@ -603,6 +677,16 @@ function resolveBookmarkDecisionMap(assignments: Assignment[], decisionsInput?: 
 function selectAssignmentsForApply(assignments: Assignment[], decisionsInput?: unknown): Assignment[] {
   const decisions = resolveBookmarkDecisionMap(assignments, decisionsInput);
   return assignments.filter(assignment => decisions.get(assignment.bookmark_id) === 'apply' && canApplyAssignment(assignment));
+}
+
+function selectApplicableAssignmentsForApply(
+  db: Db,
+  plan: Pick<PlanRow, 'source_snapshot'>,
+  assignments: Assignment[],
+  decisionsInput?: unknown,
+): Assignment[] {
+  return selectAssignmentsForApply(assignments, decisionsInput)
+    .filter(assignment => getAssignmentApplicability(db, plan, assignment).can_apply);
 }
 
 function findNewerOverlappingPlanConflicts(
@@ -651,14 +735,6 @@ function validatePlanApplySafety(db: Db, plan: PlanRow, assignments: Assignment[
   for (const item of selectedSnapshotStates) {
     const current = currentStates.get(item.bookmark_id);
     if (!current) throw new PlanError(409, 'plan is stale: bookmarks changed', { discardRecommended: true });
-  }
-
-  const liveLookup = buildPathLookup(db);
-  for (const target of snapshot.live_target_categories) {
-    const current = liveLookup.get(casefold(target.path));
-    if (!current || current.id !== target.category_id) {
-      throw new PlanError(409, 'plan is stale: target categories changed', { discardRecommended: true });
-    }
   }
 
   ensureLiveTargetsAvailable(db, plan, assignments);
@@ -935,6 +1011,7 @@ export function computeDiff(db: Db, plan: PlanRow): DiffSummary {
 
   for (const a of assignments) {
     if (a.status === 'needs_review') { needsReview++; continue; }
+    if (!getAssignmentApplicability(db, plan, a).can_apply) { needsReview++; continue; }
     const tp = normalizePath(a.category_path);
     if (!tp) { needsReview++; continue; }
     const bm = bookmarks.get(a.bookmark_id);
@@ -973,7 +1050,7 @@ export function applyPlan(db: Db, planId: string, decisionsInput?: unknown): App
     const plan = getPlan(db, planId);
     if (!plan || plan.status !== 'preview') throw new Error('plan can only be applied in preview status');
     const assignments = parseAssignments(plan.assignments);
-    const selectedAssignments = selectAssignmentsForApply(assignments, decisionsInput);
+    const selectedAssignments = selectApplicableAssignmentsForApply(db, plan, assignments, decisionsInput);
     if (selectedAssignments.length === 0) return { conflicts: [], empty_categories: [], applied_count: 0 };
     const validation = validatePlanApplySafety(db, plan, selectedAssignments);
 
@@ -1039,7 +1116,7 @@ export function resolveAndApply(db: Db, planId: string, decisions: ResolveDecisi
     const plan = getPlan(db, planId);
     if (!plan || plan.status !== 'preview') throw new Error('plan can only be resolved in preview status');
     const assignments = parseAssignments(plan.assignments);
-    const selectedAssignments = selectAssignmentsForApply(assignments, decisions.decisions);
+    const selectedAssignments = selectApplicableAssignmentsForApply(db, plan, assignments, decisions.decisions);
     if (selectedAssignments.length === 0) {
       transitionStatus(db, planId, 'applied');
       return { conflicts: [], empty_categories: [], applied_count: 0 };
@@ -1201,7 +1278,7 @@ export function confirmEmpty(db: Db, planId: string, decisions: { id: number; ac
     if (!plan || plan.status !== 'preview') throw new Error('plan must be in preview status');
 
     const assignments = parseAssignments(plan.assignments);
-    const selectedAssignments = selectAssignmentsForApply(assignments);
+    const selectedAssignments = selectApplicableAssignmentsForApply(db, plan, assignments);
     const validation = validatePlanApplySafety(db, plan, selectedAssignments);
     const lookup = ensureLiveTargetsAvailable(db, plan, selectedAssignments);
     const bookmarks = getBookmarkMap(db);

@@ -296,9 +296,14 @@
                       </td>
                       <td class="px-3 py-2">
                         <% if (a.category_path) { %>
-                          <span class="inline-block rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs"><%= a.category_path %></span>
+                          <div class="space-y-1">
+                            <span class="inline-block rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs"><%= a.category_path %></span>
+                            <% if (!a.can_apply) { %>
+                              <div class="text-xs text-rose-600"><%= a.invalid_message || '分类已失效，无法应用' %></div>
+                            <% } %>
+                          </div>
                         <% } else { %>
-                          <span class="text-xs text-amber-600">未匹配到分类，无法应用</span>
+                          <span class="text-xs text-amber-600"><%= a.invalid_message || '未匹配到分类，无法应用' %></span>
                         <% } %>
                       </td>
                       <td class="px-3 py-2">
@@ -306,10 +311,10 @@
                           <label class="inline-flex items-center gap-2 rounded border px-3 py-1.5 text-xs <%= a.default_action === 'apply' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500' %>">
                             <input class="assign-action-checkbox h-4 w-4 flex-shrink-0"
                               type="checkbox"
-                              data-bookmark-id="<%= a.bookmark_id %>" data-category-path="<%= a.category_path || '' %>" data-status="<%= a.status %>"
+                              data-bookmark-id="<%= a.bookmark_id %>" data-category-path="<%= a.category_path || '' %>" data-status="<%= a.status %>" data-can-apply="<%= a.can_apply ? 'true' : 'false' %>" data-invalid-message="<%= a.invalid_message || '' %>"
                               <%= a.default_action === 'apply' ? 'checked' : '' %>
                               <%= a.can_apply ? '' : 'disabled' %> />
-                            <span><%= a.can_apply ? '应用此建议' : '无法应用' %></span>
+                            <span><%= a.can_apply ? '应用此建议' : (a.invalid_message || '无法应用') %></span>
                           </label>
                         <% } else { %>
                           <% if (a.status === 'assigned') { %>
@@ -600,7 +605,14 @@
     var planSelectionOverrides = {};
 
     function canApplyPlanAssignment(assignment) {
-      return !!assignment && assignment.status === 'assigned' && assignment.category_path && String(assignment.category_path).trim() !== '';
+      if (!assignment) return false;
+      if (assignment.can_apply === false) return false;
+      return assignment.status === 'assigned' && assignment.category_path && String(assignment.category_path).trim() !== '';
+    }
+
+    function getPlanAssignmentInvalidMessage(assignment) {
+      if (!assignment) return '无法应用';
+      return assignment.invalid_message || (!assignment.category_path ? '未匹配到分类，无法应用' : '分类已失效，无法应用');
     }
 
     function getDefaultPlanAction(assignment) {
@@ -657,6 +669,8 @@
             bookmark_id: bookmarkId,
             category_path: this.dataset.categoryPath || '',
             status: this.dataset.status || '',
+            can_apply: this.dataset.canApply === 'true',
+            invalid_message: this.dataset.invalidMessage || '',
           };
           setPlanSelectionAction(assignment, action);
           loadAssignments(assignCurrentPage);
@@ -687,16 +701,18 @@
               html += '<span class="text-xs text-slate-500">' + escapeHtml(a.current_category || '未分类') + '</span>';
               html += '</td><td class="px-3 py-2">';
               if (a.category_path) {
-                html += '<span class="inline-block rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs">' + escapeHtml(a.category_path) + '</span>';
+                html += '<div class="space-y-1"><span class="inline-block rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs">' + escapeHtml(a.category_path) + '</span>';
+                if (!a.can_apply) html += '<div class="text-xs text-rose-600">' + escapeHtml(getPlanAssignmentInvalidMessage(a)) + '</div>';
+                html += '</div>';
               } else {
-                html += '<span class="text-xs text-amber-600">未匹配到分类，无法应用</span>';
+                html += '<span class="text-xs text-amber-600">' + escapeHtml(getPlanAssignmentInvalidMessage(a)) + '</span>';
               }
               html += '</td><td class="px-3 py-2">';
               if (planStatus === 'preview') {
                 html += '<label class="inline-flex items-center gap-2 rounded border px-3 py-1.5 text-xs ' + (selectedAction === 'apply' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 bg-slate-50 text-slate-500') + '">';
                 html += '<input class="assign-action-checkbox h-4 w-4 flex-shrink-0" type="checkbox"' +
-                  ' data-bookmark-id="' + a.bookmark_id + '" data-category-path="' + escapeHtml(a.category_path || '') + '" data-status="' + escapeHtml(a.status || '') + '"' + (selectedAction === 'apply' ? ' checked' : '') + (a.can_apply ? '' : ' disabled') + ' />';
-                html += '<span>' + (a.can_apply ? '应用此建议' : '无法应用') + '</span></label>';
+                  ' data-bookmark-id="' + a.bookmark_id + '" data-category-path="' + escapeHtml(a.category_path || '') + '" data-status="' + escapeHtml(a.status || '') + '" data-can-apply="' + (a.can_apply ? 'true' : 'false') + '" data-invalid-message="' + escapeHtml(a.invalid_message || '') + '"' + (selectedAction === 'apply' ? ' checked' : '') + (a.can_apply ? '' : ' disabled') + ' />';
+                html += '<span>' + escapeHtml(a.can_apply ? '应用此建议' : getPlanAssignmentInvalidMessage(a)) + '</span></label>';
               } else {
                 html += a.status === 'assigned' ? '<span class="text-xs text-green-600">已分配</span>' : '<span class="text-xs text-amber-600">待审核</span>';
               }

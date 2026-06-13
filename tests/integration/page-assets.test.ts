@@ -473,6 +473,46 @@ describe('integration: page assets', () => {
         expect(response.body).not.toContain('全部应用');
     });
 
+    it('renders stale organize category suggestions as disabled invalid choices on job details', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+        const parentId = seedCategory(ctx.db, '失效验证');
+        const sourceId = seedCategory(ctx.db, '来源', parentId);
+        const targetId = seedCategory(ctx.db, '目标', parentId);
+        const [bookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Stale Suggestion', url: 'https://stale-suggestion.example.test', categoryId: sourceId },
+        ]);
+        const job = seedJob(ctx.db, {
+            id: 'page-stale-plan-job',
+            type: 'ai_organize',
+            status: 'done',
+            total: 1,
+            processed: 1,
+            inserted: 1,
+        });
+        seedPlan(ctx.db, {
+            id: 'page-stale-plan',
+            job_id: job.id,
+            status: 'preview',
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '失效验证/目标', status: 'assigned' },
+            ],
+        });
+        ctx.db.prepare('UPDATE categories SET name = ? WHERE id = ?').run('目标新版', targetId);
+
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: `/jobs/${job.id}`,
+            headers,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('分类已失效，无法应用');
+        expect(response.body).toContain('data-can-apply="false"');
+        expect(response.body).toContain('disabled');
+    });
+
+
     it('renders jobs list and snapshots destructive-action selectors for browser regression', async () => {
         const session = await ctx.login();
         const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);

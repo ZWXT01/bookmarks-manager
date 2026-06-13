@@ -2233,10 +2233,16 @@ function bookmarkApp() {
     },
 
     canApplyOrganizeAssignment(assignment) {
-      return !!assignment &&
-        assignment.status === 'assigned' &&
+      if (!assignment) return false;
+      if (assignment.can_apply === false) return false;
+      return assignment.status === 'assigned' &&
         assignment.category_path &&
         String(assignment.category_path).trim() !== '';
+    },
+
+    getOrganizeAssignmentInvalidMessage(assignment) {
+      if (!assignment) return '无法应用';
+      return assignment.invalid_message || (!assignment.category_path ? '未匹配到分类，无法应用' : '分类已失效，无法应用');
     },
 
     getOrganizeDefaultAction(assignment) {

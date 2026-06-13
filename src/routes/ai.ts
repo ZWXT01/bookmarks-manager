@@ -10,8 +10,11 @@ import {
 import { getConfiguredAiBatchSize, parseAiBatchSize } from '../ai-batch-size';
 import { getCategoryPathMap, getCategoryTree } from '../category-service';
 import {
+    getAssignmentApplicability,
     getBlockingOrganizePlan,
+    type Assignment,
     type BlockingOrganizePlan,
+    type PlanRow,
     type PlanStatus,
 } from '../ai-organize-plan';
 
@@ -28,11 +31,7 @@ interface ModelsProbeResult {
     errorMessage: string | null;
 }
 
-type OrganizeAssignmentRow = {
-    bookmark_id: number;
-    category_path: string;
-    status: string;
-};
+type OrganizeAssignmentRow = Assignment;
 
 function getAIConfig(getSetting: (key: string) => string | null) {
     const baseUrl = (getSetting('ai_base_url') ?? '').trim();
@@ -98,7 +97,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         return parseAiBatchSize(rawValue);
     }
 
-    function enrichOrganizeAssignments(rows: OrganizeAssignmentRow[]) {
+    function enrichOrganizeAssignments(plan: Pick<PlanRow, 'source_snapshot'>, rows: OrganizeAssignmentRow[]) {
         const bookmarkIds = [...new Set(rows.map((row) => row.bookmark_id).filter((id) => Number.isInteger(id) && id > 0))];
         const bookmarks = new Map<number, { title: string; url: string; category_id: number | null }>();
         if (bookmarkIds.length > 0) {
@@ -119,7 +118,8 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         const categoryPathMap = getCategoryPathMap(db);
         return rows.map((row) => {
             const bookmark = bookmarks.get(row.bookmark_id);
-            const canApply = row.status === 'assigned' && typeof row.category_path === 'string' && row.category_path.trim() !== '';
+            const applicability = getAssignmentApplicability(db, plan, row);
+            const canApply = applicability.can_apply;
             return {
                 bookmark_id: row.bookmark_id,
                 category_path: row.category_path,
@@ -129,6 +129,8 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                 current_category: bookmark?.category_id != null ? (categoryPathMap.get(bookmark.category_id) ?? null) : null,
                 can_apply: canApply,
                 default_action: canApply ? 'apply' : 'discard',
+                invalid_reason: applicability.invalid_reason,
+                invalid_message: applicability.invalid_message,
             };
         });
     }
@@ -603,7 +605,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             const pageClamped = Math.min(page, totalPages);
             const offset = (pageClamped - 1) * pageSize;
             const slice = all.slice(offset, offset + pageSize);
-            const assignments = enrichOrganizeAssignments(slice);
+            const assignments = enrichOrganizeAssignments(plan, slice);
 
             return reply.send({ assignments, total, page: pageClamped, totalPages, pageSize });
         } catch (e: any) {

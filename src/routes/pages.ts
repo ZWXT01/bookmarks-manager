@@ -4,7 +4,7 @@
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { getJob, countJobFailures, listJobFailuresPaged } from '../jobs';
-import { getPlan as getOrganizePlan, computeDiff } from '../ai-organize-plan';
+import { getPlan as getOrganizePlan, computeDiff, getAssignmentApplicability, type Assignment } from '../ai-organize-plan';
 import { getCategoryPathMap } from '../category-service';
 
 export interface PagesRoutesOptions {
@@ -49,11 +49,11 @@ export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts
             if (plan) {
                 organizePlanId = plan.id;
                 organizePlanStatus = plan.status;
-                if (plan.status === 'preview') {
-                    const fullPlan = getOrganizePlan(db, plan.id);
-                    if (fullPlan) organizeDiff = computeDiff(db, fullPlan);
+                const fullPlanForPage = getOrganizePlan(db, plan.id);
+                if (plan.status === 'preview' && fullPlanForPage) {
+                    organizeDiff = computeDiff(db, fullPlanForPage);
                 }
-                const allAssignments: { bookmark_id: number; category_path: string; status: string }[] = plan.assignments ? JSON.parse(plan.assignments) : [];
+                const allAssignments: Assignment[] = plan.assignments ? JSON.parse(plan.assignments) : [];
                 organizeAssignmentTotal = allAssignments.length;
                 organizeAssignmentTotalPages = Math.max(1, Math.ceil(organizeAssignmentTotal / organizePageSize));
                 organizeAssignmentPage = Math.min(Math.max(1, clamp(q.assign_page, 1, 10_000, 1)), organizeAssignmentTotalPages);
@@ -68,18 +68,25 @@ export const pagesRoutes: FastifyPluginCallback<PagesRoutesOptions> = (app, opts
                 }
                 const categoryPathMap = getCategoryPathMap(db);
 
-                organizeAssignments = pageSlice.map(a => ({
-                    bookmark_id: a.bookmark_id,
-                    category_path: a.category_path,
-                    status: a.status,
-                    title: bmMap.get(a.bookmark_id)?.title ?? '[已删除的书签]',
-                    url: bmMap.get(a.bookmark_id)?.url ?? '',
-                    current_category: bmMap.get(a.bookmark_id)?.category_id != null
-                        ? (categoryPathMap.get(bmMap.get(a.bookmark_id)!.category_id!) ?? null)
-                        : null,
-                    can_apply: a.status === 'assigned' && typeof a.category_path === 'string' && a.category_path.trim() !== '',
-                    default_action: a.status === 'assigned' && typeof a.category_path === 'string' && a.category_path.trim() !== '' ? 'apply' : 'discard',
-                }));
+                organizeAssignments = pageSlice.map(a => {
+                    const applicability = fullPlanForPage
+                        ? getAssignmentApplicability(db, fullPlanForPage, a)
+                        : { can_apply: false, invalid_reason: 'snapshot_missing', invalid_message: '计划安全快照缺失，无法应用' };
+                    return {
+                        bookmark_id: a.bookmark_id,
+                        category_path: a.category_path,
+                        status: a.status,
+                        title: bmMap.get(a.bookmark_id)?.title ?? '[已删除的书签]',
+                        url: bmMap.get(a.bookmark_id)?.url ?? '',
+                        current_category: bmMap.get(a.bookmark_id)?.category_id != null
+                            ? (categoryPathMap.get(bmMap.get(a.bookmark_id)!.category_id!) ?? null)
+                            : null,
+                        can_apply: applicability.can_apply,
+                        default_action: applicability.can_apply ? 'apply' : 'discard',
+                        invalid_reason: applicability.invalid_reason,
+                        invalid_message: applicability.invalid_message,
+                    };
+                });
             }
         }
 

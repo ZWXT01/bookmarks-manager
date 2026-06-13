@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { assignBookmarks } from '../../src/ai-organize';
-import { applyPlan, createPlan, getPlan, updatePlan } from '../../src/ai-organize-plan';
+import { applyPlan, createPlan, getAssignmentApplicability, getPlan, updatePlan } from '../../src/ai-organize-plan';
 import { createJob, getJob, jobQueue } from '../../src/jobs';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import {
@@ -230,7 +230,7 @@ describe('integration: AI deterministic harness', () => {
         expect(harness.remainingSteps()).toBe(0);
     });
 
-    it('freezes the live category tree used during assignment so later category edits stale the preview', async () => {
+    it('marks suggestions against edited categories as invalid while keeping the preview recoverable', async () => {
         ctx = await createTestApp();
         seedAiTestCategories(ctx.db);
         const config = seedAISettings(ctx.db);
@@ -268,13 +268,23 @@ describe('integration: AI deterministic harness', () => {
         expect(updatedPlan).not.toBeNull();
         expect(updatedPlan?.status).toBe('preview');
         expect(updatedPlan?.target_tree ? JSON.parse(updatedPlan.target_tree) : null).toEqual(AI_TEST_CATEGORY_TREE);
-        expect(parseAssignments(updatedPlan!.id, updatedPlan!.assignments)).toEqual([
+        const assignments = parseAssignments(updatedPlan!.id, updatedPlan!.assignments);
+        expect(assignments).toEqual([
             { bookmark_id: bookmarkIds[0], category_path: '技术开发/前端', status: 'assigned' },
         ]);
 
         const sourceSnapshot = updatedPlan?.source_snapshot ? JSON.parse(updatedPlan.source_snapshot) : null;
         expect(sourceSnapshot).not.toHaveProperty('template');
-        expect(() => applyPlan(ctx.db, plan.id)).toThrow('plan is stale: target categories changed');
+        expect(getAssignmentApplicability(ctx.db, updatedPlan!, assignments[0])).toMatchObject({
+            can_apply: false,
+            invalid_reason: 'target_category_missing',
+            invalid_message: '分类已失效，无法应用',
+        });
+        expect(applyPlan(ctx.db, plan.id)).toMatchObject({
+            conflicts: [],
+            empty_categories: [],
+            applied_count: 0,
+        });
         expect(harness.remainingSteps()).toBe(0);
     });
 });
