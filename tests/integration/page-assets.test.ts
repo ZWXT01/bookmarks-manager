@@ -473,6 +473,47 @@ describe('integration: page assets', () => {
         expect(response.body).not.toContain('全部应用');
     });
 
+
+
+    it('shows discarded organize suggestions as not applied instead of assigned on job details', async () => {
+        const session = await ctx.login();
+        const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
+        const parentId = seedCategory(ctx.db, '放弃验证');
+        const sourceId = seedCategory(ctx.db, '来源', parentId);
+        seedCategory(ctx.db, '目标', parentId);
+        const [bookmarkId] = seedBookmarks(ctx.db, [
+            { title: 'Discarded Plan Suggestion', url: 'https://discarded-plan-suggestion.example.test', categoryId: sourceId },
+        ]);
+        const job = seedJob(ctx.db, {
+            id: 'page-canceled-plan-job',
+            type: 'ai_organize',
+            status: 'canceled',
+            total: 1,
+            processed: 1,
+            inserted: 1,
+            message: 'plan canceled',
+        });
+        seedPlan(ctx.db, {
+            id: 'page-canceled-plan',
+            job_id: job.id,
+            status: 'canceled',
+            assignments: [
+                { bookmark_id: bookmarkId, category_path: '放弃验证/目标', status: 'assigned' },
+            ],
+        });
+
+        const response = await ctx.app.inject({
+            method: 'GET',
+            url: `/jobs/${job.id}`,
+            headers,
+        });
+
+        expect(response.statusCode).toBe(200);
+        expect(response.body).toContain('Plan: 已放弃');
+        expect(response.body).toContain('已放弃');
+        expect(response.body).toContain('分类建议');
+        expect(response.body).not.toContain('已分配');
+    });
     it('renders stale organize category suggestions as disabled invalid choices on job details', async () => {
         const session = await ctx.login();
         const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);

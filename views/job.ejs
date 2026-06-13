@@ -31,7 +31,7 @@
       : job.type === 'import' ? '导入任务'
       : '书签检查任务';
     const jobSuccessLabel =
-      job.type === 'ai_organize' ? '已分配'
+      job.type === 'ai_organize' ? '分类建议'
       : job.type === 'import' ? '已导入'
       : isLegacyAiTask ? '已处理'
       : '成功';
@@ -47,6 +47,34 @@
       hasCancelableOrganizePlan && organizePlanStatus === 'preview' ? '放弃整理'
       : hasCancelableOrganizePlan && (organizePlanStatus === 'failed' || organizePlanStatus === 'error') ? '放弃任务'
       : '取消任务';
+    const planStatusLabel = (status) =>
+      status === 'applied' ? '已应用'
+      : status === 'preview' ? '待应用'
+      : status === 'assigning' ? '分配中'
+      : status === 'failed' ? '失败'
+      : status === 'error' ? '错误'
+      : status === 'canceled' ? '已放弃'
+      : status === 'rolled_back' ? '已回滚'
+      : (status || '未知');
+    const normalizePlanCategoryPath = (value) => String(value || '').split('/').map((part) => part.trim()).filter(Boolean).slice(0, 2).join('/').toLowerCase();
+    const getAssignmentStatusMeta = (assignment) => {
+      if (organizePlanStatus === 'canceled') return { text: '已放弃', className: 'text-xs text-slate-500', rowClass: 'bg-slate-50' };
+      if (organizePlanStatus === 'rolled_back') return { text: '已回滚', className: 'text-xs text-slate-500', rowClass: 'bg-slate-50' };
+      if (organizePlanStatus === 'applied') {
+        const matchesTarget = assignment.status === 'assigned' && normalizePlanCategoryPath(assignment.current_category) === normalizePlanCategoryPath(assignment.category_path);
+        return matchesTarget
+          ? { text: '已应用', className: 'text-xs text-green-600', rowClass: '' }
+          : { text: '未应用', className: 'text-xs text-slate-500', rowClass: 'bg-slate-50' };
+      }
+      if (organizePlanStatus === 'assigning') return { text: '分配中', className: 'text-xs text-purple-600', rowClass: '' };
+      if (organizePlanStatus === 'failed' || organizePlanStatus === 'error') return { text: '未应用', className: 'text-xs text-slate-500', rowClass: 'bg-slate-50' };
+      if (assignment.status === 'needs_review') return { text: '待审核', className: 'text-xs text-amber-600', rowClass: 'bg-amber-50' };
+      return { text: '未应用', className: 'text-xs text-slate-500', rowClass: 'bg-slate-50' };
+    };
+    const getAssignmentRowClass = (assignment) => {
+      if (organizePlanStatus === 'preview') return assignment.default_action === 'discard' ? 'bg-slate-50' : (assignment.status === 'assigned' ? '' : 'bg-amber-50');
+      return getAssignmentStatusMeta(assignment).rowClass;
+    };
   %>
   <!-- Header - 统一风格 -->
   <div class="glass-header border-b sticky top-0 z-40">
@@ -184,7 +212,7 @@
       <div id="plan-canceled" class="hidden mt-3 pt-3 border-t">
         <div class="flex flex-col items-center gap-2 py-3">
           <div class="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center text-xl">✕</div>
-          <div class="text-sm font-medium text-slate-500">已取消</div>
+          <div class="text-sm font-medium text-slate-500">已放弃</div>
         </div>
       </div>
     </div>
@@ -263,7 +291,7 @@
           </div>
           <% if (organizePlanStatus) { %>
             <span class="text-xs px-2 py-0.5 rounded <%= organizePlanStatus === 'applied' ? 'bg-green-100 text-green-700' : organizePlanStatus === 'preview' ? 'bg-blue-100 text-blue-700' : organizePlanStatus === 'assigning' ? 'bg-purple-100 text-purple-700' : organizePlanStatus === 'failed' || organizePlanStatus === 'error' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-600' %>">
-              Plan: <%= organizePlanStatus === 'applied' ? '已应用' : organizePlanStatus === 'preview' ? '待审核' : organizePlanStatus === 'assigning' ? '分配中' : organizePlanStatus === 'failed' ? '失败' : organizePlanStatus === 'error' ? '错误' : organizePlanStatus %>
+              Plan: <%= planStatusLabel(organizePlanStatus) %>
             </span>
           <% } %>
         </div>
@@ -284,7 +312,7 @@
                   <tr><td colspan="4" class="px-3 py-6 text-center text-sm text-slate-400">暂无分类建议数据</td></tr>
                 <% } else { %>
                   <% organizeAssignments.forEach(function(a) { %>
-                    <tr class="<%= organizePlanStatus === 'preview' && a.default_action === 'discard' ? 'bg-slate-50' : a.status === 'assigned' ? '' : 'bg-amber-50' %>" data-bookmark-id="<%= a.bookmark_id %>">
+                    <tr class="<%= getAssignmentRowClass(a) %>" data-bookmark-id="<%= a.bookmark_id %>">
                       <td class="px-3 py-2">
                         <div class="text-sm text-slate-700 truncate"><%= a.title %></div>
                         <% if (a.url) { %>
@@ -298,7 +326,7 @@
                         <% if (a.category_path) { %>
                           <div class="space-y-1">
                             <span class="inline-block rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs"><%= a.category_path %></span>
-                            <% if (!a.can_apply) { %>
+                            <% if (organizePlanStatus === 'preview' && !a.can_apply) { %>
                               <div class="text-xs text-rose-600"><%= a.invalid_message || '分类已失效，无法应用' %></div>
                             <% } %>
                           </div>
@@ -316,12 +344,8 @@
                               <%= a.can_apply ? '' : 'disabled' %> />
                             <span><%= a.can_apply ? '应用此建议' : (a.invalid_message || '无法应用') %></span>
                           </label>
-                        <% } else { %>
-                          <% if (a.status === 'assigned') { %>
-                            <span class="text-xs text-green-600">已分配</span>
-                          <% } else { %>
-                            <span class="text-xs text-amber-600">待审核</span>
-                          <% } %>
+                        <% } else { const statusMeta = getAssignmentStatusMeta(a); %>
+                          <span class="<%= statusMeta.className %>"><%= statusMeta.text %></span>
                         <% } %>
                       </td>
                     </tr>
@@ -639,6 +663,41 @@
       });
     }
 
+    function normalizePlanCategoryPath(value) {
+      return String(value || '').split('/').map(function (part) { return part.trim(); }).filter(Boolean).slice(0, 2).join('/').toLowerCase();
+    }
+
+    function getPlanStatusLabel(status) {
+      if (status === 'applied') return '已应用';
+      if (status === 'preview') return '待应用';
+      if (status === 'assigning') return '分配中';
+      if (status === 'failed') return '失败';
+      if (status === 'error') return '错误';
+      if (status === 'canceled') return '已放弃';
+      if (status === 'rolled_back') return '已回滚';
+      return status || '未知';
+    }
+
+    function getPlanAssignmentStatusMeta(assignment) {
+      if (planStatus === 'canceled') return { text: '已放弃', className: 'text-xs text-slate-500', rowClass: 'bg-slate-50' };
+      if (planStatus === 'rolled_back') return { text: '已回滚', className: 'text-xs text-slate-500', rowClass: 'bg-slate-50' };
+      if (planStatus === 'applied') {
+        var matchesTarget = assignment && assignment.status === 'assigned' && normalizePlanCategoryPath(assignment.current_category) === normalizePlanCategoryPath(assignment.category_path);
+        return matchesTarget
+          ? { text: '已应用', className: 'text-xs text-green-600', rowClass: '' }
+          : { text: '未应用', className: 'text-xs text-slate-500', rowClass: 'bg-slate-50' };
+      }
+      if (planStatus === 'assigning') return { text: '分配中', className: 'text-xs text-purple-600', rowClass: '' };
+      if (planStatus === 'failed' || planStatus === 'error') return { text: '未应用', className: 'text-xs text-slate-500', rowClass: 'bg-slate-50' };
+      if (assignment && assignment.status === 'needs_review') return { text: '待审核', className: 'text-xs text-amber-600', rowClass: 'bg-amber-50' };
+      return { text: '未应用', className: 'text-xs text-slate-500', rowClass: 'bg-slate-50' };
+    }
+
+    function getPlanAssignmentRowClass(assignment, selectedAction) {
+      if (planStatus === 'preview') return selectedAction === 'discard' ? 'bg-slate-50' : (assignment.status === 'assigned' ? '' : 'bg-amber-50');
+      return getPlanAssignmentStatusMeta(assignment).rowClass;
+    }
+
     function setPlanUiStatus(status) {
       planStatus = status || planStatus;
       var badge = document.getElementById('plan-status-badge');
@@ -647,7 +706,7 @@
           badge.textContent = '已应用';
           badge.className = 'text-xs px-2 py-0.5 rounded bg-green-100 text-green-700';
         } else if (planStatus === 'canceled') {
-          badge.textContent = '已取消';
+          badge.textContent = '已放弃';
           badge.className = 'text-xs px-2 py-0.5 rounded bg-slate-100 text-slate-600';
         } else {
           badge.textContent = '待应用';
@@ -694,7 +753,7 @@
           } else {
             data.assignments.forEach(function (a) {
               var selectedAction = getPlanSelectionAction(a);
-              html += '<tr class="' + (planStatus === 'preview' && selectedAction === 'discard' ? 'bg-slate-50' : (a.status === 'assigned' ? '' : 'bg-amber-50')) + '" data-bookmark-id="' + a.bookmark_id + '">';
+              html += '<tr class="' + getPlanAssignmentRowClass(a, selectedAction) + '" data-bookmark-id="' + a.bookmark_id + '">';
               html += '<td class="px-3 py-2"><div class="text-sm text-slate-700 truncate">' + escapeHtml(a.title) + '</div>';
               if (a.url) html += '<div class="text-xs text-slate-400 truncate">' + escapeHtml(a.url) + '</div>';
               html += '</td><td class="px-3 py-2">';
@@ -702,7 +761,7 @@
               html += '</td><td class="px-3 py-2">';
               if (a.category_path) {
                 html += '<div class="space-y-1"><span class="inline-block rounded bg-blue-100 text-blue-700 px-2 py-0.5 text-xs">' + escapeHtml(a.category_path) + '</span>';
-                if (!a.can_apply) html += '<div class="text-xs text-rose-600">' + escapeHtml(getPlanAssignmentInvalidMessage(a)) + '</div>';
+                if (planStatus === 'preview' && !a.can_apply) html += '<div class="text-xs text-rose-600">' + escapeHtml(getPlanAssignmentInvalidMessage(a)) + '</div>';
                 html += '</div>';
               } else {
                 html += '<span class="text-xs text-amber-600">' + escapeHtml(getPlanAssignmentInvalidMessage(a)) + '</span>';
@@ -714,7 +773,8 @@
                   ' data-bookmark-id="' + a.bookmark_id + '" data-category-path="' + escapeHtml(a.category_path || '') + '" data-status="' + escapeHtml(a.status || '') + '" data-can-apply="' + (a.can_apply ? 'true' : 'false') + '" data-invalid-message="' + escapeHtml(a.invalid_message || '') + '"' + (selectedAction === 'apply' ? ' checked' : '') + (a.can_apply ? '' : ' disabled') + ' />';
                 html += '<span>' + escapeHtml(a.can_apply ? '应用此建议' : getPlanAssignmentInvalidMessage(a)) + '</span></label>';
               } else {
-                html += a.status === 'assigned' ? '<span class="text-xs text-green-600">已分配</span>' : '<span class="text-xs text-amber-600">待审核</span>';
+                var statusMeta = getPlanAssignmentStatusMeta(a);
+                html += '<span class="' + statusMeta.className + '">' + escapeHtml(statusMeta.text) + '</span>';
               }
               html += '</td></tr>';
             });
@@ -863,6 +923,7 @@
       function formatConflictStatus(status) {
         if (status === 'preview') return '待应用';
         if (status === 'applied') return '已应用';
+        if (status === 'canceled') return '已放弃';
         return status || '未知';
       }
 
