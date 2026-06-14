@@ -55,6 +55,7 @@ export function openDb(dbPath: string): Db {
     CREATE TABLE IF NOT EXISTS job_failures (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+      title TEXT NULL,
       input TEXT NOT NULL,
       reason TEXT NOT NULL
     );
@@ -168,6 +169,13 @@ export function openDb(dbPath: string): Db {
   const hasExtra = jobColumns.some(col => col.name === 'extra');
   if (!hasExtra) {
     db.exec(`ALTER TABLE jobs ADD COLUMN extra TEXT`);
+  }
+
+  // 迁移：添加 job_failures.title 字段（用于任务详情展示书签标题）
+  const jobFailureColumns = db.prepare("PRAGMA table_info(job_failures)").all() as Array<{ name: string }>;
+  const hasJobFailureTitle = jobFailureColumns.some(col => col.name === 'title');
+  if (!hasJobFailureTitle) {
+    db.exec(`ALTER TABLE job_failures ADD COLUMN title TEXT`);
   }
 
   // 迁移：添加分类 sort_order 字段（用于同级排序）

@@ -131,7 +131,7 @@ export async function runCheckJob(db: Db, jobId: string, bookmarkIds: number[], 
     processed: 0,
   });
 
-  const selectStmt = db.prepare('SELECT id, url, skip_check FROM bookmarks WHERE id = ?');
+  const selectStmt = db.prepare('SELECT id, url, title, skip_check FROM bookmarks WHERE id = ?');
   const updateStmt = db.prepare(
     'UPDATE bookmarks SET last_checked_at = ?, check_status = ?, check_http_code = ?, check_error = ? WHERE id = ?',
   );
@@ -141,7 +141,7 @@ export async function runCheckJob(db: Db, jobId: string, bookmarkIds: number[], 
   let failed = 0;
   let skipped = 0;
 
-  const queue = [...bookmarkIds];
+  let nextIndex = 0;
 
   async function worker(): Promise<void> {
     while (true) {
@@ -149,14 +149,15 @@ export async function runCheckJob(db: Db, jobId: string, bookmarkIds: number[], 
       const st = statusStmt.get(jobId) as { status: string } | undefined;
       if (st && st.status === 'canceled') {
         canceled = true;
-        queue.length = 0;
+        nextIndex = bookmarkIds.length;
         return;
       }
 
-      const id = queue.shift();
-      if (!id) return;
+      const id = bookmarkIds[nextIndex];
+      nextIndex += 1;
+      if (id === undefined) return;
 
-      const row = selectStmt.get(id) as { id: number; url: string; skip_check: number } | undefined;
+      const row = selectStmt.get(id) as { id: number; url: string; title: string; skip_check: number } | undefined;
       if (!row) {
         processed += 1;
         failed += 1;
@@ -188,7 +189,7 @@ export async function runCheckJob(db: Db, jobId: string, bookmarkIds: number[], 
       } else {
         failed += 1;
         updateStmt.run(now, 'fail', res.httpCode, res.error, row.id);
-        addJobFailure(db, jobId, row.url, res.error || '不可用');
+        addJobFailure(db, jobId, row.url, res.error || '不可用', row.title);
       }
 
       processed += 1;

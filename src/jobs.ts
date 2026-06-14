@@ -36,6 +36,7 @@ export type JobRow = {
 export type JobFailureRow = {
   id: number;
   job_id: string;
+  title: string | null;
   input: string;
   reason: string;
 };
@@ -88,9 +89,29 @@ export function getJob(db: Db, jobId: string): JobRow | null {
   return row ?? null;
 }
 
+const jobFailureSelectSql = `
+  SELECT
+    jf.id,
+    jf.job_id,
+    COALESCE(
+      NULLIF(jf.title, ''),
+      CASE WHEN j.type = 'check' THEN (
+        SELECT b.title
+        FROM bookmarks b
+        WHERE b.url = jf.input
+        ORDER BY b.id
+        LIMIT 1
+      ) END
+    ) AS title,
+    jf.input,
+    jf.reason
+  FROM job_failures jf
+  LEFT JOIN jobs j ON j.id = jf.job_id
+`;
+
 export function listJobFailures(db: Db, jobId: string, limit = 200): JobFailureRow[] {
   return db
-    .prepare('SELECT id, job_id, input, reason FROM job_failures WHERE job_id = ? ORDER BY id DESC LIMIT ?')
+    .prepare(jobFailureSelectSql + ' WHERE jf.job_id = ? ORDER BY jf.id DESC LIMIT ?')
     .all(jobId, limit) as JobFailureRow[];
 }
 
@@ -101,7 +122,7 @@ export function countJobFailures(db: Db, jobId: string): number {
 
 export function listJobFailuresPaged(db: Db, jobId: string, limit: number, offset: number): JobFailureRow[] {
   return db
-    .prepare('SELECT id, job_id, input, reason FROM job_failures WHERE job_id = ? ORDER BY id DESC LIMIT ? OFFSET ?')
+    .prepare(jobFailureSelectSql + ' WHERE jf.job_id = ? ORDER BY jf.id DESC LIMIT ? OFFSET ?')
     .all(jobId, limit, offset) as JobFailureRow[];
 }
 
@@ -182,8 +203,9 @@ export function updateJob(db: Db, jobId: string, patch: Partial<Omit<JobRow, 'id
   return job;
 }
 
-export function addJobFailure(db: Db, jobId: string, input: string, reason: string): void {
-  db.prepare('INSERT INTO job_failures (job_id, input, reason) VALUES (?, ?, ?)').run(jobId, input, reason);
+export function addJobFailure(db: Db, jobId: string, input: string, reason: string, title?: string | null): void {
+  const normalizedTitle = typeof title === 'string' && title.trim() ? title.trim() : null;
+  db.prepare('INSERT INTO job_failures (job_id, title, input, reason) VALUES (?, ?, ?, ?)').run(jobId, normalizedTitle, input, reason);
 }
 
 export class JobQueue {

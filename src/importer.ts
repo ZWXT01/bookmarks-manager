@@ -195,7 +195,7 @@ export async function runImportJob(db: Db, jobId: string, items: ImportBookmarkI
         const canon = canonicalizeUrl(item.url);
         if (!canon.ok) {
           failed += 1;
-          addJobFailure(db, jobId, item.url, canon.reason);
+          addJobFailure(db, jobId, item.url, canon.reason, item.title);
           continue;
         }
 
@@ -230,7 +230,7 @@ export async function runImportJob(db: Db, jobId: string, items: ImportBookmarkI
             skipped += 1;
           } else {
             failed += 1;
-            addJobFailure(db, jobId, item.url, '入库失败');
+            addJobFailure(db, jobId, item.url, '入库失败', item.title);
           }
         }
       }

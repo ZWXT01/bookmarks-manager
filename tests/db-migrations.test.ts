@@ -31,6 +31,49 @@ afterEach(() => {
 });
 
 describe('database migrations', () => {
+    it('adds nullable titles to legacy job failure rows', () => {
+        const dbPath = tmpDbPath();
+        const legacy = new Database(dbPath);
+        legacy.exec(`
+            CREATE TABLE jobs (
+                id TEXT PRIMARY KEY,
+                type TEXT NOT NULL,
+                status TEXT NOT NULL,
+                total INTEGER NOT NULL DEFAULT 0,
+                processed INTEGER NOT NULL DEFAULT 0,
+                inserted INTEGER NOT NULL DEFAULT 0,
+                skipped INTEGER NOT NULL DEFAULT 0,
+                failed INTEGER NOT NULL DEFAULT 0,
+                message TEXT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+            CREATE TABLE job_failures (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id TEXT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,
+                input TEXT NOT NULL,
+                reason TEXT NOT NULL
+            );
+            INSERT INTO jobs (id, type, status, created_at, updated_at)
+            VALUES ('legacy-check-job', 'check', 'done', '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z');
+            INSERT INTO job_failures (job_id, input, reason)
+            VALUES ('legacy-check-job', 'https://legacy.example.com', 'HTTP 500');
+        `);
+        legacy.close();
+
+        const db = openDb(dbPath);
+        openHandles.push(db);
+
+        const columns = db.prepare("PRAGMA table_info(job_failures)").all() as Array<{ name: string }>;
+        expect(columns.map(col => col.name)).toContain('title');
+        const row = db.prepare('SELECT title, input, reason FROM job_failures WHERE job_id = ?').get('legacy-check-job') as { title: string | null; input: string; reason: string };
+        expect(row).toEqual({
+            title: null,
+            input: 'https://legacy.example.com',
+            reason: 'HTTP 500',
+        });
+    });
+
     it('removes legacy template schema while keeping categories and foreign keys valid', () => {
         const dbPath = tmpDbPath();
         const legacy = new Database(dbPath);

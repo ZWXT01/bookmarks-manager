@@ -361,7 +361,7 @@ describe('integration: page assets', () => {
             failed: 1,
             message: '检查中：示例任务',
         });
-        addJobFailure(ctx.db, job.id, 'https://example.com/failure-shell', '示例失败');
+        addJobFailure(ctx.db, job.id, 'https://example.com/failure-shell', '示例失败', '失败示例标题');
 
         const indexResponse = await ctx.app.inject({
             method: 'GET',
@@ -405,6 +405,8 @@ describe('integration: page assets', () => {
         expect(jobResponse.body).toContain('data-testid="failure-table"');
         expect(jobResponse.body).toContain('data-testid="failure-list"');
         expect(jobResponse.body).toContain('data-testid="failure-row"');
+        expect(jobResponse.body).toContain('data-testid="failure-title"');
+        expect(jobResponse.body).toContain('失败示例标题');
         expect(jobResponse.body).toContain('data-testid="failure-input"');
         expect(jobResponse.body).toContain('data-testid="failure-reason"');
         expect(jobResponse.body).toContain('data-testid="failure-pager"');

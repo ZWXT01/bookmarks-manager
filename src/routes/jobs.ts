@@ -3,7 +3,7 @@
  */
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
-import { getJob, jobQueue, pruneJobsToRecent, subscribeJob, subscribeJobEvent, updateJob } from '../jobs';
+import { countJobFailures, getJob, jobQueue, listJobFailuresPaged, pruneJobsToRecent, subscribeJob, subscribeJobEvent, updateJob } from '../jobs';
 import { toInt } from '../utils/helpers';
 
 export interface JobsRoutesOptions {
@@ -80,13 +80,12 @@ export const jobsRoutes: FastifyPluginCallback<JobsRoutesOptions> = (app, opts, 
         const pageSize = Math.min(200, Math.max(1, toInt(q.page_size) || toInt(q.limit) || 20));
 
         try {
-            const totalRow = db.prepare('SELECT COUNT(*) as count FROM job_failures WHERE job_id = ?').get(jobId) as { count: number };
-            const total = totalRow?.count || 0;
+            const total = countJobFailures(db, jobId);
             const totalPages = Math.max(1, Math.ceil(total / pageSize));
             const pageClamped = Math.min(page, totalPages);
             const offset = (pageClamped - 1) * pageSize;
 
-            const failures = db.prepare('SELECT * FROM job_failures WHERE job_id = ? ORDER BY id DESC LIMIT ? OFFSET ?').all(jobId, pageSize, offset) as Array<{ id: number; job_id: string; input: string; reason: string }>;
+            const failures = listJobFailuresPaged(db, jobId, pageSize, offset);
             return reply.send({ failures, total, page: pageClamped, totalPages, pageSize });
         } catch (e: any) {
             return reply.code(500).send({ error: e.message });

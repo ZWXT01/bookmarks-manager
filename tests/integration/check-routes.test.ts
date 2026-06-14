@@ -180,6 +180,47 @@ describe('integration: check routes', () => {
         });
     }
 
+    it('records bookmark titles on failed check items', async () => {
+        const brokenId = createBookmark(ctx.db, {
+            url: 'https://broken-title.example.com',
+            title: 'Broken Title Bookmark',
+        });
+        fetchMock.mockResolvedValueOnce(new Response(null, { status: 404 }));
+
+        const response = await ctx.app.inject({
+            method: 'POST',
+            url: '/api/check/start',
+            headers: authHeaders,
+            payload: {
+                scope: 'selected',
+                bookmark_ids: [brokenId],
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        await jobQueue.onIdle();
+
+        const job = getJob(ctx.db, response.json().jobId as string);
+        expect(job).toMatchObject({
+            status: 'done',
+            total: 1,
+            processed: 1,
+            inserted: 0,
+            failed: 1,
+        });
+
+        const failure = ctx.db.prepare('SELECT title, input, reason FROM job_failures WHERE job_id = ?').get(job!.id) as {
+            title: string | null;
+            input: string;
+            reason: string;
+        };
+        expect(failure).toEqual({
+            title: 'Broken Title Bookmark',
+            input: 'https://broken-title.example.com',
+            reason: 'HTTP 404',
+        });
+    });
+
     it('rejects empty selected scopes and invalid categories', async () => {
         seedScopeFixture(ctx.db);
 

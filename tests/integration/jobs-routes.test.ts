@@ -71,7 +71,7 @@ describe('integration: jobs routes', () => {
             });
         }
 
-        addJobFailure(ctx.db, failureJob.id, 'https://one.example.com', 'timeout-1');
+        addJobFailure(ctx.db, failureJob.id, 'https://one.example.com', 'timeout-1', 'One Example');
         addJobFailure(ctx.db, failureJob.id, 'https://two.example.com', 'timeout-2');
         addJobFailure(ctx.db, failureJob.id, 'https://three.example.com', 'timeout-3');
 
@@ -105,6 +105,7 @@ describe('integration: jobs routes', () => {
         });
         expect(failures.json().failures).toHaveLength(1);
         expect(failures.json().failures[0].reason).toBe('timeout-1');
+        expect(failures.json().failures[0].title).toBe('One Example');
 
         const emptyFailures = await ctx.app.inject({
             method: 'GET',

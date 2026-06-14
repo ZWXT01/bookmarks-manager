@@ -79,13 +79,28 @@ describe('Job CRUD', () => {
     describe('Job failures', () => {
         it('should add and list failures', () => {
             const job = createJob(db, 'check', 'test');
-            addJobFailure(db, job.id, 'https://broken.com', 'Timeout');
+            addJobFailure(db, job.id, 'https://broken.com', 'Timeout', 'Broken Site');
             addJobFailure(db, job.id, 'https://dead.com', 'HTTP 404');
 
             const failures = listJobFailures(db, job.id);
             expect(failures).toHaveLength(2);
             expect(failures[0].input).toBe('https://dead.com'); // DESC order
             expect(failures[1].input).toBe('https://broken.com');
+            expect(failures[1].title).toBe('Broken Site');
+        });
+
+        it('should derive check failure titles from bookmarks when legacy failure rows have no title', () => {
+            const job = createJob(db, 'check', 'test');
+            db.prepare(`
+                INSERT INTO bookmarks (url, canonical_url, title, category_id, created_at, check_status)
+                VALUES (?, ?, ?, NULL, datetime('now'), 'fail')
+            `).run('https://legacy-broken.com', 'https://legacy-broken.com', 'Legacy Broken Site');
+
+            addJobFailure(db, job.id, 'https://legacy-broken.com', 'HTTP 500');
+
+            const failures = listJobFailures(db, job.id);
+            expect(failures).toHaveLength(1);
+            expect(failures[0].title).toBe('Legacy Broken Site');
         });
 
         it('should count failures correctly', () => {
