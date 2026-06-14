@@ -91,6 +91,7 @@ function bookmarkApp() {
     showAIOrganizeModal: false,
     organizeScope: 'all',
     organizeScopeCategoryId: '',
+    organizeBatchSize: 20,
     organizePlan: null,
     organizePhase: 'idle', // idle, assigning, preview, applied, failed, error
     organizeProgress: { batches_done: 0, batches_total: 0, failed_batch_ids: [], needs_review_count: 0 },
@@ -243,8 +244,23 @@ function bookmarkApp() {
         if (this.checkOptions && String(this.checkOptions.retry_delay_ms) === '500' && data.check_retry_delay_ms != null) {
           this.checkOptions.retry_delay_ms = String(data.check_retry_delay_ms);
         }
+        const configuredBatchSize = this.normalizeAiBatchSize(data.ai_batch_size, null);
+        if (configuredBatchSize != null) {
+          this.classifyBatchSize = configuredBatchSize;
+          this.organizeBatchSize = configuredBatchSize;
+        }
       } catch {
       }
+    },
+
+    normalizeAiBatchSize(value, fallback = 20) {
+      const numeric = Number(value);
+      if ([10, 20, 30].includes(numeric)) return numeric;
+      return fallback;
+    },
+
+    getDefaultAiBatchSize() {
+      return this.normalizeAiBatchSize(this.settings?.ai_batch_size, 20);
     },
 
     async pollCurrentJob() {
@@ -2165,7 +2181,7 @@ function bookmarkApp() {
         return;
       }
       this.classifyBatchIds = bookmarkIds;
-      this.classifyBatchSize = 20;
+      this.classifyBatchSize = this.getDefaultAiBatchSize();
       this.showBatchSizeModal = true;
     },
 
@@ -2340,7 +2356,7 @@ function bookmarkApp() {
       const scope = this.organizeScope === 'category' ? 'category:' + this.organizeScopeCategoryId : this.organizeScope;
       return {
         scope,
-        batch_size: this.classifyBatchSize || 20,
+        batch_size: this.normalizeAiBatchSize(this.organizeBatchSize, this.getDefaultAiBatchSize()),
       };
     },
 
@@ -2359,6 +2375,7 @@ function bookmarkApp() {
       this.closeMobileSidebar();
       this.organizeScope = 'all';
       this.organizeScopeCategoryId = '';
+      this.organizeBatchSize = this.getDefaultAiBatchSize();
       this.organizeQueuedStart = null;
       this.setOrganizeIdleState(true);
       this.showAIOrganizeModal = true;

@@ -1026,6 +1026,17 @@
                                     </select>
                                 </div>
                             </template>
+                            <div>
+                                <label class="text-xs text-slate-600">每批处理数量</label>
+                                <select x-model.number="organizeBatchSize"
+                                    data-testid="organize-batch-size"
+                                    class="w-full rounded border px-3 py-2 text-sm mt-1">
+                                    <option value="10">10</option>
+                                    <option value="20">20（推荐）</option>
+                                    <option value="30">30</option>
+                                </select>
+                                <div class="mt-1 text-xs text-slate-400">较小批次更稳，较大批次更快。</div>
+                            </div>
                             <div class="flex justify-end gap-2">
                                 <button @click="closeOrganizeModal()"
                                     data-testid="organize-idle-cancel"

@@ -95,6 +95,14 @@ describe('integration: page assets', () => {
         expect(jobPage).not.toMatch(bodylessJsonPost);
     });
 
+    it('wires the ai organize batch-size selector into the start payload', () => {
+        const appJs = fs.readFileSync('public/app.js', 'utf8');
+
+        expect(appJs).toContain('organizeBatchSize: 20');
+        expect(appJs).toContain('this.organizeBatchSize = this.getDefaultAiBatchSize()');
+        expect(appJs).toContain('batch_size: this.normalizeAiBatchSize(this.organizeBatchSize, this.getDefaultAiBatchSize())');
+    });
+
     it('does not render removed category template management UI', async () => {
         const session = await ctx.login();
         const headers = createSessionHeaders(session.cookieHeader, ctx.auth.baseUrl);
@@ -132,6 +140,8 @@ describe('integration: page assets', () => {
         expect(response.body).toContain('style="max-height: min(320px, 45vh);"');
         expect(response.body).toContain('min-h-0 flex-1 overflow-y-auto');
         expect(response.body).toContain('data-testid="organize-phase-idle"');
+        expect(response.body).toContain('data-testid="organize-batch-size"');
+        expect(response.body).toContain('x-model.number="organizeBatchSize"');
         expect(response.body).toContain('data-testid="organize-start"');
         expect(response.body).toContain('data-testid="organize-assigning-cancel"');
         expect(response.body).toContain("organizePhase === 'error' ? 'organize-phase-error' : 'organize-phase-failed'");
