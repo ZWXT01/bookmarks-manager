@@ -569,7 +569,7 @@ describe('integration: ai route contracts', () => {
         expect(plan).not.toBeNull();
         expect(plan?.target_tree ? JSON.parse(plan.target_tree) : null).toEqual(updatedTree);
         expect(plan?.assignments ? JSON.parse(plan.assignments) : null).toEqual([
-            { bookmark_id: bookmarkIds[0], category_path: '', status: 'needs_review' },
+            { bookmark_id: bookmarkIds[0], category_path: '技术开发/Web前端', status: 'assigned' },
             { bookmark_id: bookmarkIds[1], category_path: '学习资源/教程', status: 'assigned' },
         ]);
     });

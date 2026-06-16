@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { createPlan, getPlan, transitionStatus, updatePlan } from '../../src/ai-organize-plan';
-import { getCategoryByPath, getCategoryFullPath, renameCategory } from '../../src/category-service';
+import { getCategoryByPath, getCategoryFullPath, getOrCreateCategoryByPath, renameCategory } from '../../src/category-service';
 import { getJob, jobQueue } from '../../src/jobs';
 import { createTestApp, type TestAppContext } from '../helpers/app';
 import {
@@ -248,7 +248,7 @@ describe('integration: ai organize route contracts', () => {
         expect(defaultPlan).not.toBeNull();
         expect(defaultPlan?.target_tree ? JSON.parse(defaultPlan.target_tree) : null).toEqual(updatedTree);
         expect(defaultPlan?.assignments ? JSON.parse(defaultPlan.assignments) : null).toEqual([
-            { bookmark_id: bookmarkIds[0], category_path: '', status: 'needs_review' },
+            { bookmark_id: bookmarkIds[0], category_path: '技术开发/Web前端', status: 'assigned' },
             { bookmark_id: bookmarkIds[1], category_path: '学习资源/教程', status: 'assigned' },
         ]);
 
@@ -282,6 +282,61 @@ describe('integration: ai organize route contracts', () => {
         expect(ignoredPlan?.target_tree ? JSON.parse(ignoredPlan.target_tree) : null).toEqual(updatedTree);
         expect(ignoredPlan?.assignments ? JSON.parse(ignoredPlan.assignments) : null).toEqual([
             { bookmark_id: bookmarkIds[0], category_path: '技术开发/Web前端', status: 'assigned' },
+        ]);
+    });
+
+    it('adds decision guidance and bookmark context to improve organize assignment accuracy', async () => {
+        const { ctx: appCtx, harness, authHeaders } = await createHarnessApp([
+            jsonCompletion({
+                assignments: [
+                    { index: 1, category: '开发者/前端' },
+                ],
+            }),
+        ]);
+        seedAISettings(appCtx.db, { batchSize: 10 });
+
+        getOrCreateCategoryByPath(appCtx.db, '常用入口/快捷导航');
+        const currentCategory = getCategoryByPath(appCtx.db, '常用入口/快捷导航');
+        getOrCreateCategoryByPath(appCtx.db, '开发者/前端资源');
+        getOrCreateCategoryByPath(appCtx.db, '开发者/官方文档');
+        getOrCreateCategoryByPath(appCtx.db, 'NSFW/成人站点');
+
+        const [bookmarkId] = seedBookmarks(appCtx.db, [
+            {
+                title: 'React useState API Reference',
+                url: 'https://react.dev/reference/react/useState',
+                categoryId: currentCategory!.id,
+            },
+        ]);
+        appCtx.db.prepare('UPDATE bookmarks SET description = ? WHERE id = ?').run('React Hooks reference and frontend documentation.', bookmarkId);
+
+        const response = await appCtx.app.inject({
+            method: 'POST',
+            url: '/api/ai/organize',
+            headers: authHeaders,
+            payload: {
+                scope: `ids:${bookmarkId}`,
+                batch_size: 10,
+            },
+        });
+
+        expect(response.statusCode).toBe(200);
+        await jobQueue.onIdle();
+
+        const systemPrompt = harness.calls[0].messages[0].content as string;
+        const userPrompt = harness.calls[0].messages[1].content as string;
+        expect(systemPrompt).toContain('分类判定原则');
+        expect(systemPrompt).toContain('常用入口：只放真正的入口页');
+        expect(systemPrompt).toContain('NSFW：明确成人内容');
+        expect(systemPrompt).toContain('\n开发者/前端资源\n');
+        expect(userPrompt).toContain('当前分类: 常用入口/快捷导航');
+        expect(userPrompt).toContain('域名: react.dev');
+        expect(userPrompt).toContain('路径关键词: reference react useState');
+        expect(userPrompt).toContain('描述: React Hooks reference and frontend documentation.');
+
+        const plan = getPlan(appCtx.db, (response.json() as { planId: string }).planId);
+        expect(plan?.assignments ? JSON.parse(plan.assignments) : null).toEqual([
+            { bookmark_id: bookmarkId, category_path: '开发者/官方文档', status: 'assigned' },
         ]);
     });
 
