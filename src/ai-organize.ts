@@ -141,6 +141,26 @@ function hasCategoryPath(categoryList: string[], path: string): boolean {
   return categoryList.some(category => casefold(normalizePath(category)) === key);
 }
 
+function getAvailableChildNames(categoryList: string[], topName: string): string[] {
+  const topKey = casefold(topName);
+  const seen = new Set<string>();
+  const children: string[] = [];
+  for (const category of categoryList) {
+    const [top, child] = normalizePath(category).split('/');
+    if (!child || casefold(top) !== topKey) continue;
+    const childKey = casefold(child);
+    if (seen.has(childKey)) continue;
+    seen.add(childKey);
+    children.push(child);
+  }
+  return children;
+}
+
+function describeAvailableChildren(categoryList: string[], topName: string, fallback = '该类相关内容'): string {
+  const children = getAvailableChildNames(categoryList, topName);
+  return children.length ? children.join('、') : fallback;
+}
+
 function buildOrganizeCategoryGuide(categoryList: string[]): string {
   const guide: string[] = [
     '分类判定原则：',
@@ -159,52 +179,52 @@ function buildOrganizeCategoryGuide(categoryList: string[]): string {
     boundaryRules.push('待处理：只放“稍后阅读、待下载、待购买、待注册、待整理、可能删除”等需要后续动作的书签；已经能判断内容主题时优先放内容分类。');
   }
   if (hasCategoryPath(categoryList, '搜索导航')) {
-    boundaryRules.push('搜索导航：搜索引擎、垂直搜索、网址导航、翻译词典、地图位置、问答入口；不要把普通资源站、社区或文章放入搜索导航。');
+    boundaryRules.push(`搜索导航：${describeAvailableChildren(categoryList, '搜索导航')}；不要把普通资源站、社区或文章放入搜索导航。`);
   }
   if (hasCategoryPath(categoryList, '账号后台')) {
-    boundaryRules.push('账号后台：云服务控制台、域名/DNS、服务器面板、应用/商家后台、账单发票、个人资料等登录后管理入口。');
+    boundaryRules.push(`账号后台：${describeAvailableChildren(categoryList, '账号后台')}等登录后管理入口。`);
   }
   if (hasCategoryPath(categoryList, '在线工具')) {
-    boundaryRules.push('在线工具：网页内直接完成文本/图片/PDF/转换/计算/文件处理的工具；软件下载页归下载资源，开发 API/文档归开发者或资料文档。');
+    boundaryRules.push(`在线工具：${describeAvailableChildren(categoryList, '在线工具')}，用于网页内直接完成操作；软件下载页归下载资源，开发文档归开发者或资料文档。`);
   }
   if (hasCategoryPath(categoryList, '开发者')) {
-    boundaryRules.push('开发者：代码托管、官方/API文档、包/镜像、前后端、数据库缓存、部署运维、监控日志、报错排查、代码片段和技术文章。GitHub 仓库通常是代码托管，docs/reference/API 页面优先放官方文档或API文档。');
+    boundaryRules.push(`开发者：${describeAvailableChildren(categoryList, '开发者')}。GitHub 仓库通常是代码托管，docs/reference/API 页面优先放官方文档。`);
   }
   if (hasCategoryPath(categoryList, 'AI工具')) {
-    boundaryRules.push('AI工具：AI产品、模型平台、AI搜索/编程/写作/图片/视频/音频、提示词库、数据集评测；普通 AI 新闻/文章不要放这里，放资讯订阅或资料文档。');
+    boundaryRules.push(`AI工具：${describeAvailableChildren(categoryList, 'AI工具')}等 AI 产品或平台；普通 AI 新闻/文章不要放这里，放资讯订阅或资料文档。`);
   }
   if (hasCategoryPath(categoryList, '设计素材')) {
-    boundaryRules.push('设计素材：设计工具、灵感、UI组件、图标字体、图库、插画、配色、模板样机；图片压缩/转换等操作型网页优先放在线工具/图片工具。');
+    boundaryRules.push(`设计素材：${describeAvailableChildren(categoryList, '设计素材')}；图片压缩/转换等操作型网页优先放在线工具/图片工具。`);
   }
   if (hasCategoryPath(categoryList, '资料文档')) {
-    boundaryRules.push('资料文档：教程指南、官方手册、参考资料、课程、论文报告、Wiki知识库、收藏文章；开发专用文档/API优先放开发者。');
+    boundaryRules.push(`资料文档：${describeAvailableChildren(categoryList, '资料文档')}；开发专用文档优先放开发者/官方文档。`);
   }
   if (hasCategoryPath(categoryList, '资讯订阅')) {
-    boundaryRules.push('资讯订阅：新闻、科技/财经/行业动态、Newsletter、RSS、榜单热榜；论坛问答和个人博客优先放社区论坛。');
+    boundaryRules.push(`资讯订阅：${describeAvailableChildren(categoryList, '资讯订阅')}；论坛问答和个人博客优先放社区论坛。`);
   }
   if (hasCategoryPath(categoryList, '社区论坛')) {
-    boundaryRules.push('社区论坛：社交平台、论坛、问答社区、博客个人站、群组频道、活动Meetup 等用户生成内容或交流入口。');
+    boundaryRules.push(`社区论坛：${describeAvailableChildren(categoryList, '社区论坛')}等用户生成内容或交流入口。`);
   }
   if (hasCategoryPath(categoryList, '影音娱乐')) {
-    boundaryRules.push('影音娱乐：视频、音乐、播客、直播、游戏站点、动漫漫画、影视资源；成人内容优先放 NSFW。');
+    boundaryRules.push(`影音娱乐：${describeAvailableChildren(categoryList, '影音娱乐')}；成人内容优先放 NSFW。`);
   }
   if (hasCategoryPath(categoryList, '下载资源')) {
-    boundaryRules.push('下载资源：软件下载、系统镜像、开源发布、网盘分享、素材/字体/壁纸下载、备用链接；在线使用的工具不要放这里。');
+    boundaryRules.push(`下载资源：${describeAvailableChildren(categoryList, '下载资源')}；在线使用的工具不要放这里。`);
   }
   if (hasCategoryPath(categoryList, '购物消费')) {
-    boundaryRules.push('购物消费：电商、比价优惠、品牌官网、数码硬件、快递物流、票务活动、愿望清单。');
+    boundaryRules.push(`购物消费：${describeAvailableChildren(categoryList, '购物消费')}。`);
   }
   if (hasCategoryPath(categoryList, '生活出行')) {
-    boundaryRules.push('生活出行：本地生活、餐饮外卖、旅行酒店、交通、天气、医疗、家庭宠物。');
+    boundaryRules.push(`生活出行：${describeAvailableChildren(categoryList, '生活出行')}。`);
   }
   if (hasCategoryPath(categoryList, '金融支付')) {
-    boundaryRules.push('金融支付：银行支付、投资行情、股票基金、加密资产、记账预算、税务保险、收款结算。');
+    boundaryRules.push(`金融支付：${describeAvailableChildren(categoryList, '金融支付')}；泛金融服务可放一级分类。`);
   }
   if (hasCategoryPath(categoryList, '安全隐私')) {
-    boundaryRules.push('安全隐私：密码、二步验证、隐私邮箱、代理网络、安全检测、备份恢复、反诈风控。');
+    boundaryRules.push(`安全隐私：${describeAvailableChildren(categoryList, '安全隐私')}。`);
   }
   if (hasCategoryPath(categoryList, 'NSFW')) {
-    boundaryRules.push('NSFW：明确成人内容、成人社区、写真擦边、成人游戏/漫画、情趣购物、私密订阅等必须归入 NSFW；不要归入普通影音娱乐、社区或下载资源。');
+    boundaryRules.push(`NSFW：明确成人内容（${describeAvailableChildren(categoryList, 'NSFW')}）必须归入 NSFW；不要归入普通影音娱乐、社区或下载资源。`);
   }
 
   if (boundaryRules.length) {
