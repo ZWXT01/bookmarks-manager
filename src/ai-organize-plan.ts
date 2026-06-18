@@ -695,8 +695,14 @@ function selectApplicableAssignmentsForApply(
   assignments: Assignment[],
   decisionsInput?: unknown,
 ): Assignment[] {
-  return selectAssignmentsForApply(assignments, decisionsInput)
-    .filter(assignment => getAssignmentApplicability(db, plan, assignment).can_apply);
+  const selectedAssignments = selectAssignmentsForApply(assignments, decisionsInput);
+  if (selectedAssignments.length === 0) return [];
+
+  const lookup = buildPathLookup(db);
+  const snapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
+  const snapshotTargets = snapshot ? buildSnapshotTargetMap(snapshot) : null;
+  return selectedAssignments
+    .filter(assignment => getAssignmentApplicabilityFromContext(lookup, snapshotTargets, assignment).can_apply);
 }
 
 function findNewerOverlappingPlanConflicts(
