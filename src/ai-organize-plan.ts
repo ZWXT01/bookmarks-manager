@@ -596,6 +596,17 @@ export function getAssignmentApplicability(
   plan: Pick<PlanRow, 'source_snapshot'>,
   assignment: Assignment,
 ): AssignmentApplicability {
+  const lookup = buildPathLookup(db);
+  const snapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
+  const snapshotTargets = snapshot ? buildSnapshotTargetMap(snapshot) : null;
+  return getAssignmentApplicabilityFromContext(lookup, snapshotTargets, assignment);
+}
+
+function getAssignmentApplicabilityFromContext(
+  lookup: PathLookup,
+  snapshotTargets: Map<string, PlanLiveTargetSnapshot> | null,
+  assignment: Assignment,
+): AssignmentApplicability {
   if (!canApplyAssignment(assignment)) {
     return {
       can_apply: false,
@@ -606,7 +617,7 @@ export function getAssignmentApplicability(
 
   const path = normalizePath(assignment.category_path);
   const key = casefold(path);
-  const current = buildPathLookup(db).get(key);
+  const current = lookup.get(key);
   if (!current) {
     return {
       can_apply: false,
@@ -615,8 +626,7 @@ export function getAssignmentApplicability(
     };
   }
 
-  const snapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
-  if (!snapshot) {
+  if (!snapshotTargets) {
     return {
       can_apply: false,
       invalid_reason: 'snapshot_missing',
@@ -624,7 +634,7 @@ export function getAssignmentApplicability(
     };
   }
 
-  const snapshotted = buildSnapshotTargetMap(snapshot).get(key);
+  const snapshotted = snapshotTargets.get(key);
   if (!snapshotted || snapshotted.category_id !== current.id) {
     return {
       can_apply: false,
@@ -1005,13 +1015,15 @@ export function validateTree(tree: CategoryNode[]): { valid: boolean; errors: st
 export function computeDiff(db: Db, plan: PlanRow): DiffSummary {
   const assignments = parseAssignments(plan.assignments);
   const lookup = buildPathLookup(db);
+  const snapshot = parseSourceSnapshot(plan.source_snapshot ?? null);
+  const snapshotTargets = snapshot ? buildSnapshotTargetMap(snapshot) : null;
   const bookmarks = getBookmarkMap(db);
   const moves: DiffSummary['moves'] = [];
   let needsReview = 0;
 
   for (const a of assignments) {
     if (a.status === 'needs_review') { needsReview++; continue; }
-    if (!getAssignmentApplicability(db, plan, a).can_apply) { needsReview++; continue; }
+    if (!getAssignmentApplicabilityFromContext(lookup, snapshotTargets, a).can_apply) { needsReview++; continue; }
     const tp = normalizePath(a.category_path);
     if (!tp) { needsReview++; continue; }
     const bm = bookmarks.get(a.bookmark_id);
