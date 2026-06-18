@@ -136,6 +136,111 @@ function parseUrlSignals(rawUrl: string): { hostname: string; path: string } {
   }
 }
 
+function parseBookmarkUrl(rawUrl: string): { hostname: string; pathname: string; segments: string[] } {
+  try {
+    const parsed = new URL(rawUrl);
+    const pathname = decodeURIComponent(parsed.pathname || '').toLowerCase();
+    return {
+      hostname: parsed.hostname.toLowerCase(),
+      pathname,
+      segments: pathname.split('/').map(part => part.trim()).filter(Boolean),
+    };
+  } catch {
+    return { hostname: '', pathname: '', segments: [] };
+  }
+}
+
+function domainMatches(hostname: string, domain: string): boolean {
+  const host = hostname.toLowerCase();
+  const target = domain.toLowerCase();
+  return host === target || host.endsWith(`.${target}`);
+}
+
+function domainMatchesAny(hostname: string, domains: string[]): boolean {
+  return domains.some(domain => domainMatches(hostname, domain));
+}
+
+function resolveAvailableCategory(path: string, validPaths: Set<string>): string | null {
+  const normalized = normalizePath(path);
+  if (!normalized) return null;
+  return validateAssignment(normalized, validPaths) ? normalized : null;
+}
+
+function resolveDeterministicCategory(bookmark: BookmarkBatch, validPaths: Set<string>): string | null {
+  const { hostname, pathname, segments } = parseBookmarkUrl(bookmark.url);
+  if (!hostname) return null;
+
+  const target = (path: string) => resolveAvailableCategory(path, validPaths);
+
+  // NSFW first: avoid leaking adult domains into ordinary video/community/download buckets.
+  if (domainMatchesAny(hostname, ['nhentai.net', 'e-hentai.org', 'exhentai.org', 'hitomi.la', 'wnacg.com', 'asmhentai.com'])) {
+    return target('NSFW/成人漫画');
+  }
+  if (domainMatchesAny(hostname, ['pornhub.com', 'xvideos.com', 'xnxx.com', 'javdb.com', 'javlibrary.com', 'missav.com', 'supjav.com'])) {
+    return target('NSFW/成人视频');
+  }
+
+  // Resource/download platforms.
+  if (domainMatches(hostname, 'pan.baidu.com') || domainMatches(hostname, 'yun.baidu.com')) {
+    return target('资源下载/百度网盘');
+  }
+  if (domainMatchesAny(hostname, ['aliyundrive.com', 'alipan.com', 'aliyunpan.com'])) {
+    return target('资源下载/阿里云盘');
+  }
+  if (domainMatchesAny(hostname, [
+    'lanzou.com', 'lanzoui.com', 'lanzoux.com', 'lanzouw.com', '123pan.com',
+    'pan.quark.cn', 'drive.google.com', 'onedrive.live.com', '1drv.ms',
+    'dropbox.com', 'mega.nz', 'mediafire.com',
+  ])) {
+    return target('资源下载/其他网盘');
+  }
+
+  // Platform content pages: classify by platform, not by the page topic.
+  if (domainMatchesAny(hostname, ['bilibili.com', 'b23.tv'])) {
+    return target('影音游戏/B站视频');
+  }
+  if (domainMatchesAny(hostname, ['youtube.com', 'youtu.be'])) {
+    return target('影音游戏/YouTube视频');
+  }
+  if (domainMatchesAny(hostname, ['douyin.com', 'tiktok.com', 'vimeo.com', 'dailymotion.com', 'xiaohongshu.com'])
+    || hostname === 'v.qq.com') {
+    return target('影音游戏/其他视频');
+  }
+
+  if (domainMatches(hostname, 'linux.do')) return target('社区社交/Linux.do');
+  if (domainMatches(hostname, 'v2ex.com')) return target('社区社交/V2EX');
+  if (domainMatches(hostname, 'zhihu.com')) return target('社区社交/知乎');
+  if (domainMatchesAny(hostname, ['x.com', 'twitter.com'])) return target('社区社交/X推文');
+  if (domainMatches(hostname, 'tieba.baidu.com')
+    || domainMatchesAny(hostname, ['reddit.com', 'nodeseek.com', 'hostloc.com', 'stackoverflow.com', 'stackexchange.com', 'quora.com', 'lowendtalk.com', 'chiphell.com', '52pojie.cn'])) {
+    return target('社区社交/论坛社区');
+  }
+  if (domainMatchesAny(hostname, ['t.me', 'telegram.org', 'discord.com', 'discord.gg', 'facebook.com', 'instagram.com', 'threads.net', 'mastodon.social'])) {
+    return target('社区社交/社交平台');
+  }
+
+  // Code hosting/repositories are a platform-like bucket in the new taxonomy.
+  if (domainMatchesAny(hostname, ['github.com', 'gitlab.com', 'gitee.com', 'bitbucket.org'])) {
+    if (segments.length >= 2 || !pathname || pathname === '/') return target('开发与AI/代码仓库');
+  }
+
+  // Navigation/search/service entry points.
+  if (domainMatchesAny(hostname, ['google.com', 'bing.com', 'duckduckgo.com', 'yandex.com', 'sogou.com', 'startpage.com'])
+    || hostname === 'baidu.com' || hostname === 'www.baidu.com'
+    || domainMatchesAny(hostname, ['deepl.com', 'translate.google.com', 'amap.com', 'maps.google.com', 'map.baidu.com'])) {
+    return target('实用工具/搜索导航');
+  }
+
+  if (domainMatchesAny(hostname, [
+    'dash.cloudflare.com', 'console.cloud.google.com', 'console.aws.amazon.com',
+    'portal.azure.com', 'vercel.com', 'netlify.com',
+  ]) || /\/(dashboard|console|admin|account|billing)(\/|$)/.test(pathname)) {
+    return target('实用工具/账号后台');
+  }
+
+  return null;
+}
+
 function hasCategoryPath(categoryList: string[], path: string): boolean {
   const key = casefold(normalizePath(path));
   return categoryList.some(category => casefold(normalizePath(category)) === key);
@@ -164,67 +269,50 @@ function describeAvailableChildren(categoryList: string[], topName: string, fall
 function buildOrganizeCategoryGuide(categoryList: string[]): string {
   const guide: string[] = [
     '分类判定原则：',
-    '1. 优先按网页“核心内容/主要用途”分类，不按保存时间、个人偏好或是否常用分类。',
-    '2. 优先选择最具体的二级分类；只有没有合适子分类时才选择一级分类。',
-    '3. 当前分类只是参考：当前分类已具体且明显匹配时可保留；当前为“待处理/常用入口”等流程桶时，不要仅因当前分类而保留。',
-    '4. 如果只能猜测、多个分类同样合理，返回空字符串交给人工审核；不要为了填满而强行选择。',
-    '5. 模型无法实际联网时，基于标题、域名、URL路径、描述和当前分类综合判断。',
+    '1. 只能从候选分类中选择，禁止创建新一级或二级分类，输出必须与候选分类路径完全一致。',
+    '2. 先判断站点类型：平台内容页按平台/入口分类；独立站点、工具、资料页再按内容主题分类。',
+    '3. B站/YouTube/论坛/社交/网盘/GitHub 仓库等平台内具体内容页，不要按其内容主题细分，直接归入对应平台分类。',
+    '4. 非平台型页面优先选择最具体的二级分类；只有候选中没有合适二级时才选择一级分类。',
+    '5. 当前分类只是参考，不要因为旧分类而保留错误分类。',
+    hasCategoryPath(categoryList, '待整理')
+      ? '6. 如果只能猜测、信息不足、多个分类同样合理，选择“待整理”；不要为了填满而强行分类。'
+      : '6. 如果只能猜测、信息不足、多个分类同样合理，返回空字符串；不要为了填满而强行分类。',
+    '7. 你通常无法实际访问网页；不要声称已访问，只能根据标题、域名、URL 路径、描述和候选分类判断。',
   ];
 
   const boundaryRules: string[] = [];
-  if (hasCategoryPath(categoryList, '常用入口')) {
-    boundaryRules.push('常用入口：只放真正的入口页/控制台首页/个人常用起始页/临时置顶；不要把所有高频网站或普通内容页都放到这里。');
+  if (hasCategoryPath(categoryList, '开发与AI')) {
+    boundaryRules.push(`开发与AI：${describeAvailableChildren(categoryList, '开发与AI')}。GitHub/GitLab/Gitee 仓库统一归“代码仓库”；AI 产品、模型 API、AI 搜索/写作/图片/视频工具归“AI平台工具”。`);
   }
-  if (hasCategoryPath(categoryList, '待处理')) {
-    boundaryRules.push('待处理：只放“稍后阅读、待下载、待购买、待注册、待整理、可能删除”等需要后续动作的书签；已经能判断内容主题时优先放内容分类。');
-  }
-  if (hasCategoryPath(categoryList, '搜索导航')) {
-    boundaryRules.push(`搜索导航：${describeAvailableChildren(categoryList, '搜索导航')}；不要把普通资源站、社区或文章放入搜索导航。`);
-  }
-  if (hasCategoryPath(categoryList, '账号后台')) {
-    boundaryRules.push(`账号后台：${describeAvailableChildren(categoryList, '账号后台')}等登录后管理入口。`);
-  }
-  if (hasCategoryPath(categoryList, '在线工具')) {
-    boundaryRules.push(`在线工具：${describeAvailableChildren(categoryList, '在线工具')}，用于网页内直接完成操作；软件下载页归下载资源，开发文档归开发者或资料文档。`);
-  }
-  if (hasCategoryPath(categoryList, '开发者')) {
-    boundaryRules.push(`开发者：${describeAvailableChildren(categoryList, '开发者')}。GitHub 仓库通常是代码托管，docs/reference/API 页面优先放官方文档。`);
-  }
-  if (hasCategoryPath(categoryList, 'AI工具')) {
-    boundaryRules.push(`AI工具：${describeAvailableChildren(categoryList, 'AI工具')}等 AI 产品或平台；普通 AI 新闻/文章不要放这里，放资讯订阅或资料文档。`);
+  if (hasCategoryPath(categoryList, '实用工具')) {
+    boundaryRules.push(`实用工具：${describeAvailableChildren(categoryList, '实用工具')}。只放在线可直接操作的工具、搜索导航、控制台/后台；软件下载页不要放这里。`);
   }
   if (hasCategoryPath(categoryList, '设计素材')) {
-    boundaryRules.push(`设计素材：${describeAvailableChildren(categoryList, '设计素材')}；图片压缩/转换等操作型网页优先放在线工具/图片工具。`);
+    boundaryRules.push(`设计素材：${describeAvailableChildren(categoryList, '设计素材')}。图片压缩/格式转换等操作型网页归“实用工具/图片工具”，不是设计素材。`);
   }
-  if (hasCategoryPath(categoryList, '资料文档')) {
-    boundaryRules.push(`资料文档：${describeAvailableChildren(categoryList, '资料文档')}；开发专用文档优先放开发者/官方文档。`);
+  if (hasCategoryPath(categoryList, '知识资料')) {
+    boundaryRules.push(`知识资料：${describeAvailableChildren(categoryList, '知识资料')}。只放长期参考资料；开发专用文档优先归“开发与AI/技术资料”。`);
+  }
+  if (hasCategoryPath(categoryList, '影音游戏')) {
+    boundaryRules.push(`影音游戏：${describeAvailableChildren(categoryList, '影音游戏')}。B站/YouTube/其他视频平台具体内容页按平台归类，不按视频主题归类；成人内容优先归 NSFW。`);
+  }
+  if (hasCategoryPath(categoryList, '社区社交')) {
+    boundaryRules.push(`社区社交：${describeAvailableChildren(categoryList, '社区社交')}。论坛帖子、知乎内容、X 推文按平台归类，不按帖子主题归类。`);
+  }
+  if (hasCategoryPath(categoryList, '资源下载')) {
+    boundaryRules.push(`资源下载：${describeAvailableChildren(categoryList, '资源下载')}。网盘分享按网盘平台归类；软件下载/系统镜像/其他下载资源归对应下载分类。`);
   }
   if (hasCategoryPath(categoryList, '资讯订阅')) {
-    boundaryRules.push(`资讯订阅：${describeAvailableChildren(categoryList, '资讯订阅')}；论坛问答和个人博客优先放社区论坛。`);
+    boundaryRules.push(`资讯订阅：${describeAvailableChildren(categoryList, '资讯订阅')}。媒体首页、Newsletter、热榜、资讯频道归这里；长期资料不要放资讯。`);
   }
-  if (hasCategoryPath(categoryList, '社区论坛')) {
-    boundaryRules.push(`社区论坛：${describeAvailableChildren(categoryList, '社区论坛')}等用户生成内容或交流入口。`);
-  }
-  if (hasCategoryPath(categoryList, '影音娱乐')) {
-    boundaryRules.push(`影音娱乐：${describeAvailableChildren(categoryList, '影音娱乐')}；成人内容优先放 NSFW。`);
-  }
-  if (hasCategoryPath(categoryList, '下载资源')) {
-    boundaryRules.push(`下载资源：${describeAvailableChildren(categoryList, '下载资源')}；在线使用的工具不要放这里。`);
-  }
-  if (hasCategoryPath(categoryList, '购物消费')) {
-    boundaryRules.push(`购物消费：${describeAvailableChildren(categoryList, '购物消费')}。`);
-  }
-  if (hasCategoryPath(categoryList, '生活出行')) {
-    boundaryRules.push(`生活出行：${describeAvailableChildren(categoryList, '生活出行')}。`);
-  }
-  if (hasCategoryPath(categoryList, '金融支付')) {
-    boundaryRules.push(`金融支付：${describeAvailableChildren(categoryList, '金融支付')}；泛金融服务可放一级分类。`);
-  }
-  if (hasCategoryPath(categoryList, '安全隐私')) {
-    boundaryRules.push(`安全隐私：${describeAvailableChildren(categoryList, '安全隐私')}。`);
+  if (hasCategoryPath(categoryList, '生活消费')) {
+    boundaryRules.push(`生活消费：${describeAvailableChildren(categoryList, '生活消费')}。`);
   }
   if (hasCategoryPath(categoryList, 'NSFW')) {
-    boundaryRules.push(`NSFW：明确成人内容（${describeAvailableChildren(categoryList, 'NSFW')}）必须归入 NSFW；不要归入普通影音娱乐、社区或下载资源。`);
+    boundaryRules.push(`NSFW：${describeAvailableChildren(categoryList, 'NSFW')}。明确成人内容必须归入 NSFW，不要归入普通影音、社区或资源下载。`);
+  }
+  if (hasCategoryPath(categoryList, '待整理')) {
+    boundaryRules.push('待整理：低置信度、信息不足、候选分类都不合适、无法判断价值的链接统一放这里。');
   }
 
   if (boundaryRules.length) {
@@ -263,7 +351,7 @@ function buildBookmarkBatchPrompt(batch: BookmarkBatch[]): string {
     return lines.join('\n');
   }).join('\n');
 
-  return `请为以下每个书签选择最合适的分类。请优先使用标题、域名、URL路径、描述和当前分类判断；如果可联网，可访问URL核实内容；如果不能联网，不要声称已访问，直接基于这些线索分类。\n${batchList}`;
+  return `请为以下每个书签选择最合适的分类。程序只提供了标题、域名、URL路径、描述和当前分类等有限线索；不要声称已经访问网页。平台内容页优先按平台分类；信息不足时选择“待整理”或返回空字符串。\n${batchList}`;
 }
 
 function resolveBatchAssignmentCategory(rawCategory: unknown, bookmark: BookmarkBatch, categoryList: string[], validPaths: Set<string>): string | null {
@@ -357,35 +445,51 @@ export async function assignBookmarks(
     if (isPlanExecutionCanceled(db, planId, plan.job_id)) return;
 
     const batch = batches[bi];
+    const deterministicById = new Map<number, string>();
+    const aiBatch: BookmarkBatch[] = [];
+    const aiBatchIndexById = new Map<number, number>();
+    for (const bookmark of batch) {
+      const deterministicCategory = resolveDeterministicCategory(bookmark, validPaths);
+      if (deterministicCategory) {
+        deterministicById.set(bookmark.id, deterministicCategory);
+      } else {
+        aiBatchIndexById.set(bookmark.id, aiBatch.length + 1);
+        aiBatch.push(bookmark);
+      }
+    }
     let success = false;
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       if (isPlanExecutionCanceled(db, planId, plan.job_id)) return;
       try {
-        const completion = await aiClient.createChatCompletion({
-          model: config.model,
-          messages: [
-            {
-              role: 'system',
-              content: systemPrompt,
-            },
-            { role: 'user', content: buildBookmarkBatchPrompt(batch) },
-          ],
-          temperature: 0.1,
-        });
-
-        const raw = extractAICompletionText(completion);
-        const jsonMatch = raw.match(/\{[\s\S]*\}/);
-        if (!jsonMatch) throw new Error('no JSON in response');
-
-        const parsed = JSON.parse(jsonMatch[0]) as { assignments: { index: number; category: string }[] };
         const assignMap = new Map<number, string>();
-        for (const a of (parsed.assignments ?? [])) assignMap.set(a.index, a.category);
-        if (isPlanExecutionCanceled(db, planId, plan.job_id)) return;
+        if (aiBatch.length > 0) {
+          const completion = await aiClient.createChatCompletion({
+            model: config.model,
+            messages: [
+              {
+                role: 'system',
+                content: systemPrompt,
+              },
+              { role: 'user', content: buildBookmarkBatchPrompt(aiBatch) },
+            ],
+            temperature: 0.1,
+          });
+
+          const raw = extractAICompletionText(completion);
+          const jsonMatch = raw.match(/\{[\s\S]*\}/);
+          if (!jsonMatch) throw new Error('no JSON in response');
+
+          const parsed = JSON.parse(jsonMatch[0]) as { assignments: { index: number; category: string }[] };
+          for (const a of (parsed.assignments ?? [])) assignMap.set(a.index, a.category);
+          if (isPlanExecutionCanceled(db, planId, plan.job_id)) return;
+        }
 
         for (let i = 0; i < batch.length; i++) {
-          const cat = assignMap.get(i + 1);
-          const resolvedCategory = resolveBatchAssignmentCategory(cat, batch[i], categoryList, validPaths);
+          const deterministicCategory = deterministicById.get(batch[i].id);
+          const aiIndex = aiBatchIndexById.get(batch[i].id);
+          const cat = aiIndex ? assignMap.get(aiIndex) : undefined;
+          const resolvedCategory = deterministicCategory ?? resolveBatchAssignmentCategory(cat, batch[i], categoryList, validPaths);
           if (resolvedCategory) {
             allAssignments.push({ bookmark_id: batch[i].id, category_path: resolvedCategory, status: 'assigned' });
           } else {
@@ -407,8 +511,13 @@ export async function assignBookmarks(
       consecutiveFails++;
       failedBatchIds.push(bi);
       for (const b of batch) {
-        allAssignments.push({ bookmark_id: b.id, category_path: '', status: 'needs_review' });
-        needsReviewCount++;
+        const deterministicCategory = deterministicById.get(b.id);
+        if (deterministicCategory) {
+          allAssignments.push({ bookmark_id: b.id, category_path: deterministicCategory, status: 'assigned' });
+        } else {
+          allAssignments.push({ bookmark_id: b.id, category_path: '', status: 'needs_review' });
+          needsReviewCount++;
+        }
       }
 
       if (consecutiveFails >= failThreshold) {
