@@ -10,7 +10,8 @@ Win11 书签文件有效性检查 / 删除工具。
   1) 无协议时先尝试 https://，再尝试 http://；
   2) 先 HEAD，遇到 405/501/403/503/429 再 GET；
   3) 2xx/3xx 视为可用，其他 HTTP 状态视为失效；
-  4) 使用浏览器风格请求头、超时、重试、并发。
+  4) 使用浏览器风格请求头、超时、重试、并发；
+  5) 可配置 Clash HTTP 代理，直连失败后再走代理复检。
 - 检查完成后默认只显示失效书签，可勾选后删除；删除前自动生成 .bak 备份。
 """
 
@@ -91,6 +92,7 @@ class CheckResult:
     http_code: int | None
     error: str | None
     final_url: str | None = None
+    via_proxy: bool = False
 
 
 @dataclass
@@ -107,6 +109,7 @@ class BookmarkEntry:
     http_code: int | None = None
     error: str | None = None
     final_url: str | None = None
+    checked_via_proxy: bool = False
 
 
 @dataclass
@@ -199,12 +202,37 @@ def build_url_candidates(raw_url: str) -> list[str]:
     return candidates
 
 
-def request_status(url: str, method: Literal["HEAD", "GET"], timeout_seconds: float) -> tuple[int, str | None]:
+def normalize_proxy_url(raw_proxy_url: str) -> str:
+    value = (raw_proxy_url or "").strip()
+    if not value:
+        return ""
+    if "://" not in value:
+        value = f"http://{value}"
+
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme.lower() not in {"http", "https"}:
+        raise ValueError("当前仅支持 HTTP/HTTPS 代理；Clash 请使用 Mixed/HTTP 端口，例如 http://127.0.0.1:7890")
+    if not parsed.hostname:
+        raise ValueError("代理地址格式无效")
+    return value
+
+
+def build_request_opener(proxy_url: str | None) -> urllib.request.OpenerDirector:
+    context = ssl.create_default_context()
+    handlers: list[Any] = [
+        urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url} if proxy_url else {}),
+        urllib.request.HTTPSHandler(context=context),
+    ]
+    return urllib.request.build_opener(*handlers)
+
+
+def request_status(url: str, method: Literal["HEAD", "GET"], timeout_seconds: float, proxy_url: str | None = None) -> tuple[int, str | None]:
     request = urllib.request.Request(url, method=method, headers=BROWSER_HEADERS)
     # 使用系统 CA；不主动忽略证书错误，和项目 fetch 默认安全行为保持一致。
-    context = ssl.create_default_context()
+    # 直连请求显式禁用系统代理，避免 Windows 环境变量或系统代理影响“先直连再代理”的判定。
+    opener = build_request_opener(proxy_url)
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds, context=context) as response:
+        with opener.open(request, timeout=timeout_seconds) as response:
             status = int(getattr(response, "status", response.getcode()))
             return status, response.geturl()
     except urllib.error.HTTPError as exc:
@@ -225,10 +253,10 @@ def request_status(url: str, method: Literal["HEAD", "GET"], timeout_seconds: fl
         raise UrlCheckError("网络错误") from exc
 
 
-def check_once(candidate: str, timeout_seconds: float) -> CheckResult:
-    head_status, head_final_url = request_status(candidate, "HEAD", timeout_seconds)
+def check_once(candidate: str, timeout_seconds: float, proxy_url: str | None = None) -> CheckResult:
+    head_status, head_final_url = request_status(candidate, "HEAD", timeout_seconds, proxy_url)
     if head_status in CHECK_FALLBACK_HTTP_CODES:
-        get_status, get_final_url = request_status(candidate, "GET", timeout_seconds)
+        get_status, get_final_url = request_status(candidate, "GET", timeout_seconds, proxy_url)
         ok = OK_HTTP_MIN <= get_status < OK_HTTP_MAX_EXCLUSIVE
         return CheckResult(ok=ok, http_code=get_status, error=None if ok else f"HTTP {get_status}", final_url=get_final_url)
 
@@ -236,7 +264,7 @@ def check_once(candidate: str, timeout_seconds: float) -> CheckResult:
     return CheckResult(ok=ok, http_code=head_status, error=None if ok else f"HTTP {head_status}", final_url=head_final_url)
 
 
-def check_url(url: str, timeout_ms: int) -> CheckResult:
+def check_url(url: str, timeout_ms: int, proxy_url: str | None = None) -> CheckResult:
     raw = str(url or "").strip()
     if not raw:
         return CheckResult(ok=False, http_code=None, error="URL为空")
@@ -250,7 +278,7 @@ def check_url(url: str, timeout_ms: int) -> CheckResult:
 
     for candidate in candidates:
         try:
-            result = check_once(candidate, timeout_seconds)
+            result = check_once(candidate, timeout_seconds, proxy_url)
             last = result
             if result.ok:
                 return result
@@ -262,11 +290,47 @@ def check_url(url: str, timeout_ms: int) -> CheckResult:
     return last
 
 
-def check_url_with_retry(url: str, timeout_ms: int, retries: int, retry_delay_ms: int) -> CheckResult:
+def summarize_check_failure(result: CheckResult) -> str:
+    if result.http_code is not None:
+        return f"HTTP {result.http_code}"
+    return result.error or "不可用"
+
+
+def check_url_with_proxy_fallback(url: str, timeout_ms: int, proxy_url: str | None = None) -> CheckResult:
+    direct = check_url(url, timeout_ms, None)
+    if direct.ok:
+        return direct
+    if not proxy_url:
+        return direct
+    if direct.error in {"URL为空", "URL格式无效"}:
+        return direct
+
+    proxied = check_url(url, timeout_ms, proxy_url)
+    direct_summary = summarize_check_failure(direct)
+    if proxied.ok:
+        return CheckResult(
+            ok=True,
+            http_code=proxied.http_code,
+            error=f"直连失败：{direct_summary}；代理可用",
+            final_url=proxied.final_url,
+            via_proxy=True,
+        )
+
+    proxy_summary = summarize_check_failure(proxied)
+    return CheckResult(
+        ok=False,
+        http_code=proxied.http_code if proxied.http_code is not None else direct.http_code,
+        error=f"直连失败：{direct_summary}；代理失败：{proxy_summary}",
+        final_url=proxied.final_url or direct.final_url,
+        via_proxy=True,
+    )
+
+
+def check_url_with_retry(url: str, timeout_ms: int, retries: int, retry_delay_ms: int, proxy_url: str | None = None) -> CheckResult:
     attempts = max(1, min(6, int(retries) + 1))
     last = CheckResult(ok=False, http_code=None, error="未知错误")
     for attempt in range(attempts):
-        last = check_url(url, timeout_ms)
+        last = check_url_with_proxy_fallback(url, timeout_ms, proxy_url)
         if last.ok:
             return last
         if attempt < attempts - 1 and retry_delay_ms > 0:
@@ -684,6 +748,8 @@ class BookmarkCheckerApp:
         self.retries_var = tk.StringVar(value="1")
         self.retry_delay_var = tk.StringVar(value="500")
         self.concurrency_var = tk.StringVar(value="30")
+        self.proxy_fallback_var = tk.BooleanVar(value=True)
+        self.proxy_url_var = tk.StringVar(value="http://127.0.0.1:7890")
         self.show_all_var = tk.BooleanVar(value=False)
         self.search_var = tk.StringVar(value="")
 
@@ -711,6 +777,19 @@ class BookmarkCheckerApp:
             side=tk.RIGHT
         )
 
+        proxy_frame = ttk.LabelFrame(outer, text="3. 代理回退（Clash / Mihomo）", padding=8)
+        proxy_frame.pack(fill=tk.X, pady=(8, 0))
+        ttk.Checkbutton(
+            proxy_frame,
+            text="直连失败后使用代理复检",
+            variable=self.proxy_fallback_var,
+        ).pack(side=tk.LEFT, padx=(0, 12))
+        ttk.Label(proxy_frame, text="HTTP/Mixed 代理：").pack(side=tk.LEFT)
+        ttk.Entry(proxy_frame, textvariable=self.proxy_url_var, width=28).pack(side=tk.LEFT, padx=(4, 8))
+        ttk.Button(proxy_frame, text="7890", command=lambda: self.proxy_url_var.set("http://127.0.0.1:7890")).pack(side=tk.LEFT)
+        ttk.Button(proxy_frame, text="7897", command=lambda: self.proxy_url_var.set("http://127.0.0.1:7897")).pack(side=tk.LEFT, padx=(4, 0))
+        ttk.Label(proxy_frame, text="仅当直连不可用时才使用代理；两个都失败才判定失效。").pack(side=tk.LEFT, padx=(12, 0))
+
         filter_frame = ttk.Frame(outer)
         filter_frame.pack(fill=tk.X, pady=(8, 0))
         ttk.Label(filter_frame, text="搜索：").pack(side=tk.LEFT)
@@ -735,7 +814,7 @@ class BookmarkCheckerApp:
         }
         widths = {
             "checked": 58,
-            "status": 76,
+            "status": 104,
             "code": 66,
             "title": 230,
             "url": 380,
@@ -843,12 +922,23 @@ class BookmarkCheckerApp:
         concurrency = self.parse_int_option(self.concurrency_var, "并发", 1, 100)
         if None in (timeout_ms, retries, retry_delay_ms, concurrency):
             return
+        proxy_url = ""
+        if self.proxy_fallback_var.get():
+            try:
+                proxy_url = normalize_proxy_url(self.proxy_url_var.get())
+            except ValueError as exc:
+                messagebox.showwarning("代理参数错误", str(exc))
+                return
+            if not proxy_url:
+                messagebox.showwarning("代理参数错误", "启用代理回退时，请填写 Clash HTTP/Mixed 代理地址，例如 http://127.0.0.1:7890。")
+                return
 
         for entry in self.parsed.entries:
             entry.status = "pending"
             entry.http_code = None
             entry.error = None
             entry.final_url = None
+            entry.checked_via_proxy = False
         self.checked_uids.clear()
         self.processed_count = 0
         self.ok_count = 0
@@ -857,12 +947,12 @@ class BookmarkCheckerApp:
         self.is_running = True
         self.show_all_var.set(True)
         self.progress.configure(maximum=len(self.parsed.entries), value=0)
-        self.status_var.set("正在检查，请稍候...")
+        self.status_var.set(f"正在检查，请稍候...{' 已启用代理回退：' + proxy_url if proxy_url else ' 未启用代理回退。'}")
         self.refresh_tree()
 
         thread = threading.Thread(
             target=self._run_check_worker,
-            args=(list(self.parsed.entries), timeout_ms, retries, retry_delay_ms, concurrency),
+            args=(list(self.parsed.entries), timeout_ms, retries, retry_delay_ms, concurrency, proxy_url or None),
             daemon=True,
         )
         thread.start()
@@ -874,12 +964,13 @@ class BookmarkCheckerApp:
         retries: int,
         retry_delay_ms: int,
         concurrency: int,
+        proxy_url: str | None,
     ) -> None:
         def task(entry: BookmarkEntry) -> tuple[int, CheckResult | None]:
             if self.cancel_event.is_set():
                 return entry.uid, None
             self.result_queue.put(("checking", entry.uid))
-            result = check_url_with_retry(entry.url, timeout_ms, retries, retry_delay_ms)
+            result = check_url_with_retry(entry.url, timeout_ms, retries, retry_delay_ms, proxy_url)
             return entry.uid, result
 
         try:
@@ -922,6 +1013,7 @@ class BookmarkCheckerApp:
                         entry.http_code = result.http_code
                         entry.error = result.error
                         entry.final_url = result.final_url
+                        entry.checked_via_proxy = result.via_proxy
                         self.processed_count += 1
                         if result.ok:
                             self.ok_count += 1
@@ -978,7 +1070,7 @@ class BookmarkCheckerApp:
         mark = "☑" if entry.uid in self.checked_uids else "☐"
         values = (
             mark,
-            self.status_label(entry.status),
+            self.entry_status_label(entry),
             format_code(entry.http_code),
             short_text(entry.title, 240),
             short_text(entry.url, 420),
@@ -1000,7 +1092,7 @@ class BookmarkCheckerApp:
                         iid,
                         values=(
                             mark,
-                            self.status_label(entry.status),
+                            self.entry_status_label(entry),
                             format_code(entry.http_code),
                             short_text(entry.title, 240),
                             short_text(entry.url, 420),
@@ -1024,6 +1116,13 @@ class BookmarkCheckerApp:
             or keyword in (entry.category or "").lower()
             or keyword in (entry.error or "").lower()
         )
+
+    def entry_status_label(self, entry: BookmarkEntry) -> str:
+        if entry.status == "ok" and entry.checked_via_proxy:
+            return "代理可用"
+        if entry.status == "fail" and entry.checked_via_proxy:
+            return "直连/代理失败"
+        return self.status_label(entry.status)
 
     def status_label(self, status: CheckStatus) -> str:
         return {
@@ -1155,9 +1254,17 @@ class BookmarkCheckerApp:
         try:
             with open(filename, "w", newline="", encoding="utf-8-sig") as fh:
                 writer = csv.writer(fh)
-                writer.writerow(["title", "url", "category", "http_code", "error", "final_url"])
+                writer.writerow(["title", "url", "category", "http_code", "access_method", "error", "final_url"])
                 for entry in failures:
-                    writer.writerow([entry.title, entry.url, entry.category or "", entry.http_code or "", entry.error or "", entry.final_url or ""])
+                    writer.writerow([
+                        entry.title,
+                        entry.url,
+                        entry.category or "",
+                        entry.http_code or "",
+                        "proxy_fallback" if entry.checked_via_proxy else "direct",
+                        entry.error or "",
+                        entry.final_url or "",
+                    ])
         except Exception as exc:
             messagebox.showerror("导出失败", str(exc))
             return
