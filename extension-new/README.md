@@ -51,6 +51,7 @@
 
 - 使用 Manifest V3
 - 集成 SingleFile 用于网页快照
+- 通过后台 Service Worker 代理资源抓取，提升跨域图片、CSS、字体及登录态资源的内联完整度
 - 支持 Chrome 和 Edge 浏览器
 
 ## 文件结构
@@ -61,6 +62,7 @@ extension-new/
 ├── popup.html         # 弹窗界面
 ├── popup.css          # 弹窗样式
 ├── popup.js           # 弹窗逻辑
+├── background.js      # 后台资源抓取代理
 ├── content.js         # 内容脚本
 ├── lib/
 │   └── single-file.js # SingleFile 核心库

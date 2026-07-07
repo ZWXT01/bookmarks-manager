@@ -8,7 +8,25 @@ if (!window.__bookmarksManagerLoaded) {
     (function () {
         'use strict';
 
-        const DEFAULT_CAPTURE_TIMEOUT_MS = 90000;
+        const DEFAULT_CAPTURE_TIMEOUT_MS = 120000;
+        const FETCH_METHOD = 'bookmarksManager.fetchResource';
+        const SINGLE_FILE_DEFAULTS = {
+            // 以完整度优先：不主动裁掉隐藏元素/未使用样式/字体，避免文件异常偏小。
+            removeHiddenElements: false,
+            removeUnusedStyles: false,
+            removeUnusedFonts: false,
+            compressHTML: true,
+            removeFrames: false,
+            blockScripts: true,
+            saveRawPage: false,
+            saveOriginalURLs: true,
+            loadDeferredImages: true,
+            loadDeferredImagesBeforeFrames: true,
+            loadDeferredImagesMaxIdleTime: 1500,
+            loadDeferredImagesNativeTimeout: true,
+            maxResourceSizeEnabled: false,
+        };
+
         let captureInFlight = false;
 
         function delay(ms) {
@@ -40,6 +58,92 @@ if (!window.__bookmarksManagerLoaded) {
             });
         }
 
+        function sendRuntimeMessage(message) {
+            return new Promise((resolve, reject) => {
+                if (typeof chrome === 'undefined' || !chrome.runtime || typeof chrome.runtime.sendMessage !== 'function') {
+                    reject(new Error('扩展后台不可用'));
+                    return;
+                }
+
+                chrome.runtime.sendMessage(message, (response) => {
+                    if (chrome.runtime.lastError) {
+                        reject(new Error(chrome.runtime.lastError.message || '扩展后台请求失败'));
+                        return;
+                    }
+                    resolve(response);
+                });
+            });
+        }
+
+        function serializeHeaders(headers) {
+            if (!headers) return {};
+            if (headers instanceof Headers) {
+                const result = {};
+                headers.forEach((value, key) => {
+                    result[key] = value;
+                });
+                return result;
+            }
+            if (Array.isArray(headers)) {
+                return headers.reduce((result, pair) => {
+                    if (Array.isArray(pair) && pair.length >= 2) {
+                        result[pair[0]] = pair[1];
+                    }
+                    return result;
+                }, {});
+            }
+            if (typeof headers === 'object') return { ...headers };
+            return {};
+        }
+
+        function base64ToUint8Array(base64) {
+            const binary = atob(base64 || '');
+            const bytes = new Uint8Array(binary.length);
+            for (let i = 0; i < binary.length; i += 1) {
+                bytes[i] = binary.charCodeAt(i);
+            }
+            return bytes;
+        }
+
+        function canUseExtensionFetch(resourceUrl) {
+            try {
+                const parsed = new URL(resourceUrl, document.baseURI);
+                return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+            } catch (_error) {
+                return false;
+            }
+        }
+
+        function createSingleFileFetchAdapter() {
+            return async (resourceUrl, requestOptions = {}) => {
+                const resolvedUrl = new URL(resourceUrl, document.baseURI).href;
+
+                if (!canUseExtensionFetch(resolvedUrl)) {
+                    return fetch(resolvedUrl, requestOptions);
+                }
+
+                const response = await sendRuntimeMessage({
+                    method: FETCH_METHOD,
+                    url: resolvedUrl,
+                    options: {
+                        headers: serializeHeaders(requestOptions.headers),
+                        cache: requestOptions.cache,
+                        referrerPolicy: requestOptions.referrerPolicy,
+                    },
+                });
+
+                if (!response || !response.success) {
+                    throw new Error(response && response.error ? response.error : `资源抓取失败: ${resolvedUrl}`);
+                }
+
+                return new Response(base64ToUint8Array(response.bodyBase64), {
+                    status: response.status || 200,
+                    statusText: response.statusText || '',
+                    headers: response.headers || {},
+                });
+            };
+        }
+
         // 监听来自 popup 的消息
         chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
             if (message.method === 'pingCapture') {
@@ -47,6 +151,7 @@ if (!window.__bookmarksManagerLoaded) {
                     success: true,
                     ready: true,
                     method: typeof singlefile !== 'undefined' && typeof singlefile.getPageData === 'function' ? 'singlefile' : 'native',
+                    backgroundFetch: Boolean(chrome.runtime && chrome.runtime.sendMessage),
                 });
                 return false;
             }
@@ -68,6 +173,47 @@ if (!window.__bookmarksManagerLoaded) {
             }
         });
 
+        async function captureWithSingleFile(options, startTime, docTitle) {
+            const fetchAdapter = createSingleFileFetchAdapter();
+            const pageData = await singlefile.getPageData(
+                {
+                    ...SINGLE_FILE_DEFAULTS,
+                    ...options,
+                    saveRawPage: false,
+                },
+                {
+                    fetch: fetchAdapter,
+                    frameFetch: fetchAdapter,
+                },
+            );
+
+            if (!pageData || !pageData.content) {
+                throw new Error('SingleFile 未返回页面内容');
+            }
+
+            return {
+                content: pageData.content,
+                title: docTitle,
+                method: 'singlefile',
+                elapsed: Date.now() - startTime,
+            };
+        }
+
+        function captureWithNativeSerializer(startTime, docTitle) {
+            const doctype = document.doctype;
+            const doctypeStr = doctype
+                ? `<!DOCTYPE ${doctype.name}${doctype.publicId ? ` PUBLIC "${doctype.publicId}"` : ''}${doctype.systemId ? ` "${doctype.systemId}"` : ''}>`
+                : '<!DOCTYPE html>';
+            const html = doctypeStr + '\n' + document.documentElement.outerHTML;
+
+            return {
+                content: html,
+                title: docTitle,
+                method: 'native',
+                elapsed: Date.now() - startTime,
+            };
+        }
+
         async function handleGetPageData(options = {}) {
             const timeoutMs = Number.isFinite(options.timeoutMs) && options.timeoutMs > 0
                 ? options.timeoutMs
@@ -78,54 +224,28 @@ if (!window.__bookmarksManagerLoaded) {
             const docTitle = document.title || 'untitled';
             const startTime = Date.now();
             const singleFileOptions = { ...options };
+            const allowNativeFallback = singleFileOptions.allowNativeFallback === true;
             delete singleFileOptions.timeoutMs;
             delete singleFileOptions.testDelayMs;
+            delete singleFileOptions.allowNativeFallback;
 
             return withTimeout((async () => {
                 if (testDelayMs > 0) {
                     await delay(testDelayMs);
                 }
 
-                // 尝试使用 SingleFile
                 if (typeof singlefile !== 'undefined' && typeof singlefile.getPageData === 'function') {
                     try {
-                        const pageData = await singlefile.getPageData({
-                            removeHiddenElements: singleFileOptions.removeHiddenElements !== false,
-                            removeUnusedStyles: singleFileOptions.removeUnusedStyles !== false,
-                            removeUnusedFonts: singleFileOptions.removeUnusedFonts !== false,
-                            compressHTML: singleFileOptions.compressHTML !== false,
-                            removeFrames: singleFileOptions.removeFrames !== false,
-                            blockScripts: singleFileOptions.blockScripts !== false,
-                            saveRawPage: false,
-                            ...singleFileOptions
-                        });
-
-                        if (pageData && pageData.content) {
-                            return {
-                                content: pageData.content,
-                                title: docTitle,
-                                method: 'singlefile',
-                                elapsed: Date.now() - startTime
-                            };
+                        return await captureWithSingleFile(singleFileOptions, startTime, docTitle);
+                    } catch (error) {
+                        if (!allowNativeFallback) {
+                            const message = error instanceof Error ? error.message : String(error || '未知错误');
+                            throw new Error(`SingleFile 捕获失败：${message}`);
                         }
-                    } catch (_error) {
-                        // Fall through to native
                     }
                 }
 
-                // Fallback: 原生 DOM 序列化
-                const doctype = document.doctype;
-                const doctypeStr = doctype
-                    ? `<!DOCTYPE ${doctype.name}${doctype.publicId ? ` PUBLIC "${doctype.publicId}"` : ''}${doctype.systemId ? ` "${doctype.systemId}"` : ''}>`
-                    : '<!DOCTYPE html>';
-                const html = doctypeStr + '\n' + document.documentElement.outerHTML;
-
-                return {
-                    content: html,
-                    title: docTitle,
-                    method: 'native',
-                    elapsed: Date.now() - startTime
-                };
+                return captureWithNativeSerializer(startTime, docTitle);
             })(), timeoutMs, '页面处理超时，请刷新页面后重试');
         }
     })();

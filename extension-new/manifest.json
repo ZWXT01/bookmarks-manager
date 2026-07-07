@@ -1,7 +1,7 @@
 {
     "manifest_version": 3,
     "name": "Bookmarks Manager",
-    "version": "2.0.0",
+    "version": "2.1.0",
     "description": "书签管理器 - 保存书签并支持完整网页快照（基于 SingleFile）",
     "permissions": [
         "activeTab",
@@ -44,9 +44,19 @@
                 "<all_urls>"
             ],
             "js": [
+                "lib/chrome-browser-polyfill.js",
                 "lib/single-file.js",
                 "lib/single-file-bootstrap.js",
-                "lib/single-file-frames.js",
+                "lib/single-file-frames.js"
+            ],
+            "all_frames": true,
+            "run_at": "document_idle"
+        },
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
                 "content.js"
             ],
             "run_at": "document_idle"
@@ -61,5 +71,8 @@
                 "<all_urls>"
             ]
         }
-    ]
+    ],
+    "background": {
+        "service_worker": "background.js"
+    }
 }
