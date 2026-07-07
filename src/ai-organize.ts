@@ -5,6 +5,7 @@ import { updateJob, jobQueue, publishJobEvent } from './jobs';
 import { getCategoryPathMap, getCategoryTree } from './category-service';
 import { createOpenAIClient, extractAICompletionText, type AIChatCompletionRequest, type AIClientFactory } from './ai-client';
 import { selectSingleClassifyCategory } from './ai-classify-guardrail';
+import { buildCategoryDescriptionGuide } from './ai-category-taxonomy';
 import { withAiReasoningEffort, type AIReasoningEffort } from './ai-reasoning-effort';
 
 export interface AIConfig {
@@ -169,75 +170,109 @@ function resolveAvailableCategory(path: string, validPaths: Set<string>): string
 }
 
 function resolveDeterministicCategory(bookmark: BookmarkBatch, validPaths: Set<string>): string | null {
-  const { hostname, pathname, segments } = parseBookmarkUrl(bookmark.url);
+  const { hostname, pathname } = parseBookmarkUrl(bookmark.url);
   if (!hostname) return null;
 
   const target = (path: string) => resolveAvailableCategory(path, validPaths);
 
   // NSFW first: avoid leaking adult domains into ordinary video/community/download buckets.
-  if (domainMatchesAny(hostname, ['nhentai.net', 'e-hentai.org', 'exhentai.org', 'hitomi.la', 'wnacg.com', 'asmhentai.com'])) {
-    return target('NSFW/成人漫画');
+  if (domainMatchesAny(hostname, ['nhentai.net', 'e-hentai.org', 'exhentai.org', 'hitomi.la', 'wnacg.com', 'asmhentai.com', 'kemono.su'])) {
+    return target('绅士领域 [NSFW]/二次元本子');
   }
-  if (domainMatchesAny(hostname, ['pornhub.com', 'xvideos.com', 'xnxx.com', 'javdb.com', 'javlibrary.com', 'missav.com', 'supjav.com'])) {
-    return target('NSFW/成人视频');
+  if (domainMatchesAny(hostname, ['sukebei.nyaa.si', 'javdb.com', 'javlibrary.com', 'supjav.com'])) {
+    return target('绅士领域 [NSFW]/视频与BT下载');
+  }
+  if (domainMatchesAny(hostname, ['pornhub.com', 'xvideos.com', 'xnxx.com', 'missav.com', 'thisav.com', 'hanime.tv'])) {
+    return target('绅士领域 [NSFW]/视频流媒体');
   }
 
-  // Resource/download platforms.
+  // Network disks and cloud/share tooling.
   if (domainMatches(hostname, 'pan.baidu.com') || domainMatches(hostname, 'yun.baidu.com')) {
-    return target('资源下载/百度网盘');
+    return target('效率与日常工具/网络与网盘');
   }
   if (domainMatchesAny(hostname, ['aliyundrive.com', 'alipan.com', 'aliyunpan.com'])) {
-    return target('资源下载/阿里云盘');
+    return target('效率与日常工具/网络与网盘');
   }
   if (domainMatchesAny(hostname, [
     'lanzou.com', 'lanzoui.com', 'lanzoux.com', 'lanzouw.com', '123pan.com',
     'pan.quark.cn', 'drive.google.com', 'onedrive.live.com', '1drv.ms',
     'dropbox.com', 'mega.nz', 'mediafire.com',
   ])) {
-    return target('资源下载/其他网盘');
+    return target('效率与日常工具/网络与网盘');
   }
 
-  // Platform content pages: classify by platform, not by the page topic.
-  if (domainMatchesAny(hostname, ['bilibili.com', 'b23.tv'])) {
-    return target('影音游戏/B站视频');
-  }
-  if (domainMatchesAny(hostname, ['youtube.com', 'youtu.be'])) {
-    return target('影音游戏/YouTube视频');
-  }
-  if (domainMatchesAny(hostname, ['douyin.com', 'tiktok.com', 'vimeo.com', 'dailymotion.com', 'xiaohongshu.com'])
+  // Online video/audio/read platforms.
+  if (domainMatchesAny(hostname, ['iqiyi.com', 'youku.com', 'mgtv.com', '1905.com', 'netflix.com', 'hulu.com', 'disneyplus.com'])
     || hostname === 'v.qq.com') {
-    return target('影音游戏/其他视频');
+    return target('在线影音/在线影视');
+  }
+  if (domainMatchesAny(hostname, ['bilibili.com', 'b23.tv', 'youtube.com', 'youtu.be', 'douyin.com', 'tiktok.com', 'vimeo.com', 'dailymotion.com', 'xiaohongshu.com', 'twitch.tv', 'huya.com', 'douyu.com'])) {
+    return target('在线影音/短视频与直播');
+  }
+  if (domainMatchesAny(hostname, ['music.163.com', 'y.qq.com', 'spotify.com', 'soundcloud.com', 'podcasts.apple.com', 'ximalaya.com', 'qingting.fm'])) {
+    return target('在线影音/音乐电台');
+  }
+  if (domainMatchesAny(hostname, ['qidian.com', 'jjwxc.net', 'fanqienovel.com', 'zongheng.com', '69shu.com', 'biquge.com'])) {
+    return target('图文阅读/网络小说');
+  }
+  if (domainMatchesAny(hostname, ['manhuagui.com', 'mangabz.com', 'dmzj.com', 'webtoons.com', 'kuaikanmanhua.com'])) {
+    return target('图文阅读/在线漫画');
+  }
+  if (domainMatchesAny(hostname, ['z-library.sk', 'z-lib.is', 'singlelogin.re', 'annas-archive.org', 'libgen.is', 'libgen.rs'])) {
+    return target('图文阅读/电子书库');
   }
 
-  if (domainMatches(hostname, 'linux.do')) return target('社区社交/Linux.do');
-  if (domainMatches(hostname, 'v2ex.com')) return target('社区社交/V2EX');
-  if (domainMatches(hostname, 'zhihu.com')) return target('社区社交/知乎');
-  if (domainMatchesAny(hostname, ['x.com', 'twitter.com'])) return target('社区社交/X推文');
+  // Community and information streams.
+  if (domainMatchesAny(hostname, ['tophub.today', 'rebang.today', 'hot.imsyy.top', 'trends.google.com'])) {
+    return target('社区与资讯/热榜聚合');
+  }
+  if (domainMatches(hostname, 'linux.do')) return target('社区与资讯/讨论社区');
+  if (domainMatches(hostname, 'v2ex.com')) return target('社区与资讯/讨论社区');
+  if (domainMatches(hostname, 'zhihu.com')) return target('社区与资讯/讨论社区');
+  if (domainMatchesAny(hostname, ['x.com', 'twitter.com'])) return target('社区与资讯/讨论社区');
   if (domainMatches(hostname, 'tieba.baidu.com')
     || domainMatchesAny(hostname, ['reddit.com', 'nodeseek.com', 'hostloc.com', 'stackoverflow.com', 'stackexchange.com', 'quora.com', 'lowendtalk.com', 'chiphell.com', '52pojie.cn'])) {
-    return target('社区社交/论坛社区');
+    return target('社区与资讯/讨论社区');
   }
   if (domainMatchesAny(hostname, ['t.me', 'telegram.org', 'discord.com', 'discord.gg', 'facebook.com', 'instagram.com', 'threads.net', 'mastodon.social'])) {
-    return target('社区社交/社交平台');
+    return target('社区与资讯/讨论社区');
   }
 
-  // Code hosting/repositories are a platform-like bucket in the new taxonomy.
-  if (domainMatchesAny(hostname, ['github.com', 'gitlab.com', 'gitee.com', 'bitbucket.org'])) {
-    if (segments.length >= 2 || !pathname || pathname === '/') return target('开发与AI/代码仓库');
+  // App/game/download domains.
+  if (domainMatchesAny(hostname, ['store.steampowered.com', 'epicgames.com', 'gog.com', 'itch.io', '3dmgame.com', 'ali213.net'])) {
+    return target('游戏专区/游戏下载');
+  }
+  if (domainMatchesAny(hostname, ['nexusmods.com', 'moddb.com', 'flingtrainer.com', 'wemod.com'])) {
+    return target('游戏专区/游戏辅助工具');
+  }
+  if (domainMatchesAny(hostname, ['apkpure.com', 'apkcombo.com', 'apkmirror.com', 'coolapk.com'])) {
+    return target('终端应用下载/软件 - Android');
+  }
+  if (domainMatchesAny(hostname, ['macwk.com', 'xclient.info', 'macbed.com'])) {
+    return target('终端应用下载/软件 - macOS');
+  }
+  if (domainMatchesAny(hostname, ['msdn.itellyou.cn', 'next.itellyou.cn'])) {
+    return target('终端应用下载/软件 - Windows');
+  }
+  if (domainMatchesAny(hostname, ['nyaa.si', 'rarbg.to', 'thepiratebay.org', '1337x.to', 'm-team.cc', 'hdsky.me'])) {
+    return target('媒体与素材下载/影视下载');
+  }
+  if (domainMatchesAny(hostname, ['unsplash.com', 'pexels.com', 'pixabay.com', 'iconfont.cn', 'wallhaven.cc'])) {
+    return target('媒体与素材下载/平面与视觉');
   }
 
-  // Navigation/search/service entry points.
+  // Daily utility entry points.
   if (domainMatchesAny(hostname, ['google.com', 'bing.com', 'duckduckgo.com', 'yandex.com', 'sogou.com', 'startpage.com'])
     || hostname === 'baidu.com' || hostname === 'www.baidu.com'
     || domainMatchesAny(hostname, ['deepl.com', 'translate.google.com', 'amap.com', 'maps.google.com', 'map.baidu.com'])) {
-    return target('实用工具/搜索导航');
+    return target('效率与日常工具/网络与网盘');
   }
 
   if (domainMatchesAny(hostname, [
     'dash.cloudflare.com', 'console.cloud.google.com', 'console.aws.amazon.com',
     'portal.azure.com', 'vercel.com', 'netlify.com',
   ]) || /\/(dashboard|console|admin|account|billing)(\/|$)/.test(pathname)) {
-    return target('实用工具/账号后台');
+    return target('效率与日常工具/网络与网盘');
   }
 
   return null;
@@ -272,49 +307,42 @@ function buildOrganizeCategoryGuide(categoryList: string[]): string {
   const guide: string[] = [
     '分类判定原则：',
     '1. 只能从候选分类中选择，禁止创建新一级或二级分类，输出必须与候选分类路径完全一致。',
-    '2. 先判断站点类型：平台内容页按平台/入口分类；独立站点、工具、资料页再按内容主题分类。',
-    '3. B站/YouTube/论坛/社交/网盘/GitHub 仓库等平台内具体内容页，不要按其内容主题细分，直接归入对应平台分类。',
-    '4. 非平台型页面优先选择最具体的二级分类；只有候选中没有合适二级时才选择一级分类。',
-    '5. 当前分类只是参考，不要因为旧分类而保留错误分类。',
-    hasCategoryPath(categoryList, '待整理')
-      ? '6. 如果只能猜测、信息不足、多个分类同样合理，选择“待整理”；不要为了填满而强行分类。'
-      : '6. 如果只能猜测、信息不足、多个分类同样合理，返回空字符串；不要为了填满而强行分类。',
-    '7. 优先联网访问目标网页或使用 Web 搜索核实内容；无法联网、无法访问或工具不可用时，再根据标题、域名、URL 路径、描述和候选分类判断；不要编造访问结果。',
+    '2. 优先选择最具体的二级分类；只有一级明显匹配但没有合适二级时才选择一级分类。',
+    '3. 先判断内容形态：在线直接看/读/听，与离线下载、终端应用下载、工具服务、社区资讯要严格区分。',
+    '4. 在线影视/番剧/短视频/音乐电台归“在线影音”；小说/漫画/电子书在线阅读归“图文阅读”。',
+    '5. PC/手机/TV/系统 App 安装包归“终端应用下载”；影视/音乐/图片字体等媒体素材离线资源归“媒体与素材下载”。',
+    '6. 游戏本体下载和游戏客户端归“游戏专区/游戏下载”；MOD、修改器、汉化补丁、存档归“游戏专区/游戏辅助工具”。',
+    '7. 接码、临时邮箱、格式转换、OCR、网盘搜索/解析、速度测试、AI 工具归“效率与日常工具”。',
+    '8. 热榜、科技数码资讯、泛娱乐资讯、论坛/贴吧/社交网络归“社区与资讯”；不要把论坛帖子按帖子主题强行塞到下载或工具类。',
+    '9. NSFW 成人内容必须优先归“绅士领域 [NSFW]”，并按视频、BT下载、本子、写真、游戏、小说细分，不要归入普通影音/图文/下载类。',
+    '10. 如果只能猜测、信息不足、多个分类同样合理，返回空字符串；不要为了填满而强行分类。',
+    '11. 如果模型环境具备网页访问或 Web 搜索能力，优先核实网页内容；如果没有页面正文，只能根据标题、域名、URL 路径、描述和候选分类判断；不要编造访问结果。',
   ];
 
   const boundaryRules: string[] = [];
-  if (hasCategoryPath(categoryList, '开发与AI')) {
-    boundaryRules.push(`开发与AI：${describeAvailableChildren(categoryList, '开发与AI')}。GitHub/GitLab/Gitee 仓库统一归“代码仓库”；AI 产品、模型 API、AI 搜索/写作/图片/视频工具归“AI平台工具”。`);
+  if (hasCategoryPath(categoryList, '社区与资讯')) {
+    boundaryRules.push(`社区与资讯：${describeAvailableChildren(categoryList, '社区与资讯')}。热榜是纯趋势信息流；讨论社区是用户发帖交流平台；科技数码与娱乐游戏综合是资讯站或媒体站。`);
   }
-  if (hasCategoryPath(categoryList, '实用工具')) {
-    boundaryRules.push(`实用工具：${describeAvailableChildren(categoryList, '实用工具')}。只放在线可直接操作的工具、搜索导航、控制台/后台；软件下载页不要放这里。`);
+  if (hasCategoryPath(categoryList, '在线影音')) {
+    boundaryRules.push(`在线影音：${describeAvailableChildren(categoryList, '在线影音')}。核心是免下载直接观看/收听；离线片源、BT、PT、字幕组不要放这里。`);
   }
-  if (hasCategoryPath(categoryList, '设计素材')) {
-    boundaryRules.push(`设计素材：${describeAvailableChildren(categoryList, '设计素材')}。图片压缩/格式转换等操作型网页归“实用工具/图片工具”，不是设计素材。`);
+  if (hasCategoryPath(categoryList, '图文阅读')) {
+    boundaryRules.push(`图文阅读：${describeAvailableChildren(categoryList, '图文阅读')}。核心是在线阅读小说/漫画/电子书库；成人小说和 R18 本子归 NSFW。`);
   }
-  if (hasCategoryPath(categoryList, '知识资料')) {
-    boundaryRules.push(`知识资料：${describeAvailableChildren(categoryList, '知识资料')}。只放长期参考资料；开发专用文档优先归“开发与AI/技术资料”。`);
+  if (hasCategoryPath(categoryList, '游戏专区')) {
+    boundaryRules.push(`游戏专区：${describeAvailableChildren(categoryList, '游戏专区')}。游戏本体/客户端下载和游戏辅助工具分开；成人游戏归 NSFW/绅士游戏。`);
   }
-  if (hasCategoryPath(categoryList, '影音游戏')) {
-    boundaryRules.push(`影音游戏：${describeAvailableChildren(categoryList, '影音游戏')}。B站/YouTube/其他视频平台具体内容页按平台归类，不按视频主题归类；成人内容优先归 NSFW。`);
+  if (hasCategoryPath(categoryList, '终端应用下载')) {
+    boundaryRules.push(`终端应用下载：${describeAvailableChildren(categoryList, '终端应用下载')}。按 Windows/macOS/Android/iOS 平台区分安装包、破解版、绿色版、侧载源。`);
   }
-  if (hasCategoryPath(categoryList, '社区社交')) {
-    boundaryRules.push(`社区社交：${describeAvailableChildren(categoryList, '社区社交')}。论坛帖子、知乎内容、X 推文按平台归类，不按帖子主题归类。`);
+  if (hasCategoryPath(categoryList, '媒体与素材下载')) {
+    boundaryRules.push(`媒体与素材下载：${describeAvailableChildren(categoryList, '媒体与素材下载')}。核心是离线下载的影视、音频和平面视觉素材；在线直接看/听不要放这里。`);
   }
-  if (hasCategoryPath(categoryList, '资源下载')) {
-    boundaryRules.push(`资源下载：${describeAvailableChildren(categoryList, '资源下载')}。网盘分享按网盘平台归类；软件下载/系统镜像/其他下载资源归对应下载分类。`);
+  if (hasCategoryPath(categoryList, '效率与日常工具')) {
+    boundaryRules.push(`效率与日常工具：${describeAvailableChildren(categoryList, '效率与日常工具')}。核心是在线完成操作、临时隐私、网盘/网络工具、AI 辅助。`);
   }
-  if (hasCategoryPath(categoryList, '资讯订阅')) {
-    boundaryRules.push(`资讯订阅：${describeAvailableChildren(categoryList, '资讯订阅')}。媒体首页、Newsletter、热榜、资讯频道归这里；长期资料不要放资讯。`);
-  }
-  if (hasCategoryPath(categoryList, '生活消费')) {
-    boundaryRules.push(`生活消费：${describeAvailableChildren(categoryList, '生活消费')}。`);
-  }
-  if (hasCategoryPath(categoryList, 'NSFW')) {
-    boundaryRules.push(`NSFW：${describeAvailableChildren(categoryList, 'NSFW')}。明确成人内容必须归入 NSFW，不要归入普通影音、社区或资源下载。`);
-  }
-  if (hasCategoryPath(categoryList, '待整理')) {
-    boundaryRules.push('待整理：低置信度、信息不足、候选分类都不合适、无法判断价值的链接统一放这里。');
+  if (hasCategoryPath(categoryList, '绅士领域 [NSFW]')) {
+    boundaryRules.push(`绅士领域 [NSFW]：${describeAvailableChildren(categoryList, '绅士领域 [NSFW]')}。成人内容强制进入该类，并优先按内容形态细分。`);
   }
 
   if (boundaryRules.length) {
@@ -326,11 +354,13 @@ function buildOrganizeCategoryGuide(categoryList: string[]): string {
 
 function buildOrganizeSystemPrompt(categoryList: string[]): string {
   const categoriesText = categoryList.join('\n');
+  const descriptionGuide = buildCategoryDescriptionGuide(categoryList);
   return `你是书签分类助手。你的目标是提升分类准确率，而不是平均分配或强行移动。
 只能从以下分类列表中选择最匹配的分类，不能创建新分类，输出必须与候选分类路径完全一致。
 如果没有合适的分类，返回空字符串。
 
 ${buildOrganizeCategoryGuide(categoryList)}
+${descriptionGuide ? `\n\n${descriptionGuide}` : ''}
 
 可选分类:
 ${categoriesText}
@@ -353,7 +383,7 @@ function buildBookmarkBatchPrompt(batch: BookmarkBatch[]): string {
     return lines.join('\n');
   }).join('\n');
 
-  return `请为以下每个书签选择最合适的分类。优先联网访问 URL 或使用 Web 搜索核实内容；如果无法联网、无法访问或工具不可用，再根据标题、域名、URL路径、描述和当前分类等有限线索判断；不要编造访问结果。平台内容页优先按平台分类；信息不足时选择“待整理”或返回空字符串。\n${batchList}`;
+  return `请为以下每个书签选择最合适的分类。优先联网访问 URL 或使用 Web 搜索核实内容；如果无法联网、无法访问或工具不可用，再根据标题、域名、URL 路径、描述和当前分类等有限线索判断；不要编造访问结果。重点区分在线消费、离线下载、终端应用下载、效率工具、社区资讯和 NSFW；信息不足时返回空字符串。\n${batchList}`;
 }
 
 function resolveBatchAssignmentCategory(rawCategory: unknown, bookmark: BookmarkBatch, categoryList: string[], validPaths: Set<string>): string | null {

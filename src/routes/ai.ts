@@ -8,6 +8,7 @@ import {
     selectSingleClassifyCategory,
 } from '../ai-classify-guardrail';
 import { getConfiguredAiBatchSize, parseAiBatchSize } from '../ai-batch-size';
+import { buildCategoryDescriptionGuide } from '../ai-category-taxonomy';
 import { formatAiReasoningEffort, withAiReasoningEffort } from '../ai-reasoning-effort';
 import { getCategoryPathMap, getCategoryTree } from '../category-service';
 import {
@@ -291,13 +292,12 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         if (allowedPaths.length === 0) {
             return reply.code(400).send({ error: '请先创建分类' });
         }
-        const candidateHint = allowedPaths.length > 0
-            ? '\n候选分类（必须原样选择其一，禁止输出候选之外的分类）：\n- ' + allowedPaths.join('\n- ')
-            : '\n标准一级分类：技术开发、学习资源、工具软件、购物电商、娱乐影音、社交媒体、新闻资讯、设计素材、生活服务、游戏、成人内容、其他';
+        const candidateHint = '\n候选分类（必须原样选择其一，禁止输出候选之外的分类）：\n- ' + allowedPaths.join('\n- ');
+        const descriptionHint = buildCategoryDescriptionGuide(allowedPaths);
 
         const prompt = '你是书签分类助手。优先联网访问目标网页；如具备 Web 搜索/网页访问能力，也可搜索核实网页内容后再分类。无法联网、无法访问或工具不可用时，再根据标题、URL、描述判断；不要编造访问结果。\n' +
-            '规则：1.分类最多2级(如:技术/编程)，禁止3级！2.如果提供了候选分类，必须从候选分类中精确选择一个最合适的结果并原样输出\n' +
-            candidateHint + '\n只输出分类路径，不要解释。\n' +
+            '规则：1.分类最多2级，禁止3级；2.必须从候选分类中精确选择一个最合适的结果并原样输出；3.优先选择最具体的二级分类，NSFW 成人内容必须优先归入绅士领域 [NSFW]；4.重点区分在线消费、离线下载、终端应用下载、效率工具、社区资讯。\n' +
+            candidateHint + (descriptionHint ? '\n\n' + descriptionHint : '') + '\n只输出分类路径，不要解释。\n' +
             (title ? '标题: ' + title + '\n' : '') +
             (url ? '网址: ' + url + '\n' : '') +
             (description ? '描述: ' + description + '\n' : '');
@@ -308,9 +308,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                 model: config.model,
                 messages: [{
                     role: 'system',
-                    content: allowedPaths.length > 0
-                        ? '优先联网访问目标网页或使用 Web 搜索核实内容；你只能从用户提供的候选分类中选择一个最合适的分类路径，并原样输出；不要解释。'
-                        : '优先联网访问目标网页或使用 Web 搜索核实内容；只输出分类路径（最多2级），不要解释。',
+                    content: '优先联网访问目标网页或使用 Web 搜索核实内容；你只能从用户提供的候选分类中选择一个最合适的分类路径，并原样输出；禁止创建分类；不要解释。',
                 }, { role: 'user', content: prompt }],
                 temperature: 0.2,
             };
