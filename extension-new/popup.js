@@ -686,7 +686,7 @@
                 return false;
             }
 
-            const method = pageData.method === 'singlefile' ? 'SingleFile' : '原生';
+            const method = pageData.method === 'singlefile' ? 'SingleFile' : pageData.method === 'dom-embedded' ? 'DOM增强' : '原生';
             showStatus(successMessage || `快照已保存 · ${method}${elapsed}`, 'success');
             if (!managed) {
                 scheduleStatusHide(3200);

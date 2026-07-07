@@ -199,19 +199,191 @@ if (!window.__bookmarksManagerLoaded) {
             };
         }
 
-        function captureWithNativeSerializer(startTime, docTitle) {
+        function blobToDataUrl(blob) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.addEventListener('load', () => resolve(reader.result));
+                reader.addEventListener('error', () => reject(reader.error || new Error('读取资源失败')));
+                reader.readAsDataURL(blob);
+            });
+        }
+
+        async function fetchAsDataUrl(resourceUrl, fetchAdapter) {
+            const response = await fetchAdapter(resourceUrl, { cache: 'force-cache' });
+            if (!response || response.status >= 400) {
+                throw new Error(`资源请求失败(${response ? response.status : '无响应'}): ${resourceUrl}`);
+            }
+            return await blobToDataUrl(await response.blob());
+        }
+
+        function isEmbeddableUrl(resourceUrl) {
+            try {
+                const parsed = new URL(resourceUrl, document.baseURI);
+                return parsed.protocol === 'http:' || parsed.protocol === 'https:' || parsed.protocol === 'data:' || parsed.protocol === 'blob:';
+            } catch (_error) {
+                return false;
+            }
+        }
+
+        async function inlineCssUrls(cssText, baseUrl, fetchAdapter, cache) {
+            if (!cssText || !cssText.includes('url(')) return cssText || '';
+
+            const replacements = [];
+            const urlPattern = /url\(\s*(['"]?)([^'")]+)\1\s*\)/g;
+            let match;
+            while ((match = urlPattern.exec(cssText))) {
+                const rawUrl = (match[2] || '').trim();
+                if (!rawUrl || rawUrl.startsWith('data:') || rawUrl.startsWith('blob:') || rawUrl.startsWith('#')) continue;
+                let resolvedUrl;
+                try {
+                    resolvedUrl = new URL(rawUrl, baseUrl || document.baseURI).href;
+                } catch (_error) {
+                    continue;
+                }
+                if (!isEmbeddableUrl(resolvedUrl)) continue;
+                replacements.push({ full: match[0], resolvedUrl });
+            }
+
+            let result = cssText;
+            for (const item of replacements) {
+                try {
+                    if (!cache.has(item.resolvedUrl)) {
+                        cache.set(item.resolvedUrl, fetchAsDataUrl(item.resolvedUrl, fetchAdapter));
+                    }
+                    const dataUrl = await cache.get(item.resolvedUrl);
+                    result = result.split(item.full).join(`url("${dataUrl}")`);
+                } catch (_error) {
+                    // 保留原始 URL；其它资源继续内联。
+                }
+            }
+            return result;
+        }
+
+        async function inlineStylesheets(cloneDoc, fetchAdapter, resourceCache) {
+            const originalLinks = Array.from(document.querySelectorAll('link[rel~="stylesheet"]'));
+            const clonedLinks = Array.from(cloneDoc.querySelectorAll('link[rel~="stylesheet"]'));
+
+            await Promise.all(originalLinks.map(async (link, index) => {
+                const cloned = clonedLinks[index];
+                if (!cloned || !link.href) return;
+                try {
+                    const response = await fetchAdapter(link.href, { cache: 'force-cache' });
+                    if (!response || response.status >= 400) return;
+                    const cssText = await response.text();
+                    const inlinedCss = await inlineCssUrls(cssText, link.href, fetchAdapter, resourceCache);
+                    const style = cloneDoc.createElement('style');
+                    if (link.media) style.setAttribute('media', link.media);
+                    style.textContent = `/* ${link.href} */\n${inlinedCss}`;
+                    cloned.replaceWith(style);
+                } catch (_error) {
+                    // 保留原 link。
+                }
+            }));
+
+            const clonedStyles = Array.from(cloneDoc.querySelectorAll('style'));
+            await Promise.all(clonedStyles.map(async (style) => {
+                style.textContent = await inlineCssUrls(style.textContent || '', document.baseURI, fetchAdapter, resourceCache);
+            }));
+        }
+
+        async function inlineImages(cloneDoc, fetchAdapter, resourceCache) {
+            const originalImages = Array.from(document.images);
+            const clonedImages = Array.from(cloneDoc.images);
+
+            await Promise.all(originalImages.map(async (image, index) => {
+                const cloned = clonedImages[index];
+                if (!cloned) return;
+                const imageUrl = image.currentSrc || image.src || image.getAttribute('src');
+                if (!imageUrl || !isEmbeddableUrl(imageUrl) || imageUrl.startsWith('data:')) return;
+                try {
+                    if (!resourceCache.has(imageUrl)) {
+                        resourceCache.set(imageUrl, fetchAsDataUrl(imageUrl, fetchAdapter));
+                    }
+                    const dataUrl = await resourceCache.get(imageUrl);
+                    cloned.setAttribute('src', dataUrl);
+                    cloned.removeAttribute('srcset');
+                    cloned.removeAttribute('sizes');
+                    cloned.removeAttribute('loading');
+                    if (image.naturalWidth && !cloned.getAttribute('width')) cloned.setAttribute('width', String(image.naturalWidth));
+                    if (image.naturalHeight && !cloned.getAttribute('height')) cloned.setAttribute('height', String(image.naturalHeight));
+                } catch (_error) {
+                    // 保留原图 URL。
+                }
+            }));
+
+            cloneDoc.querySelectorAll('source[srcset]').forEach((source) => source.removeAttribute('srcset'));
+        }
+
+        async function inlineMediaPosters(cloneDoc, fetchAdapter, resourceCache) {
+            const originalMedia = Array.from(document.querySelectorAll('video[poster]'));
+            const clonedMedia = Array.from(cloneDoc.querySelectorAll('video[poster]'));
+
+            await Promise.all(originalMedia.map(async (media, index) => {
+                const cloned = clonedMedia[index];
+                const posterUrl = media.poster || media.getAttribute('poster');
+                if (!cloned || !posterUrl || !isEmbeddableUrl(posterUrl) || posterUrl.startsWith('data:')) return;
+                try {
+                    if (!resourceCache.has(posterUrl)) {
+                        resourceCache.set(posterUrl, fetchAsDataUrl(posterUrl, fetchAdapter));
+                    }
+                    cloned.setAttribute('poster', await resourceCache.get(posterUrl));
+                } catch (_error) {
+                    // 保留原 poster。
+                }
+            }));
+        }
+
+        function freezeDynamicScripts(cloneDoc) {
+            cloneDoc.querySelectorAll('script').forEach((script) => {
+                script.setAttribute('type', 'application/x-bookmarks-manager-disabled-script');
+                script.textContent = '';
+                script.removeAttribute('src');
+            });
+        }
+
+        function getDoctypeString() {
             const doctype = document.doctype;
-            const doctypeStr = doctype
+            return doctype
                 ? `<!DOCTYPE ${doctype.name}${doctype.publicId ? ` PUBLIC "${doctype.publicId}"` : ''}${doctype.systemId ? ` "${doctype.systemId}"` : ''}>`
                 : '<!DOCTYPE html>';
-            const html = doctypeStr + '\n' + document.documentElement.outerHTML;
+        }
+
+        async function captureWithEmbeddedDom(startTime, docTitle) {
+            const fetchAdapter = createSingleFileFetchAdapter();
+            const cloneDoc = document.implementation.createHTMLDocument(docTitle || document.title || 'snapshot');
+            cloneDoc.replaceChild(document.documentElement.cloneNode(true), cloneDoc.documentElement);
+            const resourceCache = new Map();
+
+            let base = cloneDoc.querySelector('base');
+            if (!base) {
+                base = cloneDoc.createElement('base');
+                cloneDoc.head.insertBefore(base, cloneDoc.head.firstChild);
+            }
+            base.setAttribute('href', document.baseURI || location.href);
+
+            await inlineStylesheets(cloneDoc, fetchAdapter, resourceCache);
+            await inlineImages(cloneDoc, fetchAdapter, resourceCache);
+            await inlineMediaPosters(cloneDoc, fetchAdapter, resourceCache);
+            freezeDynamicScripts(cloneDoc);
 
             return {
-                content: html,
+                content: getDoctypeString() + '\n' + cloneDoc.documentElement.outerHTML,
                 title: docTitle,
-                method: 'native',
+                method: 'dom-embedded',
                 elapsed: Date.now() - startTime,
             };
+        }
+
+        function isSingleFileCaptureIncomplete(content) {
+            const imageUrls = Array.from(document.images)
+                .map((image) => image.currentSrc || image.src || image.getAttribute('src'))
+                .filter((url) => url && !url.startsWith('data:'));
+            if (imageUrls.length === 0) return false;
+
+            const embeddedImageCount = (content.match(/data:image\//g) || []).length;
+            if (embeddedImageCount >= imageUrls.length) return false;
+
+            return imageUrls.some((url) => content.includes(url));
         }
 
         async function handleGetPageData(options = {}) {
@@ -236,7 +408,11 @@ if (!window.__bookmarksManagerLoaded) {
 
                 if (typeof singlefile !== 'undefined' && typeof singlefile.getPageData === 'function') {
                     try {
-                        return await captureWithSingleFile(singleFileOptions, startTime, docTitle);
+                        const singleFileCapture = await captureWithSingleFile(singleFileOptions, startTime, docTitle);
+                        if (isSingleFileCaptureIncomplete(singleFileCapture.content)) {
+                            return await captureWithEmbeddedDom(startTime, docTitle);
+                        }
+                        return singleFileCapture;
                     } catch (error) {
                         if (!allowNativeFallback) {
                             const message = error instanceof Error ? error.message : String(error || '未知错误');
@@ -245,7 +421,7 @@ if (!window.__bookmarksManagerLoaded) {
                     }
                 }
 
-                return captureWithNativeSerializer(startTime, docTitle);
+                return await captureWithEmbeddedDom(startTime, docTitle);
             })(), timeoutMs, '页面处理超时，请刷新页面后重试');
         }
     })();
