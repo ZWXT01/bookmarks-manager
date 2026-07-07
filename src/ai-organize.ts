@@ -3,7 +3,7 @@ import type { Assignment, CategoryNode, PlanRow } from './ai-organize-plan';
 import { updatePlan, transitionStatus, getPlan, buildPlanSourceSnapshot, getPlanScopeBookmarkIds } from './ai-organize-plan';
 import { updateJob, jobQueue, publishJobEvent } from './jobs';
 import { getCategoryPathMap, getCategoryTree } from './category-service';
-import { createOpenAIClient, extractAICompletionText, type AIClientFactory } from './ai-client';
+import { createOpenAIClient, extractAICompletionText, type AIChatCompletionRequest, type AIClientFactory } from './ai-client';
 import { selectSingleClassifyCategory } from './ai-classify-guardrail';
 import { withAiReasoningEffort, type AIReasoningEffort } from './ai-reasoning-effort';
 
@@ -466,7 +466,7 @@ export async function assignBookmarks(
       try {
         const assignMap = new Map<number, string>();
         if (aiBatch.length > 0) {
-          const completion = await aiClient.createChatCompletion(withAiReasoningEffort({
+          const completionRequest: AIChatCompletionRequest = {
             model: config.model,
             messages: [
               {
@@ -476,7 +476,8 @@ export async function assignBookmarks(
               { role: 'user', content: buildBookmarkBatchPrompt(aiBatch) },
             ],
             temperature: 0.1,
-          }, config.reasoningEffort));
+          };
+          const completion = await aiClient.createChatCompletion(withAiReasoningEffort(completionRequest, config.reasoningEffort));
 
           const raw = extractAICompletionText(completion);
           const jsonMatch = raw.match(/\{[\s\S]*\}/);

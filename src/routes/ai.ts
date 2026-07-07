@@ -1,6 +1,6 @@
 import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
-import { createOpenAIClient, extractAICompletionText, type AIClientFactory } from '../ai-client';
+import { createOpenAIClient, extractAICompletionText, type AIChatCompletionRequest, type AIClientFactory } from '../ai-client';
 import {
     getSingleClassifyAllowedPaths,
     normalizeClassifyPath,
@@ -304,7 +304,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
         try {
             const aiClient = createAIClient(config, 60000);
-            const completion = await aiClient.createChatCompletion(withAiReasoningEffort({
+            const completionRequest: AIChatCompletionRequest = {
                 model: config.model,
                 messages: [{
                     role: 'system',
@@ -313,7 +313,8 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                         : '只输出分类路径（最多2级），不要解释。',
                 }, { role: 'user', content: prompt }],
                 temperature: 0.2,
-            }, config.reasoningEffort));
+            };
+            const completion = await aiClient.createChatCompletion(withAiReasoningEffort(completionRequest, config.reasoningEffort));
             const rawContent = extractAICompletionText(completion);
             if (!rawContent) return reply.code(502).send({ error: 'AI 未返回分类结果' });
 
@@ -366,11 +367,12 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             let lastError: unknown = null;
             for (let attempt = 1; attempt <= 2; attempt += 1) {
                 try {
-                    await aiClient.createChatCompletion(withAiReasoningEffort({
+                    const completionRequest: AIChatCompletionRequest = {
                         model,
                         messages: [{ role: 'user', content: '你好，请回复"OK"' }],
                         max_tokens: 10,
-                    }, reasoningEffort));
+                    };
+                    await aiClient.createChatCompletion(withAiReasoningEffort(completionRequest, reasoningEffort));
                     return reply.send({ success: true, message: 'AI 配置测试成功' });
                 } catch (error) {
                     lastError = error;
