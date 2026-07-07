@@ -5,11 +5,13 @@ import { updateJob, jobQueue, publishJobEvent } from './jobs';
 import { getCategoryPathMap, getCategoryTree } from './category-service';
 import { createOpenAIClient, extractAICompletionText, type AIClientFactory } from './ai-client';
 import { selectSingleClassifyCategory } from './ai-classify-guardrail';
+import { withAiReasoningEffort, type AIReasoningEffort } from './ai-reasoning-effort';
 
 export interface AIConfig {
   baseUrl: string;
   apiKey: string;
   model: string;
+  reasoningEffort?: AIReasoningEffort | '';
 }
 
 export interface RetryConfig {
@@ -464,7 +466,7 @@ export async function assignBookmarks(
       try {
         const assignMap = new Map<number, string>();
         if (aiBatch.length > 0) {
-          const completion = await aiClient.createChatCompletion({
+          const completion = await aiClient.createChatCompletion(withAiReasoningEffort({
             model: config.model,
             messages: [
               {
@@ -474,7 +476,7 @@ export async function assignBookmarks(
               { role: 'user', content: buildBookmarkBatchPrompt(aiBatch) },
             ],
             temperature: 0.1,
-          });
+          }, config.reasoningEffort));
 
           const raw = extractAICompletionText(completion);
           const jsonMatch = raw.match(/\{[\s\S]*\}/);

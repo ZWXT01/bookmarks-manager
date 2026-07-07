@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import type { AIReasoningEffort } from './ai-reasoning-effort';
 
 export interface AIChatMessage {
   role: 'system' | 'user' | 'assistant';
@@ -10,6 +11,7 @@ export interface AIChatCompletionRequest {
   messages: AIChatMessage[];
   temperature?: number;
   max_tokens?: number;
+  reasoning_effort?: AIReasoningEffort;
 }
 
 export interface AIChatCompletionMessage {

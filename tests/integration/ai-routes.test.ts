@@ -68,10 +68,12 @@ describe('integration: ai route contracts', () => {
                 base_url: 'https://mock-ai.example.test/v1',
                 api_key: 'test-key',
                 model: 'mock-model',
+                reasoning_effort: 'high',
             },
         });
         expect(successResponse.statusCode).toBe(200);
         expect(successResponse.json()).toEqual({ success: true, message: 'AI 配置测试成功' });
+        expect(successHarness.calls[0].reasoning_effort).toBe('high');
 
         const retryHarness = createQueuedAIHarness([new Error('Request timed out.'), textCompletion('OK')]);
         await ctx.cleanup();
@@ -186,7 +188,7 @@ describe('integration: ai route contracts', () => {
         await appCtx.cleanup();
         ctx = await createTestApp({ aiClientFactory: successHarness.aiClientFactory });
         const successSession = await ctx.login();
-        seedAISettings(ctx.db);
+        seedAISettings(ctx.db, { reasoningEffort: 'high' });
         seedAiTestCategories(ctx.db);
 
         const formPayload = new URLSearchParams({ url: 'https://nodejs.org', title: '' }).toString();
@@ -201,6 +203,7 @@ describe('integration: ai route contracts', () => {
         });
         expect(successResponse.statusCode).toBe(200);
         expect(successResponse.json()).toEqual({ category: '技术开发/后端' });
+        expect(successHarness.calls[0].reasoning_effort).toBe('high');
         expect(successHarness.calls[0].messages[1].content).toContain('候选分类（必须原样选择其一');
         expect(successHarness.calls[0].messages[1].content).toContain('技术开发/前端');
         expect(successHarness.calls[0].messages[1].content).toContain('学习资源/文档');
@@ -424,7 +427,7 @@ describe('integration: ai route contracts', () => {
                 assignments: buildAssignments(25, '技术开发/前端'),
             }),
         ]);
-        seedAISettings(appCtx.db, { batchSize: 30 });
+        seedAISettings(appCtx.db, { batchSize: 30, reasoningEffort: 'low' });
         seedAiTestCategories(appCtx.db);
         const bookmarkIds = seedBookmarks(appCtx.db, Array.from({ length: 25 }, (_, index) => ({
             title: `Bookmark ${index + 1}`,
@@ -459,6 +462,7 @@ describe('integration: ai route contracts', () => {
             skipped: 0,
         });
         expect(harness.calls).toHaveLength(1);
+        expect(harness.calls[0].reasoning_effort).toBe('low');
     });
 
     it('rejects classify-batch when preview suggestions are still pending and returns pendingPlanId before config checks', async () => {

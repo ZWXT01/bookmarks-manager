@@ -166,6 +166,20 @@
         <input data-testid="ai-model-input" name="ai_model" value="<%- aiModel %>" placeholder="例如 gpt-4o-mini 或 grok-4"
           class="mt-1 w-full rounded border px-3 py-2 text-sm" />
       </label>
+      <label class="block">
+        <div class="text-xs text-slate-600">思考程度（Reasoning Effort）</div>
+        <select data-testid="ai-reasoning-effort-select" name="ai_reasoning_effort"
+          class="mt-1 w-full rounded border px-3 py-2 text-sm">
+          <option value="" <%- aiReasoningEffort==='' ? 'selected' : '' %>>模型默认（不发送参数）</option>
+          <option value="none" <%- aiReasoningEffort==='none' ? 'selected' : '' %>>none（如模型支持）</option>
+          <option value="minimal" <%- aiReasoningEffort==='minimal' ? 'selected' : '' %>>minimal（最少思考）</option>
+          <option value="low" <%- aiReasoningEffort==='low' ? 'selected' : '' %>>low（低）</option>
+          <option value="medium" <%- aiReasoningEffort==='medium' ? 'selected' : '' %>>medium（中）</option>
+          <option value="high" <%- aiReasoningEffort==='high' ? 'selected' : '' %>>high（高）</option>
+          <option value="xhigh" <%- aiReasoningEffort==='xhigh' ? 'selected' : '' %>>xhigh（如模型支持）</option>
+        </select>
+        <div class="mt-1 text-xs text-slate-500">仅 reasoning 模型或兼容服务支持；默认不发送，交由模型/服务决定。</div>
+      </label>
     </div>
     <div id="ai-test-result" data-testid="ai-test-result" class="mt-3 hidden rounded border p-3">
       <div class="flex items-center justify-between gap-2">
@@ -439,6 +453,10 @@
                   var el7 = form.querySelector('input[name="ai_model"]');
                   if (el7) el7.value = String(saved.ai_model);
                 }
+                if (saved.ai_reasoning_effort != null) {
+                  var el8 = form.querySelector('select[name="ai_reasoning_effort"]');
+                  if (el8) el8.value = String(saved.ai_reasoning_effort);
+                }
               }
             } catch { }
             try {
@@ -496,6 +514,8 @@
               if (el7) el7.value = d.ai_api_key || '';
               var el8 = form.querySelector('input[name="ai_model"]');
               if (el8) el8.value = d.ai_model || '';
+              var el9 = form.querySelector('select[name="ai_reasoning_effort"]');
+              if (el9) el9.value = d.ai_reasoning_effort || '';
               showToast('已恢复默认设置', 'success');
             } else {
               showToast((data && data.error) ? data.error : '重置失败', 'error');
@@ -513,8 +533,8 @@
       var aiPresetSelect = document.getElementById('ai-preset-select');
       if (aiPresetSelect) {
         var presets = {
-          grok: { base_url: 'https://grok2api.1018666.xyz/v1', model: 'grok-4' },
-          openai: { base_url: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
+          grok: { base_url: 'https://grok2api.1018666.xyz/v1', model: 'grok-4', reasoning_effort: '' },
+          openai: { base_url: 'https://api.openai.com/v1', model: 'gpt-4o-mini', reasoning_effort: '' },
         };
         aiPresetSelect.addEventListener('change', function () {
           var preset = presets[this.value];
@@ -522,8 +542,10 @@
           var presetName = this.options[this.selectedIndex] ? this.options[this.selectedIndex].text : '';
           var urlInput = form.querySelector('input[name="ai_base_url"]');
           var modelInput = form.querySelector('input[name="ai_model"]');
+          var effortSelect = form.querySelector('select[name="ai_reasoning_effort"]');
           if (urlInput) urlInput.value = preset.base_url;
           if (modelInput) modelInput.value = preset.model;
+          if (effortSelect) effortSelect.value = preset.reasoning_effort || '';
           showToast('已填充 ' + presetName + ' 预设，请填写 API Key 后保存', 'success');
         });
       }
@@ -534,6 +556,8 @@
           var baseUrl = form.querySelector('input[name="ai_base_url"]').value.trim();
           var apiKey = form.querySelector('input[name="ai_api_key"]').value.trim();
           var model = form.querySelector('input[name="ai_model"]').value.trim();
+          var reasoningEffortEl = form.querySelector('select[name="ai_reasoning_effort"]');
+          var reasoningEffort = reasoningEffortEl ? reasoningEffortEl.value.trim() : '';
 
           if (!baseUrl || !apiKey || !model) {
             resetAiTestResult();
@@ -552,7 +576,7 @@
                 'Content-Type': 'application/json',
                 'Accept': 'application/json'
               },
-              body: JSON.stringify({ base_url: baseUrl, api_key: apiKey, model: model })
+              body: JSON.stringify({ base_url: baseUrl, api_key: apiKey, model: model, reasoning_effort: reasoningEffort })
             });
             var data = await res.json().catch(function () { return null; });
             if (res.ok && data && data.success) {

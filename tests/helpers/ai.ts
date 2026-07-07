@@ -5,6 +5,7 @@ import type {
     AIClientFactory,
     AIClientFactoryOptions,
 } from '../../src/ai-client';
+import { formatAiReasoningEffort, type AIReasoningEffort } from '../../src/ai-reasoning-effort';
 import { getOrCreateCategoryByPath } from '../../src/category-service';
 
 export interface CategoryNode { name: string; children: { name: string }[] }
@@ -18,6 +19,7 @@ export interface SeedAISettingsOptions {
     apiKey?: string;
     model?: string;
     batchSize?: number | string;
+    reasoningEffort?: string;
 }
 
 export interface MockAICall extends AIClientFactoryOptions, AIChatCompletionRequest {
@@ -57,18 +59,21 @@ export function seedAISettings(db: Db, options: SeedAISettingsOptions = {}): {
     apiKey: string;
     model: string;
     batchSize: string;
+    reasoningEffort: AIReasoningEffort | '';
 } {
     const config = {
         baseUrl: options.baseUrl ?? 'https://mock-ai.example.test/v1',
         apiKey: options.apiKey ?? 'test-ai-key',
         model: options.model ?? 'mock-model',
         batchSize: String(options.batchSize ?? 30),
+        reasoningEffort: formatAiReasoningEffort(options.reasoningEffort),
     };
 
     upsertSetting(db, 'ai_base_url', config.baseUrl);
     upsertSetting(db, 'ai_api_key', config.apiKey);
     upsertSetting(db, 'ai_model', config.model);
     upsertSetting(db, 'ai_batch_size', config.batchSize);
+    upsertSetting(db, 'ai_reasoning_effort', config.reasoningEffort);
 
     return config;
 }

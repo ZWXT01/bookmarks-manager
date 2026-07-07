@@ -8,6 +8,7 @@ import {
     selectSingleClassifyCategory,
 } from '../ai-classify-guardrail';
 import { getConfiguredAiBatchSize, parseAiBatchSize } from '../ai-batch-size';
+import { formatAiReasoningEffort, withAiReasoningEffort } from '../ai-reasoning-effort';
 import { getCategoryPathMap, getCategoryTree } from '../category-service';
 import {
     getAssignmentApplicability,
@@ -37,8 +38,9 @@ function getAIConfig(getSetting: (key: string) => string | null) {
     const baseUrl = (getSetting('ai_base_url') ?? '').trim();
     const apiKey = (getSetting('ai_api_key') ?? '').trim();
     const model = (getSetting('ai_model') ?? '').trim();
+    const reasoningEffort = formatAiReasoningEffort(getSetting('ai_reasoning_effort'));
     if (!baseUrl || !apiKey || !model) return null;
-    return { baseUrl, apiKey, model };
+    return { baseUrl, apiKey, model, reasoningEffort };
 }
 
 function buildProviderHeaders(apiKey: string): Record<string, string> {
@@ -302,7 +304,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
 
         try {
             const aiClient = createAIClient(config, 60000);
-            const completion = await aiClient.createChatCompletion({
+            const completion = await aiClient.createChatCompletion(withAiReasoningEffort({
                 model: config.model,
                 messages: [{
                     role: 'system',
@@ -311,7 +313,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
                         : '只输出分类路径（最多2级），不要解释。',
                 }, { role: 'user', content: prompt }],
                 temperature: 0.2,
-            });
+            }, config.reasoningEffort));
             const rawContent = extractAICompletionText(completion);
             if (!rawContent) return reply.code(502).send({ error: 'AI 未返回分类结果' });
 
@@ -356,6 +358,7 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
         const baseUrl = typeof body.base_url === 'string' ? body.base_url.trim() : '';
         const apiKey = typeof body.api_key === 'string' ? body.api_key.trim() : '';
         const model = typeof body.model === 'string' ? body.model.trim() : '';
+        const reasoningEffort = formatAiReasoningEffort(body.reasoning_effort ?? body.ai_reasoning_effort);
         if (!baseUrl || !apiKey || !model) return reply.code(400).send({ error: '请填写完整的 AI 配置' });
 
         try {
@@ -363,11 +366,11 @@ export const aiRoutes: FastifyPluginCallback<AIRoutesOptions> = (app, opts, done
             let lastError: unknown = null;
             for (let attempt = 1; attempt <= 2; attempt += 1) {
                 try {
-                    await aiClient.createChatCompletion({
+                    await aiClient.createChatCompletion(withAiReasoningEffort({
                         model,
                         messages: [{ role: 'user', content: '你好，请回复"OK"' }],
                         max_tokens: 10,
-                    });
+                    }, reasoningEffort));
                     return reply.send({ success: true, message: 'AI 配置测试成功' });
                 } catch (error) {
                     lastError = error;

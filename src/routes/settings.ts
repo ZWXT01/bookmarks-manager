@@ -5,6 +5,7 @@ import { FastifyPluginCallback, FastifyRequest, FastifyReply } from 'fastify';
 import type { Database } from 'better-sqlite3';
 import { toIntClamp } from './types';
 import { formatAiBatchSize } from '../ai-batch-size';
+import { formatAiReasoningEffort } from '../ai-reasoning-effort';
 
 export interface SettingsRoutesOptions {
     db: Database;
@@ -64,11 +65,12 @@ export const settingsRoutes: FastifyPluginCallback<SettingsRoutesOptions> = (app
         const aiApiKey = getSetting('ai_api_key') ?? '';
         const aiModel = getSetting('ai_model') ?? '';
         const aiBatchSize = formatAiBatchSize(getSetting('ai_batch_size'));
+        const aiReasoningEffort = formatAiReasoningEffort(getSetting('ai_reasoning_effort'));
 
         return reply.view('settings.ejs', {
             curCheckRetries, curCheckRetryDelayMs, curBackupEnabled, curBackupIntervalMinutes, curBackupRetention,
             curPeriodicCheckEnabled, curPeriodicCheckSchedule, curPeriodicCheckHour,
-            checkEnvOverride, backupEnvOverride, aiBaseUrl, aiApiKey, aiModel, aiBatchSize,
+            checkEnvOverride, backupEnvOverride, aiBaseUrl, aiApiKey, aiModel, aiBatchSize, aiReasoningEffort,
             envFilePath, dbPath, backupDir,
         });
     });
@@ -104,10 +106,12 @@ export const settingsRoutes: FastifyPluginCallback<SettingsRoutesOptions> = (app
             const aiApiKey = typeof body.ai_api_key === 'string' ? body.ai_api_key.trim() : '';
             const aiModel = typeof body.ai_model === 'string' ? body.ai_model.trim() : '';
             const aiBatchSize = formatAiBatchSize(body.ai_batch_size);
+            const aiReasoningEffort = formatAiReasoningEffort(body.ai_reasoning_effort);
             setSetting('ai_base_url', aiBaseUrl);
             setSetting('ai_api_key', aiApiKey);
             setSetting('ai_model', aiModel);
             setSetting('ai_batch_size', aiBatchSize);
+            setSetting('ai_reasoning_effort', aiReasoningEffort);
 
             let envResult: any = { success: true, path: envFilePath, updatedKeys: [] as string[] };
             try {
@@ -135,7 +139,7 @@ export const settingsRoutes: FastifyPluginCallback<SettingsRoutesOptions> = (app
                         check_retries: retries, check_retry_delay_ms: delayMs,
                         backup_enabled: backupEnabledBool, backup_interval_minutes: backupInterval, backup_retention: backupRet,
                         periodic_check_enabled: periodicCheckEnabledBool, periodic_check_schedule: actualSchedule, periodic_check_hour: periodicCheckHourVal,
-                        ai_base_url: aiBaseUrl, ai_model: aiModel, ai_batch_size: aiBatchSize,
+                        ai_base_url: aiBaseUrl, ai_model: aiModel, ai_batch_size: aiBatchSize, ai_reasoning_effort: aiReasoningEffort,
                     },
                 });
             }
@@ -160,13 +164,14 @@ export const settingsRoutes: FastifyPluginCallback<SettingsRoutesOptions> = (app
             ai_api_key: aiApiKey ? '******' : '',
             ai_model: getSetting('ai_model') ?? '',
             ai_batch_size: formatAiBatchSize(getSetting('ai_batch_size')),
+            ai_reasoning_effort: formatAiReasoningEffort(getSetting('ai_reasoning_effort')),
         });
     });
 
     // POST /api/settings/reset
     app.post('/api/settings/reset', async (req: FastifyRequest, reply: FastifyReply) => {
         try {
-            db.prepare("DELETE FROM settings WHERE key IN ('check_retries', 'check_retry_delay_ms', 'backup_enabled', 'backup_interval_minutes', 'backup_retention', 'periodic_check_enabled', 'periodic_check_schedule', 'periodic_check_hour', 'ai_batch_size')").run();
+            db.prepare("DELETE FROM settings WHERE key IN ('check_retries', 'check_retry_delay_ms', 'backup_enabled', 'backup_interval_minutes', 'backup_retention', 'periodic_check_enabled', 'periodic_check_schedule', 'periodic_check_hour', 'ai_batch_size', 'ai_reasoning_effort')").run();
             req.log.info('settings reset to default');
             return reply.send({ success: true });
         } catch (e: any) {

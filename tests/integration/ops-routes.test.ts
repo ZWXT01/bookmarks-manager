@@ -58,6 +58,7 @@ describe('integration: ops routes', () => {
                 ai_api_key: 'top-secret-key',
                 ai_model: 'demo-model',
                 ai_batch_size: '42',
+                ai_reasoning_effort: 'high',
             },
         });
 
@@ -89,6 +90,7 @@ describe('integration: ops routes', () => {
                 ai_base_url: 'https://api.example.test/v1',
                 ai_model: 'demo-model',
                 ai_batch_size: '30',
+                ai_reasoning_effort: 'high',
             },
         });
 
@@ -115,6 +117,7 @@ describe('integration: ops routes', () => {
             ai_api_key: '******',
             ai_model: 'demo-model',
             ai_batch_size: '30',
+            ai_reasoning_effort: 'high',
         });
 
         const resetResponse = await ctx.app.inject({
@@ -143,6 +146,7 @@ describe('integration: ops routes', () => {
             ai_api_key: '******',
             ai_model: 'demo-model',
             ai_batch_size: '30',
+            ai_reasoning_effort: '',
         });
 
         ctx.db.exec('DROP TABLE settings');
