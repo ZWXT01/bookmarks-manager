@@ -10,7 +10,7 @@ export function formatAiReasoningEffort(value: unknown): AIReasoningEffort | '' 
   return AI_REASONING_EFFORT_SET.has(raw) ? raw as AIReasoningEffort : '';
 }
 
-export function withAiReasoningEffort<T extends Record<string, unknown>>(
+export function withAiReasoningEffort<T extends object>(
   request: T,
   reasoningEffort: unknown,
 ): T & { reasoning_effort?: AIReasoningEffort } {
