@@ -279,7 +279,7 @@ function buildOrganizeCategoryGuide(categoryList: string[]): string {
     hasCategoryPath(categoryList, '待整理')
       ? '6. 如果只能猜测、信息不足、多个分类同样合理，选择“待整理”；不要为了填满而强行分类。'
       : '6. 如果只能猜测、信息不足、多个分类同样合理，返回空字符串；不要为了填满而强行分类。',
-    '7. 你通常无法实际访问网页；不要声称已访问，只能根据标题、域名、URL 路径、描述和候选分类判断。',
+    '7. 优先联网访问目标网页或使用 Web 搜索核实内容；无法联网、无法访问或工具不可用时，再根据标题、域名、URL 路径、描述和候选分类判断；不要编造访问结果。',
   ];
 
   const boundaryRules: string[] = [];
@@ -353,7 +353,7 @@ function buildBookmarkBatchPrompt(batch: BookmarkBatch[]): string {
     return lines.join('\n');
   }).join('\n');
 
-  return `请为以下每个书签选择最合适的分类。程序只提供了标题、域名、URL路径、描述和当前分类等有限线索；不要声称已经访问网页。平台内容页优先按平台分类；信息不足时选择“待整理”或返回空字符串。\n${batchList}`;
+  return `请为以下每个书签选择最合适的分类。优先联网访问 URL 或使用 Web 搜索核实内容；如果无法联网、无法访问或工具不可用，再根据标题、域名、URL路径、描述和当前分类等有限线索判断；不要编造访问结果。平台内容页优先按平台分类；信息不足时选择“待整理”或返回空字符串。\n${batchList}`;
 }
 
 function resolveBatchAssignmentCategory(rawCategory: unknown, bookmark: BookmarkBatch, categoryList: string[], validPaths: Set<string>): string | null {

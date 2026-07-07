@@ -326,9 +326,14 @@ describe('integration: ai organize route contracts', () => {
         const systemPrompt = harness.calls[0].messages[0].content as string;
         const userPrompt = harness.calls[0].messages[1].content as string;
         expect(systemPrompt).toContain('分类判定原则');
-        expect(systemPrompt).toContain('常用入口：只放真正的入口页');
-        expect(systemPrompt).toContain('NSFW：明确成人内容');
+        expect(systemPrompt).toContain('优先联网访问目标网页');
+        expect(systemPrompt).toContain('Web 搜索');
+        expect(systemPrompt).toContain('常用入口');
+        expect(systemPrompt).toContain('NSFW：');
+        expect(systemPrompt).toContain('明确成人内容');
         expect(systemPrompt).toContain('\n开发者/前端资源\n');
+        expect(userPrompt).toContain('优先联网访问 URL');
+        expect(userPrompt).toContain('Web 搜索');
         expect(userPrompt).toContain('当前分类: 常用入口/快捷导航');
         expect(userPrompt).toContain('域名: react.dev');
         expect(userPrompt).toContain('路径关键词: reference react useState');

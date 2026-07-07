@@ -204,6 +204,9 @@ describe('integration: ai route contracts', () => {
         expect(successResponse.statusCode).toBe(200);
         expect(successResponse.json()).toEqual({ category: '技术开发/后端' });
         expect(successHarness.calls[0].reasoning_effort).toBe('high');
+        expect(successHarness.calls[0].messages[0].content).toContain('优先联网访问目标网页');
+        expect(successHarness.calls[0].messages[1].content).toContain('优先联网访问目标网页');
+        expect(successHarness.calls[0].messages[1].content).toContain('Web 搜索');
         expect(successHarness.calls[0].messages[1].content).toContain('候选分类（必须原样选择其一');
         expect(successHarness.calls[0].messages[1].content).toContain('技术开发/前端');
         expect(successHarness.calls[0].messages[1].content).toContain('学习资源/文档');
@@ -563,10 +566,14 @@ describe('integration: ai route contracts', () => {
         await jobQueue.onIdle();
 
         const batchPrompt = harness.calls[1].messages[0].content as string;
+        const batchUserPrompt = harness.calls[1].messages[1].content as string;
         expect(batchPrompt).toContain('\n技术开发/Web前端\n');
         expect(batchPrompt).toContain('\n学习资源/教程\n');
         expect(batchPrompt.includes('\n技术开发/前端\n')).toBe(false);
         expect(batchPrompt.includes('\n学习资源/文档\n')).toBe(false);
+        expect(batchPrompt).toContain('优先联网访问目标网页');
+        expect(batchUserPrompt).toContain('优先联网访问 URL');
+        expect(batchUserPrompt).toContain('Web 搜索');
 
         const { planId } = batchResponse.json() as { planId: string };
         const plan = getPlan(appCtx.db, planId);
