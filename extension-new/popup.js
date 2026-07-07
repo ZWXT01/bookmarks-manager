@@ -48,12 +48,20 @@
         'lib/single-file-frames.js',
         'content.js',
     ];
+    const START_JOB_METHOD = 'bookmarksManager.startJob';
+    const GET_JOB_STATE_METHOD = 'bookmarksManager.getJobState';
+    const JOB_STATE_KEY = 'bookmarksManager.jobState';
+    const COMPLETED_JOB_VISIBLE_MS = 5 * 60 * 1000;
 
     let categories = [];
     let isConnected = false;
     let lastConnectedAt = 0;
     let hideStatusTimer = null;
     let activeActionMode = null;
+    let observedJobId = null;
+    let observedJobSignature = null;
+    let jobHideTimer = null;
+    let jobPollTimer = null;
     const captureBridgeReadyTabs = new Set();
 
     function getRuntimeTestState() {
@@ -78,6 +86,35 @@
         const runtimeState = getRuntimeTestState();
         const options = runtimeState && runtimeState.captureOptions;
         return options && typeof options === 'object' ? options : {};
+    }
+
+    function canUseBackgroundJobs() {
+        const runtimeState = getRuntimeTestState();
+        if (runtimeState && runtimeState.disableBackgroundJobs) return false;
+        return Boolean(chrome.runtime && typeof chrome.runtime.sendMessage === 'function');
+    }
+
+    function sendRuntimeMessage(message) {
+        return new Promise((resolve, reject) => {
+            if (!chrome.runtime || typeof chrome.runtime.sendMessage !== 'function') {
+                reject(new Error('扩展后台不可用'));
+                return;
+            }
+
+            chrome.runtime.sendMessage(message, (response) => {
+                if (chrome.runtime.lastError) {
+                    reject(new Error(chrome.runtime.lastError.message || '扩展后台请求失败'));
+                    return;
+                }
+                resolve(response);
+            });
+        });
+    }
+
+    function getLocalStorage(keys) {
+        return new Promise((resolve) => {
+            chrome.storage.local.get(keys, (result) => resolve(result || {}));
+        });
     }
 
     function setSettingsOpen(open) {
@@ -171,6 +208,125 @@
         hideStatusTimer = setTimeout(() => {
             hideStatus();
         }, delayMs);
+    }
+
+    function getJobMode(job) {
+        return job && (job.mode === 'save' || job.mode === 'snapshot' || job.mode === 'saveAll')
+            ? job.mode
+            : null;
+    }
+
+    function isFreshCompletedJob(job) {
+        if (!job || job.status === 'running') return false;
+        const updatedAt = Number(job.updatedAt) || 0;
+        return updatedAt > 0 && Date.now() - updatedAt <= COMPLETED_JOB_VISIBLE_MS;
+    }
+
+    function scheduleCompletedJobHide() {
+        if (jobHideTimer) {
+            clearTimeout(jobHideTimer);
+        }
+        jobHideTimer = setTimeout(() => {
+            if (!activeActionMode) {
+                hideStatus();
+            }
+        }, 6000);
+    }
+
+    function applyJobState(job) {
+        if (!job || typeof job !== 'object') {
+            if (activeActionMode && observedJobId) {
+                activeActionMode = null;
+                setActionState(null);
+            }
+            return;
+        }
+
+        const mode = getJobMode(job);
+        if (!mode) return;
+
+        observedJobId = job.id || observedJobId;
+        observedJobSignature = `${job.id || 'unknown'}:${job.status || 'unknown'}:${job.updatedAt || 0}`;
+
+        if (job.status === 'running') {
+            if (jobHideTimer) {
+                clearTimeout(jobHideTimer);
+                jobHideTimer = null;
+            }
+            activeActionMode = mode;
+            setActionState(mode);
+            showStatus(job.message || `${describeAction(mode)}…`, 'loading');
+            return;
+        }
+
+        activeActionMode = null;
+        setActionState(null);
+
+        if (job.status === 'success') {
+            showStatus(job.message || '操作完成', 'success');
+            scheduleCompletedJobHide();
+            return;
+        }
+
+        if (job.status === 'error') {
+            showStatus(job.message || job.error || '操作失败', 'error');
+            return;
+        }
+    }
+
+    async function restoreJobState() {
+        try {
+            if (canUseBackgroundJobs()) {
+                const response = await sendRuntimeMessage({ method: GET_JOB_STATE_METHOD });
+                if (response && response.success && response.job) {
+                    const signature = `${response.job.id || 'unknown'}:${response.job.status || 'unknown'}:${response.job.updatedAt || 0}`;
+                    if (signature === observedJobSignature) return;
+                    if (response.job.status === 'running' || isFreshCompletedJob(response.job)) {
+                        applyJobState(response.job);
+                    }
+                    return;
+                }
+            }
+
+            const result = await getLocalStorage([JOB_STATE_KEY]);
+            const job = result[JOB_STATE_KEY];
+            if (job && (job.status === 'running' || isFreshCompletedJob(job))) {
+                const signature = `${job.id || 'unknown'}:${job.status || 'unknown'}:${job.updatedAt || 0}`;
+                if (signature === observedJobSignature) return;
+                applyJobState(job);
+            }
+        } catch (_error) {
+            // 状态恢复失败不影响普通弹窗使用。
+        }
+    }
+
+    function setupJobStateWatcher() {
+        if (chrome.storage && chrome.storage.onChanged && typeof chrome.storage.onChanged.addListener === 'function') {
+            chrome.storage.onChanged.addListener((changes, areaName) => {
+                if (areaName !== 'local' || !changes[JOB_STATE_KEY]) return;
+                const nextJob = changes[JOB_STATE_KEY].newValue;
+                if (nextJob && (nextJob.status === 'running' || isFreshCompletedJob(nextJob))) {
+                    applyJobState(nextJob);
+                } else if (!nextJob && observedJobId) {
+                    observedJobId = null;
+                    observedJobSignature = null;
+                    activeActionMode = null;
+                    setActionState(null);
+                }
+            });
+        }
+
+        if (!canUseBackgroundJobs()) return;
+
+        jobPollTimer = setInterval(() => {
+            void restoreJobState();
+        }, 1500);
+        window.addEventListener('unload', () => {
+            if (jobPollTimer) {
+                clearInterval(jobPollTimer);
+                jobPollTimer = null;
+            }
+        });
     }
 
     function updateConnectionStatus(status) {
@@ -616,6 +772,39 @@
         }
     }
 
+    async function startBackgroundAction(mode) {
+        const tab = await resolveTargetTab();
+        if (!tab || !tab.id) {
+            throw new Error('无法获取当前标签页');
+        }
+
+        const payload = {
+            tabId: tab.id,
+            url: urlInput.value.trim(),
+            title: titleInput.value.trim(),
+            categoryId: getSelectedCategoryId(),
+            serverUrl: getServerUrl(),
+            apiToken: apiTokenInput.value.trim(),
+            captureOptions: getRuntimeCaptureOptions(),
+        };
+
+        const response = await sendRuntimeMessage({
+            method: START_JOB_METHOD,
+            mode,
+            payload,
+        });
+
+        if (!response || !response.success) {
+            throw new Error(response && response.error ? response.error : '启动后台任务失败');
+        }
+
+        if (response.job) {
+            applyJobState(response.job);
+        }
+
+        return response.job || null;
+    }
+
     async function saveSnapshot(options) {
         const managed = Boolean(options && options.managed);
         const successMessage = options && options.successMessage;
@@ -636,6 +825,18 @@
 
         if (!managed) {
             if (!beginAction('snapshot')) {
+                return false;
+            }
+        }
+
+        if (!managed && canUseBackgroundJobs()) {
+            try {
+                await startBackgroundAction('snapshot');
+                return true;
+            } catch (error) {
+                const failureMessage = normalizeCaptureError(error, '启动后台任务失败');
+                showStatus(`保存失败: ${failureMessage}`, 'error');
+                finishAction('snapshot');
                 return false;
             }
         }
@@ -715,6 +916,16 @@
         }
 
         if (!beginAction('saveAll')) {
+            return;
+        }
+
+        if (canUseBackgroundJobs()) {
+            try {
+                await startBackgroundAction('saveAll');
+            } catch (error) {
+                showStatus(`无法开始存档: ${normalizeCaptureError(error, '启动后台任务失败')}`, 'error');
+                finishAction('saveAll');
+            }
             return;
         }
 
@@ -818,6 +1029,8 @@
         }
 
         setupEventListeners();
+        setupJobStateWatcher();
+        await restoreJobState();
     }
 
     void init();

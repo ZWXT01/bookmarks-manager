@@ -304,8 +304,6 @@ if (!window.__bookmarksManagerLoaded) {
                     cloned.removeAttribute('srcset');
                     cloned.removeAttribute('sizes');
                     cloned.removeAttribute('loading');
-                    if (image.naturalWidth && !cloned.getAttribute('width')) cloned.setAttribute('width', String(image.naturalWidth));
-                    if (image.naturalHeight && !cloned.getAttribute('height')) cloned.setAttribute('height', String(image.naturalHeight));
                 } catch (_error) {
                     // 保留原图 URL。
                 }
